@@ -171,24 +171,48 @@ int decryptFile(const std::string& cr1FileName, const std::string& cr2FileName) 
         return 1;
     }
 
-    // 2. Zurück zum Anfang und nur exakt 'originalSize' Bytes entschlüsseln
+    // 2. Zurück zum Anfang und blockweise (4 MB) entschlüsseln
     cr1File.seekg(0, std::ios::beg);
     cr2File.seekg(0, std::ios::beg);
 
-    char cr1Byte, cr2Byte;
-    for (uint64_t i = 0; i < originalSize; ++i) {
-        if (cr1File.get(cr1Byte) && cr2File.get(cr2Byte)) {
-            // XOR der Bytes, um das Originalbyte wiederherzustellen
-            outputFile.put(static_cast<char>(static_cast<uint8_t>(cr1Byte) ^ static_cast<uint8_t>(cr2Byte)));
-        } else {
-            break; // Sicherheitshalber abbrechen, falls Datei kürzer als erwartet
+    const size_t BUFFER_SIZE = 4 * 1024 * 1024; // 4 Megabyte
+    std::vector<char> cr1Buffer(BUFFER_SIZE);
+    std::vector<char> cr2Buffer(BUFFER_SIZE);
+    std::vector<char> outBuffer(BUFFER_SIZE);
+
+    uint64_t bytesProcessed = 0;
+
+    while (bytesProcessed < originalSize) {
+        // Berechnen, wie viel noch gelesen werden darf (schützt vor dem Padding)
+        uint64_t bytesToRead = BUFFER_SIZE;
+        if (originalSize - bytesProcessed < BUFFER_SIZE) {
+            bytesToRead = originalSize - bytesProcessed;
         }
+
+        cr1File.read(cr1Buffer.data(), bytesToRead);
+        cr2File.read(cr2Buffer.data(), bytesToRead);
+
+        std::streamsize actualRead = cr1File.gcount();
+        
+        if (actualRead == 0) break; // Unerwartetes Dateiende
+
+        // XOR-Zauber für den gesamten Block
+        for (std::streamsize i = 0; i < actualRead; ++i) {
+            outBuffer[i] = static_cast<char>(static_cast<uint8_t>(cr1Buffer[i]) ^ static_cast<uint8_t>(cr2Buffer[i]));
+        }
+
+        // Fertigen Block auf die Festplatte schreiben
+        outputFile.write(outBuffer.data(), actualRead);
+        
+        bytesProcessed += actualRead;
     }
 
     // Schließe die Dateien
     outputFile.close();
     cr1File.close();
     cr2File.close();
+
+    std::cout << "Erfolgreich wiederhergestellt: " << outputFileName << "\n";
 
     return 0;
 }
