@@ -12,10 +12,13 @@
 
 ## 🛠️ Installation & Kompilierung
 
-Da der Code keine externen Bibliotheken benötigt, reicht ein einfacher Aufruf des C++ Compilers:
+Da der Code keine externen Bibliotheken benötigt, reicht ein einfacher Aufruf des C++ Compilers. 
+**Wichtig:** Um die maximale Geschwindigkeit (hunderte Megabyte pro Sekunde) zu erreichen, muss der Compiler die Hardware-Features deiner CPU (wie AVX2/SIMD) freischalten. 
+
+Nutze dafür diesen optimierten Befehl:
 
 ```bash
-g++ rfs.cpp -o rfs
+g++ -O3 -march=native rfs.cpp -o rfs
 ```
 
 ## 📖 Benutzung
