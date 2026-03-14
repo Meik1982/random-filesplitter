@@ -5,6 +5,7 @@
 #include <string>
 #include <random>   // Für die Zufallszahlengenerierung
 #include <cstdint>  // Für feste Ganzzahltypen (z. B. uint8_t)
+#include <vector>   // Für die 4MB Datenblöcke
 
 // Funktion zur Anzeige der Hilfestellung
 void displayHelp() {
@@ -62,19 +63,32 @@ int encryptFile(const std::string& inputFileName) {
     uint64_t originalSize = inputFile.tellg();
     inputFile.seekg(0, std::ios::beg);
 
-    char byteRead;
-    while (inputFile.get(byteRead)) {
-        // Generiere ein zufälliges Byte aus dem SCHNELLEN Generator 'gen'
-        uint8_t randomByte = static_cast<uint8_t>(dist(gen));
+    // 1. Haupt-Verschlüsselung (Block-Modus mit 4 MB)
+    const size_t BUFFER_SIZE = 4 * 1024 * 1024; // 4 Megabyte
+    std::vector<char> buffer(BUFFER_SIZE);
+    std::vector<char> cr1Buffer(BUFFER_SIZE);
+    std::vector<char> cr2Buffer(BUFFER_SIZE);
 
-        // Schreibe das verschlüsselte Byte in cr1File
-        cr1File.put(static_cast<char>(static_cast<uint8_t>(byteRead) ^ randomByte));
+    while (inputFile) {
+        // Versuche, einen 4 MB Block zu lesen
+        inputFile.read(buffer.data(), BUFFER_SIZE);
+        std::streamsize bytesRead = inputFile.gcount(); // Wie viel kam WIRKLICH an?
+        
+        if (bytesRead == 0) break;
 
-        // Schreibe das Schlüsselbyte in cr2File
-        cr2File.put(static_cast<char>(randomByte));
+        // XOR nur über die tatsächlich gelesenen Bytes jagen
+        for (std::streamsize i = 0; i < bytesRead; ++i) {
+            uint8_t randomByte = static_cast<uint8_t>(dist(gen));
+            cr1Buffer[i] = static_cast<char>(static_cast<uint8_t>(buffer[i]) ^ randomByte);
+            cr2Buffer[i] = static_cast<char>(randomByte);
+        }
+
+        // Die fertigen Blöcke in einem Rutsch auf die Festplatte schreiben
+        cr1File.write(cr1Buffer.data(), bytesRead);
+        cr2File.write(cr2Buffer.data(), bytesRead);
     }
 
-    // --- NEU: Padding am Ende anhängen ---
+    // --- Padding am Ende anhängen ---
     
     // Zufällige Größe für das Padding festlegen (z.B. zwischen 1 KB und 100 KB)
     std::uniform_int_distribution<uint32_t> padDist(1024, 102400); 
