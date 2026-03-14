@@ -47,16 +47,20 @@ int encryptFile(const std::string& inputFileName) {
         return 1;
     }
 
-    // Initialisiere den kryptographisch sicheren Zufallszahlengenerator
+    // 1. Echten Zufall vom Betriebssystem holen (nur einmal!)
     std::random_device rd;
-    // Verwenden Sie einen Zufallszahlengenerator mit hoher Entropie
-    std::uniform_int_distribution<uint8_t> dist(0, 255);
-
+    
+    // 2. Den extrem schnellen Mersenne-Twister-Generator damit starten
+    std::mt19937 gen(rd()); 
+    
+    // 3. Verteilung auf 0-255 (ein Byte) einstellen
+    std::uniform_int_distribution<uint16_t> dist(0, 255); // uint16_t verhindert Compiler-Warnungen bei uint8_t
     // Verschlüsselungsprozess
+
     char byteRead;
     while (inputFile.get(byteRead)) {
-        // Generiere ein zufälliges Byte (Schlüsselbyte)
-        uint8_t randomByte = dist(rd);
+        // Generiere ein zufälliges Byte aus dem SCHNELLEN Generator 'gen'
+        uint8_t randomByte = static_cast<uint8_t>(dist(gen));
 
         // Schreibe das verschlüsselte Byte in cr1File
         cr1File.put(static_cast<char>(static_cast<uint8_t>(byteRead) ^ randomByte));
@@ -65,6 +69,22 @@ int encryptFile(const std::string& inputFileName) {
         cr2File.put(static_cast<char>(randomByte));
     }
 
+    // --- NEU: Padding am Ende anhängen ---
+    
+    // Zufällige Größe für das Padding festlegen (z.B. zwischen 1 KB und 100 KB)
+    std::uniform_int_distribution<uint32_t> padDist(1024, 102400); 
+    uint32_t paddingSize = padDist(gen);
+
+    for (uint32_t i = 0; i < paddingSize; ++i) {
+        // Zwei komplett zufällige Bytes erzeugen
+        uint8_t padByte1 = static_cast<uint8_t>(dist(gen));
+        uint8_t padByte2 = static_cast<uint8_t>(dist(gen));
+
+        // An beide Dateien anhängen
+        cr1File.put(static_cast<char>(padByte1));
+        cr2File.put(static_cast<char>(padByte2));
+    }
+    
     // Schließe die Dateien
     inputFile.close();
     cr1File.close();
