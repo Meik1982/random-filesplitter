@@ -57,6 +57,11 @@ int encryptFile(const std::string& inputFileName) {
     std::uniform_int_distribution<uint16_t> dist(0, 255); // uint16_t verhindert Compiler-Warnungen bei uint8_t
     // Verschlüsselungsprozess
 
+    // 1. Dateigröße messen
+    inputFile.seekg(0, std::ios::end);
+    uint64_t originalSize = inputFile.tellg();
+    inputFile.seekg(0, std::ios::beg);
+
     char byteRead;
     while (inputFile.get(byteRead)) {
         // Generiere ein zufälliges Byte aus dem SCHNELLEN Generator 'gen'
@@ -83,6 +88,15 @@ int encryptFile(const std::string& inputFileName) {
         // An beide Dateien anhängen
         cr1File.put(static_cast<char>(padByte1));
         cr2File.put(static_cast<char>(padByte2));
+    }
+
+    // Die originale Größe (8 Bytes) verschlüsselt ans absolute Ende hängen
+    // Wir behandeln die 8 Bytes von 'originalSize' wie 8 einzelne Zeichen
+    uint8_t* sizePtr = reinterpret_cast<uint8_t*>(&originalSize);
+    for (int i = 0; i < 8; ++i) {
+        uint8_t randomByte = static_cast<uint8_t>(dist(gen));
+        cr1File.put(static_cast<char>(sizePtr[i] ^ randomByte));
+        cr2File.put(static_cast<char>(randomByte));
     }
     
     // Schließe die Dateien
@@ -120,6 +134,20 @@ int decryptFile(const std::string& cr1FileName, const std::string& cr2FileName) 
         return 1;
     }
 
+    // 1. Die verschlüsselte Größe vom Ende lesen (letzte 8 Bytes)
+    cr1File.seekg(-8, std::ios::end);
+    cr2File.seekg(-8, std::ios::end);
+
+    uint64_t originalSize = 0;
+    uint8_t* sizePtr = reinterpret_cast<uint8_t*>(&originalSize);
+
+    for (int i = 0; i < 8; ++i) {
+        char b1, b2;
+        if (cr1File.get(b1) && cr2File.get(b2)) {
+            sizePtr[i] = static_cast<uint8_t>(b1) ^ static_cast<uint8_t>(b2);
+        }
+    }
+
     // Öffne die Ausgabedatei im Binärmodus
     std::ofstream outputFile(outputFileName, std::ios::binary);
     if (!outputFile) {
@@ -129,11 +157,18 @@ int decryptFile(const std::string& cr1FileName, const std::string& cr2FileName) 
         return 1;
     }
 
-    // Entschlüsselungsprozess
+    // 2. Zurück zum Anfang und nur exakt 'originalSize' Bytes entschlüsseln
+    cr1File.seekg(0, std::ios::beg);
+    cr2File.seekg(0, std::ios::beg);
+
     char cr1Byte, cr2Byte;
-    while (cr1File.get(cr1Byte) && cr2File.get(cr2Byte)) {
-        // XOR der Bytes aus den beiden Dateien, um das Originalbyte wiederherzustellen
-        outputFile.put(static_cast<char>(static_cast<uint8_t>(cr1Byte) ^ static_cast<uint8_t>(cr2Byte)));
+    for (uint64_t i = 0; i < originalSize; ++i) {
+        if (cr1File.get(cr1Byte) && cr2File.get(cr2Byte)) {
+            // XOR der Bytes, um das Originalbyte wiederherzustellen
+            outputFile.put(static_cast<char>(static_cast<uint8_t>(cr1Byte) ^ static_cast<uint8_t>(cr2Byte)));
+        } else {
+            break; // Sicherheitshalber abbrechen, falls Datei kürzer als erwartet
+        }
     }
 
     // Schließe die Dateien
