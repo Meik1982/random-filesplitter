@@ -39,4 +39,4 @@ Gib einfach beide Teile an, um die Originaldatei wiederherzustellen:
 
 ## ⚖️ Lizenz
 
-Dieses Programm wurde von **Meik Augenblik** unter der **Lesser GNU General Public License (LGPL)** geschrieben.
+Dieses Programm wurde von **Meik Augenblick** unter der **Lesser GNU General Public License (LGPL)** geschrieben.
