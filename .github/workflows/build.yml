@@ -10,8 +10,6 @@ jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # <--- Fix für die Warnung!
     strategy:
       matrix:
         include:
