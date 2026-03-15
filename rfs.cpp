@@ -1,4 +1,4 @@
-// Dieses Programm wurde von Meik Augenblik unter der Lesser GNU General Public License (LGPL) geschrieben.
+// Dieses Programm wurde von Meik Augenblick unter der Lesser GNU General Public License (LGPL) geschrieben.
 
 #include <iostream>
 #include <fstream>
