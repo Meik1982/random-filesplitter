@@ -2,13 +2,17 @@
 
 **rfs** ist ein minimalistisches Tool zur **physischen Transportsicherung** und zum Splitting von Dateien. Es basiert auf dem Prinzip der **XOR-Verknüpfung**: Eine Datei wird in zwei Teile zerlegt, die für sich allein genommen wie weißes Rauschen erscheinen. Nur wer beide Teile besitzt, kann das Original bit-genau wiederherstellen.
 
-## 🚀 Features (v1.0 Stealth Upgrade)
+## 🚀 Features (v1.1 Security & Performance Upgrade)
 
-* **Statistischer Zufall:** Nutzt den modernen `std::mt19937_64` Generator, initialisiert durch Hardware-Entropie (`std::random_device`), für eine extrem schnelle Erzeugung des Schlüsselstroms.
+* **Plattformunabhängiger Entropie-Harvester:** Erntet ohne externe Abhängigkeiten echte CPU-Jitter-Entropie (Nanosekunden-Varianzen im Cache/Pipeline), kombiniert mit C++ `std::random_device` und ASLR-Speicherlayout.
+* **ChaCha20 CSPRNG:** Kryptografisch sichere Pseudozufalls-Generierung mit vollem 256-Bit Key und 96-Bit Nonce (ersetzt den unsicheren Mersenne-Twister).
+* **64-Bit / SIMD Fast-Path:** Hochoptimierte 64-Bit Vektor-XOR-Schleife mit sauberem Byte-Level Tail-Handling für Dateien beliebiger Bytegröße.
 * **Stealth Padding:** Um die Analyse der ursprünglichen Dateigröße durch Dritte zu erschweren, wird jede Datei automatisch mit zufälligem Rauschen (1-100 KB) aufgefüllt.
-* **Verschlüsselte Metadaten:** Die Information über die ursprüngliche Dateigröße sowie ein **SHA-256 Integritäts-Hash** werden per XOR-Verknüpfung am Ende der Dateien versteckt. Dies schützt vor Manipulationen während des Transports.
-* **Performance-Turbo:** Optimierte Byte-Verarbeitung für blitzschnelles Splitten auch bei sehr großen Dateien im Gigabyte-Bereich.
-* **Cross-Plattform:** Reiner C++ Code ohne externe Abhängigkeiten. Perfekt für Linux (CachyOS, Debian etc.) und Windows.
+* **Verschlüsselte Metadaten & Integrität:** Endianness-sichere Serialisierung der Dateigröße und **SHA-256 Integritätsprüfung**. Erkennt Manipulationen und Bit-Flips zuverlässig.
+* **Fehlertolerante CLI:** Unterstützt beliebige Argument-Reihenfolge (`.rfs1 .rfs2` oder `.rfs2 .rfs1`) und prüft Dateigrößen vorab.
+* **Echtzeit-Fortschrittsanzeige:** Nicht-blockierende Terminal-Progressbar mit Live-Übertragungsrate (MB/s).
+* **Integrierter Hardware-Benchmark:** Schneller Selbsttest (`rfs --benchmark`) für Entropie-, ChaCha20-, XOR- und SHA-256-Durchsatz.
+* **100% Portabel:** Reiner ISO C++11 Code ohne externe Abhängigkeiten, läuft auf Linux, Windows, macOS, ReactOS und BSD.
 
 ## 🛠️ Installation & Kompilierung
 

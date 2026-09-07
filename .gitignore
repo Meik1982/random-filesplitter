@@ -1,0 +1,7 @@
+/rfs
+/rfs-linux
+/rfs-windows.exe
+*.rfs1
+*.rfs2
+*.orig
+*.restored
