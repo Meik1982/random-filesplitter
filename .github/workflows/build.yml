@@ -17,19 +17,19 @@ jobs:
           - os: linux
             runner: ubuntu-latest
             cc: g++
-            cflags: "-O3 -Wall -Wextra -static"
+            cflags: "-O3 -Wall -Wextra -static -pthread"
             artifact_name: rfs-linux-x86_64
             arch: x86_64
           - os: windows
             runner: ubuntu-latest
             cc: x86_64-w64-mingw32-g++
-            cflags: "-O3 -Wall -Wextra -static"
+            cflags: "-O3 -Wall -Wextra -static -pthread"
             artifact_name: rfs-windows-x86_64.exe
             arch: x86_64
           - os: macos
             runner: macos-latest
             cc: clang++
-            cflags: "-O3 -Wall -Wextra -std=c++11"
+            cflags: "-O3 -Wall -Wextra -std=c++11 -pthread"
             artifact_name: rfs-macos-arm64
             arch: arm64
 
