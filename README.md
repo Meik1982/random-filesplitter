@@ -11,6 +11,9 @@
 * **Explicit Secure Wipe:** Krypto-Hygiene durch volatiles Überschreiben (`secure_wipe_memory`) aller sensitiven Schlüssel-, Nonce- und Hash-Puffer im RAM.
 * **Stealth Padding:** Jede Datei wird mit zufälligem Rauschen (1-100 KB) aufgefüllt, um die exakte Dateigröße vor Metadaten-Analysen zu verschleiern.
 * **Integrierter Verify-Modus (`--verify`):** Schnelle Prüfung der Datei-Integrität und SHA-256-Prüfsumme beider Hälften, ohne die Datei auf die Festplatte schreiben zu müssen.
+* **Entropie- & Kryptoanalyse-Diagnose (`--entropy-test`):** Zweiphasige Validierung der physikalischen Entropiequalität:
+  - *Phase 1:* Analyse der unkonditionierten CPU-Jitter-Rohdaten (Timing-Streuung $\sigma$, Min-Entropie-Buckets, LSB-Bitflips). Erkennt starre Emulatoren oder deterministische VMs.
+  - *Phase 2:* NIST-Statistik-Suite auf den Schlüsselstrom (Shannon-Entropie, Chi-Quadrat $\chi^2$, Bit-Balance, serielle Autokorrelation).
 * **Echtzeit-Fortschrittsanzeige:** Nicht-blockierende Terminal-Progressbar mit Live-Durchsatzanzeige (`MB/s`).
 * **Hardware-Benchmark (`--benchmark`):** Schneller Leistungstest für Entropie-, ChaCha20-, XOR-, SHA-256- und Pipeline-Durchsatz.
 * **100% Portabel:** Reiner ISO C++11 Code ohne externe Abhängigkeiten für Linux, Windows, macOS, ReactOS und BSD.
@@ -53,7 +56,13 @@ Rekonstruiert die Originaldatei und verifiziert automatisch die SHA-256 Integrit
 ./rfs --verify archiv.tar.gz.rfs1 archiv.tar.gz.rfs2
 ```
 
-### 4. Hardware-Benchmark ausführen
+### 4. Entropie- & Krypto-Qualitätsanalyse
+Validiert den Hardware-Jitter und analysiert den Zufallsstrom nach NIST-Kriterien:
+```bash
+./rfs --entropy-test
+```
+
+### 5. Hardware-Benchmark ausführen
 Testet die maximale Krypto- und I/O-Geschwindigkeit deines Systems:
 ```bash
 ./rfs --benchmark

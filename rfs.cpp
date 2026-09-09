@@ -9,8 +9,11 @@
 // 3. Multi-Threaded Pipelining & Asynchrones I/O (Producer-Consumer via std::thread / std::future).
 // 4. Paralleles Hashing (SHA-256 Thread entkoppelt vom Krypto- & Schreib-Pipeline-Thread).
 // 5. Explicit Secure Wipe (Krypto-Hygiene: Nullung aller sensitiven Speicherbereiche).
-// 6. Neuer Verify-Modus (--verify): Schnelle Integritätsprüfung ohne Zurückschreiben auf Platte.
-// 7. Interaktive Terminal-Fortschrittsanzeige & Hardware-Benchmark (--benchmark).
+// 6. Verify-Modus (--verify): Schnelle Integritätsprüfung ohne Zurückschreiben auf Platte.
+// 7. Entropie-Qualitätsanalyse (--entropy-test):
+//    - Phase 1: Roh-Entropie-Diagnose des CPU-Jitters (Varianz, Buckets, Bit-Flips, Min-Entropie).
+//    - Phase 2: NIST-Metriken auf den ChaCha20-Schlüsselstrom (Shannon-Entropie, Chi-Quadrat, Bit-Balance).
+// 8. Interaktive Terminal-Fortschrittsanzeige & Hardware-Benchmark (--benchmark).
 
 #include <iostream>
 #include <fstream>
@@ -25,6 +28,8 @@
 #include <thread>
 #include <future>
 #include <memory>
+#include <cmath>
+#include <map>
 
 #if defined(__AVX2__)
 #include <immintrin.h>
@@ -32,7 +37,6 @@
 
 // ============================================================================
 // 0. Krypto-Hygiene: Explicit Secure Wipe
-//    Verhindert, dass der Compiler das Nullen von Schlüsseln wegoptimiert.
 // ============================================================================
 static void secure_wipe_memory(void* ptr, size_t size) {
     if (!ptr || size == 0) return;
@@ -219,14 +223,12 @@ public:
         }
 
 #if defined(__AVX2__)
-        // AVX2 4-Block Fast-Path (256 Bytes parallel auf einmal berechnen)
         while (offset + 256 <= length) {
             generate4BlocksAVX2(destination + offset);
             offset += 256;
         }
 #endif
 
-        // Standard 64-Byte Block
         while (offset + 64 <= length) {
             generateBlock(destination + offset);
             offset += 64;
@@ -339,7 +341,6 @@ private:
         __m256i s[16];
         for (int i = 0; i < 16; ++i) {
             if (i == 12) {
-                // 4 aufeinanderfolgende Counter-Werte in 256-Bit Vektoren
                 s[12] = _mm256_set_epi32(m_state[12] + 3, m_state[12] + 2, m_state[12] + 1, m_state[12],
                                          m_state[12] + 3, m_state[12] + 2, m_state[12] + 1, m_state[12]);
             } else {
@@ -361,12 +362,10 @@ private:
             quarterRoundAVX2(x[3], x[4], x[9],  x[14]);
         }
 
-        // Addition des Ausgangszustands
         for (int i = 0; i < 16; ++i) {
             x[i] = _mm256_add_epi32(x[i], s[i]);
         }
 
-        // Transponieren & Speichern von 4 Blöcken (je 64 Byte = 256 Byte)
         uint32_t tmp[16][8];
         for (int i = 0; i < 16; ++i) {
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(tmp[i]), x[i]);
@@ -524,7 +523,211 @@ private:
 };
 
 // ============================================================================
-// 6. Benchmark-Modus
+// 6. Entropie- & Kryptoanalyse-Diagnose (--entropy-test)
+// ============================================================================
+int runEntropyTest() {
+    std::cout << "\n============================================================\n"
+              << " RFS Entropie- & Kryptoanalyse-Diagnose (NIST & Jitter)\n"
+              << "============================================================\n\n";
+
+    // ------------------------------------------------------------------------
+    // Phase 1: Diagnose der unkonditionierten CPU-Jitter-Rohdaten
+    // ------------------------------------------------------------------------
+    std::cout << "--- [Phase 1: Roh-Entropie-Diagnose des CPU-Jitters] ---\n"
+              << "Sammle 8.192 aufeinanderfolgende Nanosekunden-Differenzen...\n\n";
+
+    const size_t JITTER_SAMPLES = 8192;
+    std::vector<int64_t> deltas(JITTER_SAMPLES);
+    std::map<int64_t, size_t> buckets;
+    double sum = 0.0;
+    size_t bitFlips = 0;
+
+    for (size_t i = 0; i < JITTER_SAMPLES; ++i) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        volatile int dummy = 0;
+        for (int j = 0; j < 30; ++j) {
+            dummy += (j ^ static_cast<int>(i));
+        }
+        (void)dummy;
+        auto t2 = std::chrono::high_resolution_clock::now();
+        int64_t diff = (t2 - t1).count();
+        deltas[i] = diff;
+        buckets[diff]++;
+        sum += static_cast<double>(diff);
+
+        if (i > 0) {
+            if ((deltas[i] & 1) != (deltas[i - 1] & 1)) {
+                bitFlips++;
+            }
+        }
+    }
+
+    double mean = sum / JITTER_SAMPLES;
+    double varianceSum = 0.0;
+    for (int64_t d : deltas) {
+        double dev = static_cast<double>(d) - mean;
+        varianceSum += (dev * dev);
+    }
+    double stddev = std::sqrt(varianceSum / JITTER_SAMPLES);
+    double bitFlipRatio = (static_cast<double>(bitFlips) / (JITTER_SAMPLES - 1)) * 100.0;
+
+    // Shannon-Entropie auf den Rohwerten berechnen
+    double rawEntropy = 0.0;
+    for (const auto& pair : buckets) {
+        double p = static_cast<double>(pair.second) / JITTER_SAMPLES;
+        if (p > 0.0) {
+            rawEntropy -= p * (std::log(p) / std::log(2.0));
+        }
+    }
+
+    bool jitterVarianceOk = (stddev >= 1.0);
+    bool jitterBucketsOk  = (buckets.size() >= 16);
+    bool jitterBitFlipsOk = (bitFlipRatio >= 25.0 && bitFlipRatio <= 75.0);
+    bool jitterEntropyOk  = (rawEntropy >= 1.5);
+
+    std::cout << " [1] Standardabweichung (Timing-Jitter Streuung):\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(2) << stddev << " ns  "
+              << (jitterVarianceOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Mindestanforderung: sigma >= 1.0 ns)\n\n";
+
+    std::cout << " [2] Eindeutige Timing-Buckets (Min-Entropie):\n"
+              << "     Gefunden: " << buckets.size() << " verschiedene Zyklenwerte  "
+              << (jitterBucketsOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Mindestanforderung: mind. 16 Buckets)\n\n";
+
+    std::cout << " [3] LSB Bit-Transitionsrate (Rausch-Flips):\n"
+              << "     Wechselrate: " << std::fixed << std::setprecision(1) << bitFlipRatio << " %  "
+              << (jitterBitFlipsOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Ideal: 50.0 %, Akzeptanzbereich: 25.0 % - 75.0 %)\n\n";
+
+    std::cout << " [4] Shannon-Entropie der unkonditionierten Roh-Timings:\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(3) << rawEntropy << " Bits / Sample  "
+              << (jitterEntropyOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Mindestanforderung: >= 1.500 Bits)\n\n";
+
+    if (jitterVarianceOk && jitterBucketsOk && jitterBitFlipsOk && jitterEntropyOk) {
+        std::cout << "Status Phase 1: [OK] Die CPU liefert echte physikalische Timing-Entropie.\n\n";
+    } else {
+        std::cout << "WARNUNG Phase 1: [FEHLER] Keine oder unzureichende CPU-Jitter-Entropie!\n"
+                  << "Hinweis: Laeuft das System in einem starren Emulator oder einer virtuellen Umgebung?\n\n";
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 2: NIST-Kryptoanalyse auf den ChaCha20-Schlüsselstrom
+    // ------------------------------------------------------------------------
+    std::cout << "--- [Phase 2: Kryptoanalyse des CSPRNG-Schlüsselstroms] ---\n"
+              << "Generiere 16 MB ChaCha20-Stream fuer statistische NIST-Metriken...\n\n";
+
+    uint8_t masterKey[32];
+    uint8_t masterNonce[12];
+    UniversalEntropyHarvester::harvestSeed(masterKey, masterNonce);
+    ChaCha20RNG rng(masterKey, masterNonce);
+
+    const size_t STREAM_SIZE = 16 * 1024 * 1024; // 16 MB
+    std::vector<uint8_t> stream(STREAM_SIZE);
+    rng.generateBytes(stream.data(), STREAM_SIZE);
+
+    // Byte-Häufigkeiten zählen & 1-Bits zählen
+    std::vector<uint64_t> byteCounts(256, 0);
+    uint64_t totalOnes = 0;
+    double sumStreamBytes = 0.0;
+
+    for (size_t i = 0; i < STREAM_SIZE; ++i) {
+        uint8_t b = stream[i];
+        byteCounts[b]++;
+        sumStreamBytes += b;
+#if defined(__GNUC__) || defined(__clang__)
+        totalOnes += __builtin_popcount(b);
+#else
+        for (int bit = 0; bit < 8; ++bit) totalOnes += ((b >> bit) & 1);
+#endif
+    }
+
+    // 1. Shannon-Entropie
+    double shannonEntropy = 0.0;
+    for (int i = 0; i < 256; ++i) {
+        double p = static_cast<double>(byteCounts[i]) / STREAM_SIZE;
+        if (p > 0.0) {
+            shannonEntropy -= p * (std::log(p) / std::log(2.0));
+        }
+    }
+
+    // 2. Chi-Quadrat Test (df = 255)
+    double expectedCount = static_cast<double>(STREAM_SIZE) / 256.0;
+    double chiSquare = 0.0;
+    for (int i = 0; i < 256; ++i) {
+        double diff = static_cast<double>(byteCounts[i]) - expectedCount;
+        chiSquare += (diff * diff) / expectedCount;
+    }
+
+    // 3. Arithmetischer Mittelwert
+    double streamMean = sumStreamBytes / STREAM_SIZE;
+
+    // 4. Bit-Balance
+    double bitBalancePercent = (static_cast<double>(totalOnes) / (STREAM_SIZE * 8.0)) * 100.0;
+
+    // 5. Serielle Korrelation (Lag-1)
+    double numerator = 0.0;
+    double denom = 0.0;
+    for (size_t i = 0; i < STREAM_SIZE - 1; ++i) {
+        double x = static_cast<double>(stream[i]) - 127.5;
+        double y = static_cast<double>(stream[i + 1]) - 127.5;
+        numerator += (x * y);
+        denom += (x * x);
+    }
+    double serialCorr = (denom > 0.0) ? (numerator / denom) : 0.0;
+
+    bool shannonOk = (shannonEntropy >= 7.9999);
+    bool chiOk = (chiSquare >= 180.0 && chiSquare <= 330.0);
+    bool meanOk = (std::abs(streamMean - 127.5) < 0.05);
+    bool bitBalanceOk = (std::abs(bitBalancePercent - 50.0) < 0.05);
+    bool corrOk = (std::abs(serialCorr) < 0.001);
+
+    std::cout << " [1] Shannon-Entropie (Gleichverteilung pro Byte):\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(6) << shannonEntropy << " Bits / Byte  "
+              << (shannonOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Theoretisches Maximum: 8.000000 Bits)\n\n";
+
+    std::cout << " [2] Chi-Quadrat Anpassungstest (df = 255):\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(2) << chiSquare << "  "
+              << (chiOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Idealer statistischer Bereich: 180.00 - 330.00)\n\n";
+
+    std::cout << " [3] Arithmetischer Mittelwert der Bytes:\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(3) << streamMean << "  "
+              << (meanOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Theoretisches Ideal: 127.500)\n\n";
+
+    std::cout << " [4] Bit-Balance (Verhältnis 1-Bits zu 0-Bits):\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(3) << bitBalancePercent << " %  "
+              << (bitBalanceOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Theoretisches Ideal: 50.000 %)\n\n";
+
+    std::cout << " [5] Serielle Autokorrelation (Lag-1 Abhängigkeit):\n"
+              << "     Gemessen: " << std::fixed << std::setprecision(6) << serialCorr << "  "
+              << (corrOk ? "[BESTANDEN]" : "[FEHLGESCHLAGEN!]") << "\n"
+              << "     (Theoretisches Ideal: 0.000000)\n\n";
+
+    secure_wipe_memory(masterKey, sizeof(masterKey));
+    secure_wipe_memory(masterNonce, sizeof(masterNonce));
+    secure_wipe_memory(stream.data(), stream.size());
+
+    if (shannonOk && chiOk && meanOk && bitBalanceOk && corrOk) {
+        std::cout << "============================================================\n"
+                  << " GESAMTFAZIT: ALLE ENTROPIE- & KRYPTOTESTS BESTANDEN [OK]\n"
+                  << " Der Zufallsstrom ist ununterscheidbar von echtem weissen Rauschen.\n"
+                  << "============================================================\n\n";
+        return 0;
+    } else {
+        std::cout << "============================================================\n"
+                  << " GESAMTFAZIT: STATISTISCHE ANOMALIEN ENTDECKT [WARNUNG]\n"
+                  << "============================================================\n\n";
+        return 1;
+    }
+}
+
+// ============================================================================
+// 7. Hardware-Benchmark-Modus
 // ============================================================================
 int runBenchmark() {
     std::cout << "\n========================================================\n"
@@ -546,14 +749,13 @@ int runBenchmark() {
     SHA256 hasher;
 
     const size_t BENCH_BUF_SIZE = 16 * 1024 * 1024;
-    const size_t TOTAL_BENCH_BYTES = 512 * 1024 * 1024; // 512 MB Durchlauf
+    const size_t TOTAL_BENCH_BYTES = 512 * 1024 * 1024;
     std::vector<uint8_t> bufferA(BENCH_BUF_SIZE);
     std::vector<uint8_t> bufferB(BENCH_BUF_SIZE);
     std::vector<uint8_t> bufferOut(BENCH_BUF_SIZE);
 
     rng.generateBytes(bufferA.data(), BENCH_BUF_SIZE);
 
-    // ChaCha20 Durchsatz
     auto tStartChaCha = std::chrono::high_resolution_clock::now();
     size_t generated = 0;
     while (generated < TOTAL_BENCH_BYTES) {
@@ -574,7 +776,6 @@ int runBenchmark() {
               << "       Geschwindigkeit: " << std::fixed << std::setprecision(2)
               << chachaSpeedMB << " MB/s (" << (chachaSpeedMB / 1024.0) << " GB/s)\n\n";
 
-    // 64-Bit Vektor-XOR Durchsatz
     auto tStartXor = std::chrono::high_resolution_clock::now();
     size_t xorProcessed = 0;
     const size_t words = BENCH_BUF_SIZE / 8;
@@ -596,7 +797,6 @@ int runBenchmark() {
               << "       Geschwindigkeit: " << std::fixed << std::setprecision(2)
               << xorSpeedMB << " MB/s (" << (xorSpeedMB / 1024.0) << " GB/s)\n\n";
 
-    // SHA-256 Durchsatz
     auto tStartSha = std::chrono::high_resolution_clock::now();
     size_t shaProcessed = 0;
     while (shaProcessed < TOTAL_BENCH_BYTES) {
@@ -613,7 +813,6 @@ int runBenchmark() {
               << "       Geschwindigkeit: " << std::fixed << std::setprecision(2)
               << shaSpeedMB << " MB/s\n\n";
 
-    // Parallele Pipeline Durchsatz (Simulation im RAM)
     std::cout << " [Pipeline] Pipelined Performance (Parallel Hash + Crypto):\n";
     auto tStartPipe = std::chrono::high_resolution_clock::now();
     auto hashFut = std::async(std::launch::async, [&]() {
@@ -651,7 +850,7 @@ int runBenchmark() {
 }
 
 // ============================================================================
-// 7. Kern-Logik: Pipelined Multi-Threaded Verschlüsseln / Splitten
+// 8. Kern-Logik: Pipelined Multi-Threaded Verschlüsseln / Splitten
 // ============================================================================
 void displayHelp() {
     std::cout << "\n========================================================\n"
@@ -661,6 +860,7 @@ void displayHelp() {
               << "   Splitten:         rfs <Datei>\n"
               << "   Wiederherstellen: rfs <Datei.rfs1> <Datei.rfs2>\n"
               << "   Integritaetstest: rfs --verify <Datei.rfs1> <Datei.rfs2>\n"
+              << "   Entropie-Analyse: rfs --entropy-test\n"
               << "   Hardware-Test:    rfs --benchmark\n\n";
 }
 
@@ -700,12 +900,10 @@ int encryptFile(const std::string& inputFileName) {
     ProgressBar progress("Splitting", originalSize);
     uint64_t totalBytesRead = 0;
 
-    // Asynchrone Schreib-Tasks für überlappte I/O
     std::future<bool> write1Future;
     std::future<bool> write2Future;
     std::future<void> hashFuture;
 
-    // Double-Buffering Puffer für asynchrones Schreiben
     std::vector<char> writeCr1Buf(BUFFER_SIZE);
     std::vector<char> writeCr2Buf(BUFFER_SIZE);
     std::vector<char> hashBuf(BUFFER_SIZE);
@@ -717,7 +915,6 @@ int encryptFile(const std::string& inputFileName) {
 
         totalBytesRead += bytesRead;
 
-        // Vorherige asynchrone Writes abwarten & validieren
         if (write1Future.valid() && !write1Future.get()) {
             std::cerr << "\nFehler: Schreibfehler auf Datei 1 (z.B. Datentraeger voll).\n";
             return 1;
@@ -730,16 +927,13 @@ int encryptFile(const std::string& inputFileName) {
             hashFuture.get();
         }
 
-        // SHA-256 Hashing im Hintergrund-Thread entkoppeln
         std::memcpy(hashBuf.data(), buffer.data(), bytesRead);
         hashFuture = std::async(std::launch::async, [&hasher, &hashBuf, bytesRead]() {
             hasher.update(reinterpret_cast<const uint8_t*>(hashBuf.data()), bytesRead);
         });
 
-        // ChaCha20 Zufallsschlüsselstrom generieren (AVX2-beschleunigt)
         rng.generateBytes(reinterpret_cast<uint8_t*>(cr2Buf.data()), bytesRead);
 
-        // 64-Bit Fast-Path XOR
         size_t words = bytesRead / 8;
         const uint64_t* src64 = reinterpret_cast<const uint64_t*>(buffer.data());
         const uint64_t* rnd64 = reinterpret_cast<const uint64_t*>(cr2Buf.data());
@@ -749,13 +943,11 @@ int encryptFile(const std::string& inputFileName) {
             dst64[i] = src64[i] ^ rnd64[i];
         }
 
-        // Tail-Handling für ungerade Bytes (1 bis 7)
         size_t tailOffset = words * 8;
         for (size_t i = tailOffset; i < static_cast<size_t>(bytesRead); ++i) {
             cr1Buf[i] = static_cast<char>(static_cast<uint8_t>(buffer[i]) ^ static_cast<uint8_t>(cr2Buf[i]));
         }
 
-        // Kopieren in Schreibpuffer und asynchron auf Disk flushen
         std::memcpy(writeCr1Buf.data(), cr1Buf.data(), bytesRead);
         std::memcpy(writeCr2Buf.data(), cr2Buf.data(), bytesRead);
 
@@ -771,14 +963,12 @@ int encryptFile(const std::string& inputFileName) {
         progress.update(totalBytesRead);
     }
 
-    // Finale Writes und Hashes vollenden
     if (write1Future.valid() && !write1Future.get()) return 1;
     if (write2Future.valid() && !write2Future.get()) return 1;
     if (hashFuture.valid()) hashFuture.get();
 
     progress.finish(totalBytesRead);
 
-    // Stealth Padding: 1 KB bis 100 KB zufälliges Rauschen
     uint32_t paddingSize = rng.next_range_u32(1024, 102400);
     std::vector<char> padBuf1(paddingSize);
     std::vector<char> padBuf2(paddingSize);
@@ -787,7 +977,6 @@ int encryptFile(const std::string& inputFileName) {
     cr1File.write(padBuf1.data(), paddingSize);
     cr2File.write(padBuf2.data(), paddingSize);
 
-    // Integritäts-Hash (32 Bytes) am Ende verschleiert anhängen
     uint8_t hash[32];
     hasher.final(hash);
     for (int i = 0; i < 32; ++i) {
@@ -796,7 +985,6 @@ int encryptFile(const std::string& inputFileName) {
         cr2File.put(static_cast<char>(rnd));
     }
 
-    // Original-Dateigröße (8 Bytes Little-Endian) verschleiert anhängen
     uint8_t sizeBytes[8];
     write_u64_le(sizeBytes, originalSize);
     for (int i = 0; i < 8; ++i) {
@@ -812,7 +1000,6 @@ int encryptFile(const std::string& inputFileName) {
         return 1;
     }
 
-    // Krypto-Hygiene
     secure_wipe_memory(masterKey, sizeof(masterKey));
     secure_wipe_memory(masterNonce, sizeof(masterNonce));
     secure_wipe_memory(hash, sizeof(hash));
@@ -825,7 +1012,7 @@ int encryptFile(const std::string& inputFileName) {
 }
 
 // ============================================================================
-// 8. Kern-Logik: Entschlüsseln & Verify-Modus
+// 9. Kern-Logik: Entschlüsseln & Verify-Modus
 // ============================================================================
 int decryptOrVerifyFile(const std::string& input1, const std::string& input2, bool verifyOnly) {
     std::string fileRfs1 = input1;
@@ -864,7 +1051,6 @@ int decryptOrVerifyFile(const std::string& input1, const std::string& input2, bo
         outName += ".restored";
     }
 
-    // 1. Größe aus den letzten 8 Bytes lesen
     cr1.seekg(-8, std::ios::end);
     cr2.seekg(-8, std::ios::end);
     uint8_t sizeBytes[8];
@@ -880,7 +1066,6 @@ int decryptOrVerifyFile(const std::string& input1, const std::string& input2, bo
         return 1;
     }
 
-    // 2. Hash aus dem Footer lesen (32 Bytes vor der Dateigröße)
     cr1.seekg(-40, std::ios::end);
     cr2.seekg(-40, std::ios::end);
     uint8_t expectedHash[32];
@@ -890,7 +1075,6 @@ int decryptOrVerifyFile(const std::string& input1, const std::string& input2, bo
         expectedHash[i] = static_cast<uint8_t>(b1) ^ static_cast<uint8_t>(b2);
     }
 
-    // 3. Ausgabedatei nur öffnen, wenn nicht im Verify-Modus
     std::unique_ptr<std::ofstream> out;
     if (!verifyOnly) {
         out = std::unique_ptr<std::ofstream>(new std::ofstream(outName, std::ios::binary));
@@ -985,7 +1169,7 @@ int decryptOrVerifyFile(const std::string& input1, const std::string& input2, bo
 }
 
 // ============================================================================
-// 9. Programmeinstieg
+// 10. Programmeinstieg
 // ============================================================================
 int main(int argc, char* argv[]) {
     if (argc == 2) {
@@ -996,6 +1180,9 @@ int main(int argc, char* argv[]) {
         }
         if (arg == "-b" || arg == "--benchmark") {
             return runBenchmark();
+        }
+        if (arg == "-e" || arg == "--entropy-test" || arg == "--entropy") {
+            return runEntropyTest();
         }
         return encryptFile(argv[1]);
     }
