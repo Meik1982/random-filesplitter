@@ -4,7 +4,7 @@
 
 ## 🚀 Features & Architektur (v1.2)
 
-* **Plattformunabhängiger Entropie-Harvester:** Erntet ohne externe Bibliotheken echte CPU-Jitter-Entropie (mikroskopische Timing-Schwankungen in Cache/Pipeline), kombiniert mit Hardware-Entropie (`std::random_device`), Monotonic Clocks und ASLR-Speicherlayout.
+* **Plattformunabhängiger Entropie-Harvester:** Erntet ohne externe Bibliotheken physikalische CPU- und Cache-Jitter-Entropie (Pointer-Chasing über einen 1 KB Aligned-Memory-Pool zur Provokation echter L2/L3- und DRAM-Bus-Latenzen), kombiniert mit Hardware-Entropie (`std::random_device`), Monotonic Clocks und ASLR-Speicherlayout.
 * **ChaCha20 CSPRNG mit AVX2-SIMD:** Kryptografisch sichere 256-Bit-Zufallsgenerierung mit nativer 4-Block-Parallelverarbeitung via AVX2 (bis zu ~850 MB/s Krypto-Durchsatz) und portablem 64-Bit-Fallback.
 * **Multi-Threaded Pipelining & Asynchrones I/O:** Vollständig entkoppeltes I/O-Streaming via `std::async`/`std::future` (Double-Buffering). Festplatten-Lese-/Schreibzyklen und CPU-Krypto-Berechnungen laufen parallel.
 * **Paralleles Hashing:** SHA-256 Integritätsprüfung wird blockweise in einem separaten Thread ausgeführt, ohne den Krypto-Stream zu blockieren.
