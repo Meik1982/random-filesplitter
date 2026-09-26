@@ -82,12 +82,20 @@ Prüft die Validität beider Teile ohne Schreibzugriff auf die Festplatte:
 rfs --verify backup.tar.gz.rfs1 backup.tar.gz.rfs2
 ```
 
-### 5. Entropie-Diagnose & NIST-Kryptoanalyse
+### 5. Datei-Entropie & Kryptoanalyse beliebiger Dateien (-a / --analyze)
+Untersucht eine beliebige Datei auf kryptografische Entropiedichte (Shannon-Entropie, Chi-Quadrat-Anpassung, Mittelwert, Bit-Balance, Lag-1-Autokorrelation und Monte-Carlo-Pi):
+```bash
+rfs -a datei.bin
+# oder: rfs --analyze datei.bin
+# oder: rfs --file-entropy datei.bin
+```
+
+### 6. System-Entropie- & Krypto-Qualitätsanalyse (--entropy-test)
 ```bash
 rfs --entropy-test
 ```
 
-### 6. Hardware-Benchmark ausführen
+### 7. Hardware-Benchmark ausführen
 ```bash
 rfs --benchmark
 ```

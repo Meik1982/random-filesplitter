@@ -2,6 +2,7 @@
 #include "rfs/sha256.hpp"
 #include "rfs/chacha20.hpp"
 #include "rfs/splitter.hpp"
+#include "rfs/entropy.hpp"
 
 #include <iostream>
 #include <cassert>
@@ -168,12 +169,48 @@ static void test_e2e_lifecycle() {
     std::cout << "PASSED\n";
 }
 
+void test_file_entropy() {
+    std::cout << "[TEST] Kryptoanalytische Datei-Entropieanalyse... " << std::flush;
+    std::string highEntropyFile = "/tmp/rfs_test_high_entropy.bin";
+    std::string lowEntropyFile = "/tmp/rfs_test_low_entropy.txt";
+
+    // Datei mit hoher Entropie (Zufallsdaten)
+    {
+        std::ofstream out(highEntropyFile, std::ios::binary);
+        uint8_t k[32] = {1, 2, 3, 4};
+        uint8_t n[12] = {5, 6, 7, 8};
+        ChaCha20RNG rng(k, n);
+        std::vector<uint8_t> buf(65536);
+        rng.generateBytes(buf.data(), buf.size());
+        out.write(reinterpret_cast<const char*>(buf.data()), buf.size());
+    }
+
+    // Datei mit niedriger Entropie (Wiederholender Text)
+    {
+        std::ofstream out(lowEntropyFile);
+        for (int i = 0; i < 5000; ++i) {
+            out << "Dies ist ein unverschluesselter repetitiver Klartext mit geringer Entropie.\n";
+        }
+    }
+
+    int resHigh = analyzeFileEntropy(highEntropyFile);
+    assert(resHigh == 0);
+
+    int resLow = analyzeFileEntropy(lowEntropyFile);
+    assert(resLow == 0);
+
+    std::remove(highEntropyFile.c_str());
+    std::remove(lowEntropyFile.c_str());
+    std::cout << "PASSED\n";
+}
+
 int main() {
     std::cout << "=== RFS2 Test Suite ===\n";
     test_sha256();
     test_chacha20();
     test_endianness();
     test_e2e_lifecycle();
+    test_file_entropy();
     std::cout << "=== Alle Tests erfolgreich abgeschlossen! ===\n";
     return 0;
 }

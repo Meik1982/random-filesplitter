@@ -25,6 +25,14 @@ int main(int argc, char* argv[]) {
     if (firstArg == "-e" || firstArg == "--entropy" || firstArg == "--entropy-test") {
         return rfs::runEntropyTest();
     }
+    if (firstArg == "-a" || firstArg == "--analyze" || firstArg == "--file-entropy") {
+        if (argc < 3) {
+            std::cerr << "Fehler: Option " << firstArg << " erfordert einen Dateipfad.\n";
+            std::cerr << "Verwendung: rfs -a <Datei>\n";
+            return 1;
+        }
+        return rfs::analyzeFileEntropy(argv[2]);
+    }
 
     // Flag-Parsing
     bool verifyOnly = false;
@@ -37,6 +45,13 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "-v" || arg == "--verify" || arg == "--check") {
             verifyOnly = true;
+        } else if (arg == "-a" || arg == "--analyze" || arg == "--file-entropy") {
+            if (i + 1 < argc) {
+                return rfs::analyzeFileEntropy(argv[++i]);
+            } else {
+                std::cerr << "Fehler: Option " << arg << " erfordert einen Dateipfad.\n";
+                return 1;
+            }
         } else if (arg == "-f" || arg == "--force") {
             force = true;
         } else if (arg == "-s" || arg == "--silent") {

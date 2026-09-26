@@ -3,6 +3,7 @@
 #include "rfs/chacha20.hpp"
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 #include <vector>
 #include <chrono>
 #include <random>
@@ -306,6 +307,180 @@ int runEntropyTest() {
                   << "============================================================\n\n";
         return 1;
     }
+}
+
+int analyzeFileEntropy(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Fehler: Datei '" << path << "' konnte nicht geoeffnet werden.\n";
+        return 1;
+    }
+
+    file.seekg(0, std::ios::end);
+    uint64_t fileSize = static_cast<uint64_t>(file.tellg());
+    file.seekg(0, std::ios::beg);
+
+    if (fileSize == 0) {
+        std::cerr << "Fehler: Datei '" << path << "' ist leer (0 Bytes). Entropie kann nicht bestimmt werden.\n";
+        return 1;
+    }
+
+    std::cout << "\n============================================================\n"
+              << " RFS Kryptoanalytische Datei-Entropieanalyse\n"
+              << "============================================================\n"
+              << " Datei:   " << path << "\n"
+              << " Groesse: " << fileSize << " Bytes ("
+              << std::fixed << std::setprecision(2) << (static_cast<double>(fileSize) / (1024.0 * 1024.0)) << " MB)\n"
+              << "------------------------------------------------------------\n";
+
+    constexpr size_t CHUNK_SIZE = 1024 * 1024;
+    std::vector<uint8_t> buffer(CHUNK_SIZE);
+
+    uint64_t counts[256] = {0};
+    uint64_t totalBytes = 0;
+    uint64_t totalOnes = 0;
+    double sumBytes = 0.0;
+
+    double corrNumerator = 0.0;
+    double corrDenom = 0.0;
+    int prevByte = -1;
+
+    uint64_t mcInCircle = 0;
+    uint64_t mcTotalPairs = 0;
+    int mcPendingByte = -1;
+
+    while (file.good() && totalBytes < fileSize) {
+        file.read(reinterpret_cast<char*>(buffer.data()), CHUNK_SIZE);
+        size_t bytesRead = static_cast<size_t>(file.gcount());
+        if (bytesRead == 0) break;
+
+        for (size_t i = 0; i < bytesRead; ++i) {
+            uint8_t b = buffer[i];
+            counts[b]++;
+            sumBytes += b;
+#if defined(__GNUC__) || defined(__clang__)
+            totalOnes += __builtin_popcount(b);
+#else
+            for (int bit = 0; bit < 8; ++bit) totalOnes += ((b >> bit) & 1);
+#endif
+            if (prevByte >= 0) {
+                double x = static_cast<double>(prevByte) - 127.5;
+                double y = static_cast<double>(b) - 127.5;
+                corrNumerator += (x * y);
+                corrDenom += (x * x);
+            }
+            prevByte = b;
+
+            if (mcPendingByte < 0) {
+                mcPendingByte = b;
+            } else {
+                double x = (static_cast<double>(mcPendingByte) + 0.5) / 256.0;
+                double y = (static_cast<double>(b) + 0.5) / 256.0;
+                if ((x * x + y * y) <= 1.0) {
+                    mcInCircle++;
+                }
+                mcTotalPairs++;
+                mcPendingByte = -1;
+            }
+        }
+        totalBytes += bytesRead;
+    }
+
+    if (totalBytes == 0) {
+        std::cerr << "Fehler: Keine Daten gelesen.\n";
+        return 1;
+    }
+
+    // 1. Shannon-Entropie
+    double shannonEntropy = 0.0;
+    for (int i = 0; i < 256; ++i) {
+        if (counts[i] > 0) {
+            double p = static_cast<double>(counts[i]) / totalBytes;
+            shannonEntropy -= p * (std::log(p) / std::log(2.0));
+        }
+    }
+    double entropyRatio = (shannonEntropy / 8.0) * 100.0;
+
+    // 2. Chi-Quadrat Test (df = 255)
+    double expected = static_cast<double>(totalBytes) / 256.0;
+    double chiSquare = 0.0;
+    for (int i = 0; i < 256; ++i) {
+        double diff = static_cast<double>(counts[i]) - expected;
+        chiSquare += (diff * diff) / expected;
+    }
+
+    // 3. Arithmetischer Mittelwert
+    double mean = sumBytes / totalBytes;
+
+    // 4. Bit-Balance
+    double bitBalance = (static_cast<double>(totalOnes) / (totalBytes * 8.0)) * 100.0;
+
+    // 5. Serielle Autokorrelation
+    double serialCorr = (corrDenom > 0.0) ? (corrNumerator / corrDenom) : 0.0;
+
+    // 6. Monte Carlo Pi
+    double piEst = 0.0;
+    double piErrorPercent = 0.0;
+    constexpr double PI_ACTUAL = 3.14159265358979323846;
+    if (mcTotalPairs > 0) {
+        piEst = 4.0 * (static_cast<double>(mcInCircle) / static_cast<double>(mcTotalPairs));
+        piErrorPercent = std::abs(piEst - PI_ACTUAL) / PI_ACTUAL * 100.0;
+    }
+
+    // Ausgabe
+    std::cout << " [1] Shannon-Entropie:\n"
+              << "     Gemessen:        " << std::fixed << std::setprecision(6) << shannonEntropy << " Bits / Byte\n"
+              << "     Entropiedichte:  " << std::fixed << std::setprecision(2) << entropyRatio << " % des theoretischen Maximums (8.000000)\n\n";
+
+    std::cout << " [2] Chi-Quadrat Anpassungstest (df = 255):\n"
+              << "     Wert:            " << std::fixed << std::setprecision(2) << chiSquare << "\n";
+    if (totalBytes < 2560) {
+        std::cout << "     Hinweis:         Dateigroesse klein (< 2.5 KB), Chi-Quadrat nur eingeschraenkt aussagekraeftig.\n\n";
+    } else {
+        std::cout << "     Idealbereich:    180.00 - 330.00 (fuer 95 % Gleichverteilung)\n\n";
+    }
+
+    std::cout << " [3] Arithmetischer Mittelwert:\n"
+              << "     Gemessen:        " << std::fixed << std::setprecision(3) << mean << "\n"
+              << "     Ideal:           127.500 (Abweichung: " << std::abs(mean - 127.5) << ")\n\n";
+
+    std::cout << " [4] Bit-Balance (1-Bits zu 0-Bits):\n"
+              << "     Gemessen:        " << std::fixed << std::setprecision(3) << bitBalance << " %\n"
+              << "     Ideal:           50.000 % (Abweichung: " << std::abs(bitBalance - 50.0) << " %)\n\n";
+
+    std::cout << " [5] Serielle Autokorrelation (Lag-1):\n"
+              << "     Gemessen:        " << std::fixed << std::setprecision(6) << serialCorr << "\n"
+              << "     Ideal:           0.000000\n\n";
+
+    std::cout << " [6] Monte-Carlo-Schaetzung von Pi:\n"
+              << "     Geschaetzt:      " << std::fixed << std::setprecision(6) << piEst << "\n"
+              << "     Abweichung:      " << std::fixed << std::setprecision(3) << piErrorPercent << " % von Pi\n\n";
+
+    std::cout << "============================================================\n"
+              << " KRYPTOANALYTISCHE BEWERTUNG:\n"
+              << "============================================================\n";
+
+    if (shannonEntropy >= 7.9990 && chiSquare >= 180.0 && chiSquare <= 330.0 && std::abs(serialCorr) < 0.002) {
+        std::cout << " Einstufung: SEHR HOHE ENTROPIE (Kryptografische Guete)\n"
+                  << " Analyse:    Die Daten sind statistisch ununterscheidbar von echtem weissen\n"
+                  << "             Rauschen. Verhalten deckt sich mit starker Ciphertext-Verschluesselung\n"
+                  << "             (z. B. ChaCha20, AES) oder kryptografischen CSPRNG-Stroemen.\n";
+    } else if (shannonEntropy >= 7.9500) {
+        std::cout << " Einstufung: HOHE ENTROPIE (Ciphertext oder starke Kompression)\n"
+                  << " Analyse:    Sehr hohe Gleichverteilung. Typisch fuer stark komprimierte Archive\n"
+                  << "             (z. B. gzip, zstd, xz) oder verschluesselte Bloecke mit geringen Randeffekten.\n";
+    } else if (shannonEntropy >= 6.5000) {
+        std::cout << " Einstufung: MITTLERE ENTROPIE (Binärcode / Teilstrukturiert)\n"
+                  << " Analyse:    Typisch fuer ausfuehrbaren Maschinencode (ELF / PE Binaries),\n"
+                  << "             unkomprimierte Bilder, Bytecode oder schwach verschluesselte Daten.\n";
+    } else {
+        std::cout << " Einstufung: NIEDRIGE ENTROPIE (Klartext / Strukturierte Daten)\n"
+                  << " Analyse:    Hohe Redundanz und erkennbare Muster. Typisch fuer Textdateien,\n"
+                  << "             Quellcode, JSON, XML, Datenbanken oder Null-Bytes.\n";
+    }
+    std::cout << "============================================================\n\n";
+
+    return 0;
 }
 
 } // namespace rfs
