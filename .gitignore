@@ -1,6 +1,10 @@
+# Binaries
 /rfs
-/rfs-linux
-/rfs-windows.exe
+/rfs-*
+/test_crypto*
+*.o
+
+# Split files & temporary test outputs
 *.rfs1
 *.rfs2
 *.orig

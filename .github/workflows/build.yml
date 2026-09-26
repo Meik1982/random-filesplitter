@@ -1,15 +1,34 @@
-name: Build RFS Binaries
+name: CI & Build RFS Binaries
 
 on:
   push:
+    branches:
+      - main
     tags:
-      - 'release*'
       - 'v*'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
+  test:
+    name: Run Unit Tests & Diagnostics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build & Run Test Suite
+        run: |
+          make test
+          make all
+          ./rfs --entropy-test
+          ./rfs --benchmark
+
   build:
     name: Build for ${{ matrix.os }} (${{ matrix.arch }})
+    needs: test
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -17,19 +36,19 @@ jobs:
           - os: linux
             runner: ubuntu-latest
             cc: g++
-            cflags: "-O3 -Wall -Wextra -static -pthread"
+            cflags: "-O3 -Wall -Wextra -static -pthread -Iinclude"
             artifact_name: rfs-linux-x86_64
             arch: x86_64
           - os: windows
             runner: ubuntu-latest
             cc: x86_64-w64-mingw32-g++
-            cflags: "-O3 -Wall -Wextra -static -pthread"
+            cflags: "-O3 -Wall -Wextra -static -pthread -Iinclude"
             artifact_name: rfs-windows-x86_64.exe
             arch: x86_64
           - os: macos
             runner: macos-latest
             cc: clang++
-            cflags: "-O3 -Wall -Wextra -std=c++11 -pthread"
+            cflags: "-O3 -Wall -Wextra -std=c++11 -pthread -Iinclude"
             artifact_name: rfs-macos-arm64
             arch: arm64
 
@@ -45,10 +64,36 @@ jobs:
 
       - name: Compile
         run: |
-          ${{ matrix.cc }} ${{ matrix.cflags }} rfs.cpp -o ${{ matrix.artifact_name }}
+          ${{ matrix.cc }} ${{ matrix.cflags }} src/chacha20.cpp src/sha256.cpp src/entropy.cpp src/splitter.cpp src/main.cpp -o ${{ matrix.artifact_name }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/rfs-linux-x86_64
+            dist/rfs-windows-x86_64.exe
+            dist/rfs-macos-arm64
+          generate_release_notes: true

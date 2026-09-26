@@ -1,0 +1,7 @@
+-Iinclude
+-std=c++11
+-Wall
+-Wextra
+-O3
+-mavx2
+-pthread

@@ -1,37 +1,58 @@
-# rfs - Random File Splitter (2026 High-Performance & Security Edition) 🛡️
+# rfs - Random File Splitter (v2.0.0 High-Performance & Security Edition) 🛡️
 
-**rfs** ist ein hochoptimiertes, plattformunabhängiges System-Tool zur **physischen Transportsicherung** und zum kryptografischen Aufteilen von Dateien. Es basiert auf dem Prinzip der **XOR-Verknüpfung**: Eine Datei wird in zwei Teile zerlegt, die für sich allein genommen mathematisch ununterscheidbar von weißem Rauschen sind. Erst beim Zusammenführen beider Teile wird die Originaldatei bit-genau rekonstruiert.
+**rfs** ist ein hochoptimiertes, modulares und plattformunabhängiges C++11 System-Tool zur **physischen Transportsicherung** und kryptografischen Aufteilung von Dateien. Es basiert auf dem Prinzip der **Information-Theoretic Security via XOR**: Eine Datei wird in zwei Hälften zerlegt, die für sich allein genommen mathematisch ununterscheidbar von weißem Rauschen sind (100 % Plausible Deniability, Zero Fingerprint). Erst beim Zusammenführen beider Teile wird die Originaldatei bit-genau rekonstruiert.
 
-## 🚀 Features & Architektur (v1.2)
+---
 
-* **Plattformunabhängiger Entropie-Harvester:** Erntet ohne externe Bibliotheken physikalische CPU- und Cache-Jitter-Entropie (Pointer-Chasing über einen 1 KB Aligned-Memory-Pool zur Provokation echter L2/L3- und DRAM-Bus-Latenzen), kombiniert mit Hardware-Entropie (`std::random_device`), Monotonic Clocks und ASLR-Speicherlayout.
-* **ChaCha20 CSPRNG mit AVX2-SIMD:** Kryptografisch sichere 256-Bit-Zufallsgenerierung mit nativer 4-Block-Parallelverarbeitung via AVX2 (bis zu ~850 MB/s Krypto-Durchsatz) und portablem 64-Bit-Fallback.
-* **Multi-Threaded Pipelining & Asynchrones I/O:** Vollständig entkoppeltes I/O-Streaming via `std::async`/`std::future` (Double-Buffering). Festplatten-Lese-/Schreibzyklen und CPU-Krypto-Berechnungen laufen parallel.
-* **Paralleles Hashing:** SHA-256 Integritätsprüfung wird blockweise in einem separaten Thread ausgeführt, ohne den Krypto-Stream zu blockieren.
-* **Explicit Secure Wipe:** Krypto-Hygiene durch volatiles Überschreiben (`secure_wipe_memory`) aller sensitiven Schlüssel-, Nonce- und Hash-Puffer im RAM.
-* **Stealth Padding:** Jede Datei wird mit zufälligem Rauschen (1-100 KB) aufgefüllt, um die exakte Dateigröße vor Metadaten-Analysen zu verschleiern.
-* **Integrierter Verify-Modus (`--verify`):** Schnelle Prüfung der Datei-Integrität und SHA-256-Prüfsumme beider Hälften, ohne die Datei auf die Festplatte schreiben zu müssen.
-* **Entropie- & Kryptoanalyse-Diagnose (`--entropy-test`):** Zweiphasige Validierung der physikalischen Entropiequalität:
-  - *Phase 1:* Analyse der unkonditionierten CPU-Jitter-Rohdaten (Timing-Streuung $\sigma$, Min-Entropie-Buckets, LSB-Bitflips). Erkennt starre Emulatoren oder deterministische VMs.
-  - *Phase 2:* NIST-Statistik-Suite auf den Schlüsselstrom (Shannon-Entropie, Chi-Quadrat $\chi^2$, Bit-Balance, serielle Autokorrelation).
-* **Echtzeit-Fortschrittsanzeige:** Nicht-blockierende Terminal-Progressbar mit Live-Durchsatzanzeige (`MB/s`).
-* **Hardware-Benchmark (`--benchmark`):** Schneller Leistungstest für Entropie-, ChaCha20-, XOR-, SHA-256- und Pipeline-Durchsatz.
-* **100% Portabel:** Reiner ISO C++11 Code ohne externe Abhängigkeiten für Linux, Windows, macOS, ReactOS und BSD.
+## 🚀 Features & Architektur (v2.0.0 / RFS2)
+
+* **Modulare Zero-Dependency C++11 Architektur:** Vollständig entkoppelte Module (`include/rfs/`, `src/`, `tests/`) ohne externe Bibliotheken. Kompiliert in unter 2 Sekunden auf Linux, Windows, macOS, BSD und ReactOS.
+* **RFS2 Stealth Footer mit Sofort-Validierung:**
+  * Die letzten 44 Bytes jeder Datei enthalten ge-XORte Metadaten: 4 Bytes Magic-Tag (`RFS2`), 32 Bytes SHA-256 Prüfsumme und 8 Bytes Original-Dateigröße (Little-Endian).
+  * **Zero Fingerprint:** Jeder Metadaten-Byte wird einzeln mit einem Zufalls-Byte maskiert. Einzeln betrachtet bleibt jede Datei 100 % weißes Rauschen.
+  * Beim Zusammenführen (`rfs file1 file2`) prüft das Tool den Magic-Tag in unter 1 Millisekunde und bricht bei falschen Dateien sofort ab.
+* **ChaCha20 CSPRNG mit 8-Block AVX2-SIMD:** Vollständige Ausnutzung aller 8 Lanes der 256-Bit YMM-Register (512 Bytes pro Runde, **> 1,1 GB/s Durchsatz**) mit portablem 64-Bit-Fallback für Nicht-AVX2- und ARM-CPUs.
+* **Double-Buffering Pipeline mit persistenten Worker-Threads:** Beseitigung jeglichen Thread-Erzeugungs-Overheads. Datenverarbeitung (ChaCha20/XOR), Disk-I/O und SHA-256 Hashing laufen parallel über feste Worker-Threads.
+* **Gehärteter Entropie-Harvester:** Erntet Hardware-RNG (`std::random_device`), Monotonic Clocks, ASLR-Pointer und echten physikalischen L2/L3-Cache- und Bus-Jitter (2 MB Memory-Pool mit nicht-vorhersagbarem Sattolo-Permutationszyklus zur bewussten Aushebelung von Hardware-Stream-Prefetchern).
+* **Vollständige Krypto-Hygiene:** Sichere Nullung (`secure_wipe_memory` mit Compiler-Memory-Barriere gegen Dead-Store-Elimination) aller Schlüssel-, Nonce-, Hash- und Klartext-Arbeitsspeicherpuffer im RAM.
+* **Überschreibschutz & CLI-Flexibilität:**
+  * Schutz vor versehentlichem Überschreiben bestehender Dateien (`-f / --force` zum Erzwingen).
+  * Benutzerdefinierter Zielpfad (`-o / --output <pfad>`).
+  * Versionsausgabe (`-V / --version`) und Hilfeseite (`-h / --help`).
+* **Zweiphasige Diagnose-Suite (`--entropy-test`):**
+  * *Phase 1:* Analyse des unkonditionierten CPU- und Memory-Timing-Jitters ($\sigma$, diskrete Buckets, Bit-Transitionsrate, Shannon-Entropie).
+  * *Phase 2:* NIST-Statistik-Suite auf den ChaCha20-Schlüsselstrom (Shannon-Entropie, $\chi^2$-Anpassungstest, Bit-Balance, serielle Autokorrelation).
+* **Hardware-Benchmark (`--benchmark`):** Schnelle Live-Messung der Durchsatzraten für Entropie, ChaCha20-SIMD, Fast-Path XOR, SHA-256 und Pipelining.
 
 ---
 
 ## 🛠️ Kompilierung & Installation
 
-Da der Code keine externen Bibliotheken benötigt, reicht ein gängiger C++ Compiler.
+Das Projekt benötigt keine externen Abhängigkeiten, lediglich einen gängigen C++11-fähigen Compiler (`g++` oder `clang++`) und `make`.
 
-### Für maximale Performance (AVX2-optimiert):
+### Mit Makefile (Empfohlen):
 ```bash
-g++ -O3 -mavx2 rfs.cpp -o rfs -pthread
+# Bauen (nutzt automatisch AVX2, falls vorhanden)
+make -j$(nproc)
+
+# Unit-Tests ausführen
+make test
+
+# Entropie-Diagnose & Hardware-Benchmark
+make entropy
+make benchmark
+
+# Systemweite Installation (nach /usr/local/bin)
+sudo make install
 ```
 
-### Portabel für beliebige CPUs (Fallback):
+### Manuelle Kompilierung (Einzeiler):
 ```bash
-g++ -O3 rfs.cpp -o rfs -pthread
+# Mit AVX2-SIMD-Beschleunigung:
+g++ -O3 -mavx2 -pthread -Iinclude src/*.cpp -o rfs
+
+# Portabel für beliebige x86_64 / ARM / Raspberry Pi CPUs:
+g++ -O3 -pthread -Iinclude src/*.cpp -o rfs
 ```
 
 ---
@@ -39,37 +60,66 @@ g++ -O3 rfs.cpp -o rfs -pthread
 ## 📖 Benutzung
 
 ### 1. Datei splitten (Verschlüsseln)
-Erstellt aus einer Quelldatei zwei Teile mit den Endungen `.rfs1` und `.rfs2`:
+Erstellt aus einer Datei zwei scheinbar zufällige Rausch-Dateien (`.rfs1` und `.rfs2`):
 ```bash
-./rfs archiv.tar.gz
+rfs backup.tar.gz
 ```
 
 ### 2. Datei wiederherstellen (Entschlüsseln)
-Rekonstruiert die Originaldatei und verifiziert automatisch die SHA-256 Integrität (beliebige Argument-Reihenfolge):
+Rekonstruiert die Originaldatei, prüft den RFS2-Magic-Tag und verifiziert automatisch die SHA-256-Integrität:
 ```bash
-./rfs archiv.tar.gz.rfs1 archiv.tar.gz.rfs2
+rfs backup.tar.gz.rfs1 backup.tar.gz.rfs2
 ```
 
-### 3. Nur Integrität prüfen (ohne Schreiben auf Disk)
-Überprüft, ob beide Teile intakt und fehlerfrei zusammenpassen:
+### 3. Benutzerdefinierter Zielpfad & Überschreiben erzwingen
 ```bash
-./rfs --verify archiv.tar.gz.rfs1 archiv.tar.gz.rfs2
+rfs backup.tar.gz.rfs1 backup.tar.gz.rfs2 -o /pfad/zu/ziel.tar.gz -f
 ```
 
-### 4. Entropie- & Krypto-Qualitätsanalyse
-Validiert den Hardware-Jitter und analysiert den Zufallsstrom nach NIST-Kriterien:
+### 4. Nur Integrität prüfen (Dry-Run / Verify)
+Prüft die Validität beider Teile ohne Schreibzugriff auf die Festplatte:
 ```bash
-./rfs --entropy-test
+rfs --verify backup.tar.gz.rfs1 backup.tar.gz.rfs2
 ```
 
-### 5. Hardware-Benchmark ausführen
-Testet die maximale Krypto- und I/O-Geschwindigkeit deines Systems:
+### 5. Entropie-Diagnose & NIST-Kryptoanalyse
 ```bash
-./rfs --benchmark
+rfs --entropy-test
+```
+
+### 6. Hardware-Benchmark ausführen
+```bash
+rfs --benchmark
+```
+
+---
+
+## 📂 Projektstruktur
+
+```text
+random-filesplitter/
+├── include/rfs/
+│   ├── types.hpp        # RFS2-Konstanten, Magic-Tag, Endianness & Secure Wipe
+│   ├── chacha20.hpp     # ChaCha20 CSPRNG (AVX2 8-Block SIMD & 64-Bit Fallback)
+│   ├── sha256.hpp       # SHA-256 Hashing-Engine
+│   ├── entropy.hpp      # UniversalEntropyHarvester & Jitter-Diagnose
+│   ├── splitter.hpp     # Kern-Logik: Split, Merge, Verify & Benchmark
+│   └── progress.hpp     # Nicht-blockierende Terminal-Fortschrittsanzeige
+├── src/
+│   ├── chacha20.cpp
+│   ├── sha256.cpp
+│   ├── entropy.cpp
+│   ├── splitter.cpp
+│   └── main.cpp         # CLI-Parser
+├── tests/
+│   └── test_crypto.cpp  # Testsuite für NIST-Vektoren, E2E & Magic-Tag
+├── .github/workflows/
+│   └── build.yml        # CI-Matrix für Linux, Windows & macOS + Release-Deploy
+└── Makefile
 ```
 
 ---
 
 ## ⚖️ Lizenz
 
-Dieses Programm wurde von **Meik Augenblick** unter der **Lesser GNU General Public License (LGPL)** geschrieben.
+Dieses Programm wurde von **Meik Augenblick** unter der **Lesser GNU General Public License (LGPL v3)** geschrieben.
