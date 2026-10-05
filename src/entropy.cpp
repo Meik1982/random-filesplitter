@@ -1,6 +1,7 @@
 #include "rfs/entropy.hpp"
 #include "rfs/sha256.hpp"
 #include "rfs/chacha20.hpp"
+#include "rfs/types.hpp"
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -11,6 +12,17 @@
 #include <map>
 #include <numeric>
 #include <cstring>
+
+#if defined(__linux__)
+#include <sys/random.h>
+#include <fcntl.h>
+#include <unistd.h>
+#elif defined(_WIN32)
+#include <bcrypt.h>
+#elif defined(__unix__) || defined(__APPLE__)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace rfs {
 
@@ -47,7 +59,45 @@ void initPermutationPool(std::vector<CacheLineNode>& pool, uint32_t seedVal) {
 void UniversalEntropyHarvester::harvestSeed(uint8_t key[32], uint8_t nonce[12]) {
     SHA256 hasher;
 
-    // 1. Hardware-Zufall (TRNG / CPU RDRAND falls vorhanden)
+    // 1. Betriebssystem-Kernel-CSPRNG (Linux getrandom, Windows BCrypt, /dev/urandom)
+    uint8_t osEntropy[64];
+    bool osEntropySuccess = false;
+
+#if defined(__linux__)
+    ssize_t ret = getrandom(osEntropy, sizeof(osEntropy), 0);
+    if (ret == static_cast<ssize_t>(sizeof(osEntropy))) {
+        osEntropySuccess = true;
+    } else {
+        int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+        if (fd >= 0) {
+            ssize_t r = read(fd, osEntropy, sizeof(osEntropy));
+            if (r == static_cast<ssize_t>(sizeof(osEntropy))) {
+                osEntropySuccess = true;
+            }
+            close(fd);
+        }
+    }
+#elif defined(_WIN32)
+    if (BCryptGenRandom(NULL, osEntropy, sizeof(osEntropy), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0) {
+        osEntropySuccess = true;
+    }
+#elif defined(__unix__) || defined(__APPLE__)
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        ssize_t r = read(fd, osEntropy, sizeof(osEntropy));
+        if (r == static_cast<ssize_t>(sizeof(osEntropy))) {
+            osEntropySuccess = true;
+        }
+        close(fd);
+    }
+#endif
+
+    if (osEntropySuccess) {
+        hasher.update(osEntropy, sizeof(osEntropy));
+        secure_wipe_memory(osEntropy, sizeof(osEntropy));
+    }
+
+    // 2. Hardware-Zufall (TRNG / CPU RDRAND falls vorhanden)
     try {
         std::random_device rd;
         for (int i = 0; i < 32; ++i) {
@@ -57,7 +107,7 @@ void UniversalEntropyHarvester::harvestSeed(uint8_t key[32], uint8_t nonce[12]) 
     } catch (...) {
     }
 
-    // 2. High-Resolution & Monotonic Clocks
+    // 3. High-Resolution & Monotonic Clocks
     auto nowWall = std::chrono::system_clock::now().time_since_epoch().count();
     auto nowMono = std::chrono::steady_clock::now().time_since_epoch().count();
     auto nowHigh = std::chrono::high_resolution_clock::now().time_since_epoch().count();

@@ -20,6 +20,14 @@
 #include <immintrin.h>
 #endif
 
+#if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+#if defined(__GLIBCXX__)
+#include <ext/stdio_filebuf.h>
+#endif
+#endif
+
 namespace rfs {
 
 namespace {
@@ -242,6 +250,46 @@ private:
     std::thread m_thread;
 };
 
+class SequentialInputStream {
+public:
+    explicit SequentialInputStream(const std::string& path) {
+#if defined(__linux__) && defined(__GLIBCXX__)
+        m_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (m_fd >= 0) {
+            posix_fadvise(m_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+            m_filebuf = std::make_unique<__gnu_cxx::stdio_filebuf<char>>(m_fd, std::ios::in | std::ios::binary);
+            m_stream = std::make_unique<std::istream>(m_filebuf.get());
+        }
+#else
+        auto s = std::make_unique<std::ifstream>(path, std::ios::binary);
+        if (s->is_open()) {
+            m_stream = std::move(s);
+        }
+#endif
+    }
+
+    ~SequentialInputStream() {
+#if defined(__linux__) && defined(__GLIBCXX__)
+        m_stream.reset();
+        m_filebuf.reset();
+        if (m_fd >= 0) {
+            close(m_fd);
+        }
+#endif
+    }
+
+    bool is_open() const { return m_stream && m_stream->good(); }
+    explicit operator bool() const { return is_open(); }
+    std::istream& get() { return *m_stream; }
+
+private:
+#if defined(__linux__) && defined(__GLIBCXX__)
+    int m_fd = -1;
+    std::unique_ptr<__gnu_cxx::stdio_filebuf<char>> m_filebuf;
+#endif
+    std::unique_ptr<std::istream> m_stream;
+};
+
 } // namespace
 
 void displayVersion() {
@@ -261,14 +309,15 @@ void displayHelp() {
               << " RFS - Random File Splitter v" << APP_VERSION << " (" << FORMAT_TAG << " Edition)\n"
               << "============================================================\n"
               << " Verwendung:\n"
-              << "   Splitten:         rfs <Datei>\n"
-              << "   Wiederherstellen: rfs <Datei.rfs1> <Datei.rfs2> [-o <Ziel>] [-f]\n"
-              << "   Integritaetstest: rfs --verify <Datei.rfs1> <Datei.rfs2>\n"
+              << "   Splitten:         rfs <Datei> [-B <Puffer>]\n"
+              << "   Wiederherstellen: rfs <Datei.rfs1> <Datei.rfs2> [-o <Ziel>] [-f] [-B <Puffer>]\n"
+              << "   Integritaetstest: rfs --verify <Datei.rfs1> <Datei.rfs2> [-B <Puffer>]\n"
               << "   Datei-Entropie:   rfs -a <Datei>  (oder --analyze / --file-entropy)\n"
               << "   System-Entropie:  rfs --entropy-test\n"
               << "   Hardware-Test:    rfs --benchmark\n\n"
               << " Optionen:\n"
               << "   -a, --analyze <Pfad> Datei auf Entropie und kryptografische Guete pruefen\n"
+              << "   -B, --block-size <G> Puffergroesse (z.B. 64K, 1M, 4M, 16M; Standard: 4M)\n"
               << "   -o, --output <Pfad>  Zielpfad fuer wiederhergestellte Datei\n"
               << "   -f, --force          Bestehende Zieldatei ohne Rueckfrage ueberschreiben\n"
               << "   -v, --verify         Nur Integritaet pruefen (keine Datei schreiben)\n"
@@ -279,11 +328,12 @@ void displayHelp() {
 }
 
 int splitFile(const SplitOptions& opts) {
-    std::ifstream inputFile(opts.inputPath, std::ios::binary);
-    if (!inputFile) {
+    SequentialInputStream inStream(opts.inputPath);
+    if (!inStream) {
         std::cerr << "Fehler: Quelldatei '" << opts.inputPath << "' konnte nicht geoeffnet werden.\n";
         return 1;
     }
+    std::istream& inputFile = inStream.get();
 
     std::string cr1FileName = opts.inputPath + ".rfs1";
     std::string cr2FileName = opts.inputPath + ".rfs2";
@@ -306,7 +356,7 @@ int splitFile(const SplitOptions& opts) {
 
     SHA256 hasher;
 
-    const size_t BUFFER_SIZE = 4 * 1024 * 1024;
+    const size_t BUFFER_SIZE = opts.blockSize;
     std::vector<char> buffer(BUFFER_SIZE);
     std::vector<char> cr1Buf(BUFFER_SIZE);
     std::vector<char> cr2Buf(BUFFER_SIZE);
@@ -433,12 +483,14 @@ int restoreOrVerifyFile(const RestoreOptions& opts) {
         std::swap(fileRfs1, fileRfs2);
     }
 
-    std::ifstream cr1(fileRfs1, std::ios::binary);
-    std::ifstream cr2(fileRfs2, std::ios::binary);
-    if (!cr1 || !cr2) {
+    SequentialInputStream inCr1(fileRfs1);
+    SequentialInputStream inCr2(fileRfs2);
+    if (!inCr1 || !inCr2) {
         std::cerr << "Fehler: Mindestens eine Eingabedatei konnte nicht geoeffnet werden.\n";
         return 1;
     }
+    std::istream& cr1 = inCr1.get();
+    std::istream& cr2 = inCr2.get();
 
     cr1.seekg(0, std::ios::end);
     cr2.seekg(0, std::ios::end);
@@ -523,7 +575,7 @@ int restoreOrVerifyFile(const RestoreOptions& opts) {
     cr2.seekg(0, std::ios::beg);
 
     SHA256 hasher;
-    const size_t BUFFER_SIZE = 4 * 1024 * 1024;
+    const size_t BUFFER_SIZE = opts.blockSize;
     std::vector<char> b1(BUFFER_SIZE);
     std::vector<char> b2(BUFFER_SIZE);
     std::vector<char> bOut(BUFFER_SIZE);

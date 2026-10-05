@@ -38,6 +38,7 @@ int main(int argc, char* argv[]) {
     bool verifyOnly = false;
     bool force = false;
     bool silent = false;
+    size_t blockSize = rfs::DEFAULT_BLOCK_SIZE;
     std::string outputPath;
     std::vector<std::string> positional;
 
@@ -45,6 +46,19 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "-v" || arg == "--verify" || arg == "--check") {
             verifyOnly = true;
+        } else if (arg == "-B" || arg == "--block-size") {
+            if (i + 1 < argc) {
+                size_t parsedSize = 0;
+                if (!rfs::parseBlockSize(argv[++i], parsedSize)) {
+                    std::cerr << "Fehler: Ungueltige Blockgroesse '" << argv[i] << "'.\n"
+                              << "Erlaubter Bereich: 64K bis 256M (z.B. 64K, 1M, 4M, 16M).\n";
+                    return 1;
+                }
+                blockSize = parsedSize;
+            } else {
+                std::cerr << "Fehler: Option " << arg << " erfordert eine Groessenangabe.\n";
+                return 1;
+            }
         } else if (arg == "-a" || arg == "--analyze" || arg == "--file-entropy") {
             if (i + 1 < argc) {
                 return rfs::analyzeFileEntropy(argv[++i]);
@@ -84,6 +98,7 @@ int main(int argc, char* argv[]) {
         }
         rfs::SplitOptions opts;
         opts.inputPath = positional[0];
+        opts.blockSize = blockSize;
         opts.silent = silent;
         return rfs::splitFile(opts);
     }
@@ -93,6 +108,7 @@ int main(int argc, char* argv[]) {
         opts.file1 = positional[0];
         opts.file2 = positional[1];
         opts.outputPath = outputPath;
+        opts.blockSize = blockSize;
         opts.verifyOnly = verifyOnly;
         opts.force = force;
         opts.silent = silent;

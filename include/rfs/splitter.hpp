@@ -8,6 +8,7 @@ namespace rfs {
 
 struct SplitOptions {
     std::string inputPath;
+    size_t blockSize = DEFAULT_BLOCK_SIZE;
     bool silent = false;
 };
 
@@ -15,6 +16,7 @@ struct RestoreOptions {
     std::string file1;
     std::string file2;
     std::string outputPath;
+    size_t blockSize = DEFAULT_BLOCK_SIZE;
     bool verifyOnly = false;
     bool force = false;
     bool silent = false;

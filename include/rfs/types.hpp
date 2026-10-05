@@ -21,7 +21,50 @@ constexpr size_t HASH_SIZE = 32;
 constexpr size_t SIZE_HEADER_SIZE = 8;
 constexpr size_t FOOTER_SIZE = MAGIC_SIZE + HASH_SIZE + SIZE_HEADER_SIZE; // 44 Bytes
 
+constexpr size_t DEFAULT_BLOCK_SIZE = 4 * 1024 * 1024;       // 4 MiB
+constexpr size_t MIN_BLOCK_SIZE     = 64 * 1024;             // 64 KiB
+constexpr size_t MAX_BLOCK_SIZE     = 256 * 1024 * 1024;     // 256 MiB
+
 const uint8_t RFS2_MAGIC_BYTES[4] = { 'R', 'F', 'S', '2' };
+
+// ============================================================================
+// Blockgrößen-Parser mit Suffix-Unterstützung (z.B. 64K, 1M, 4M, 16M)
+// ============================================================================
+inline bool parseBlockSize(const std::string& str, size_t& outBytes) {
+    if (str.empty()) return false;
+    size_t len = str.size();
+    char suffix = str.back();
+    uint64_t multiplier = 1;
+    std::string numPart = str;
+
+    if (suffix == 'k' || suffix == 'K') {
+        multiplier = 1024ULL;
+        numPart = str.substr(0, len - 1);
+    } else if (suffix == 'm' || suffix == 'M') {
+        multiplier = 1024ULL * 1024ULL;
+        numPart = str.substr(0, len - 1);
+    } else if (suffix == 'g' || suffix == 'G') {
+        multiplier = 1024ULL * 1024ULL * 1024ULL;
+        numPart = str.substr(0, len - 1);
+    }
+
+    if (numPart.empty()) return false;
+    for (char c : numPart) {
+        if (c < '0' || c > '9') return false;
+    }
+
+    try {
+        unsigned long long val = std::stoull(numPart);
+        uint64_t total = val * multiplier;
+        if (total < MIN_BLOCK_SIZE || total > MAX_BLOCK_SIZE) {
+            return false;
+        }
+        outBytes = static_cast<size_t>(total);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
 
 // ============================================================================
 // Krypto-Hygiene: Sichere Speicherlöschung gegen Dead-Store-Elimination

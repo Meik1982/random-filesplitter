@@ -296,6 +296,94 @@ void test_tamper_detection() {
     std::cout << "PASSED\n";
 }
 
+void test_variable_block_sizes() {
+    std::cout << "[TEST] Variable Blockgrößen (64K, 1M, 16M) & Suffix-Parser... " << std::flush;
+
+    // 1. Suffix-Parser Validierung
+    size_t sz = 0;
+    assert(parseBlockSize("64K", sz) && sz == 64 * 1024);
+    assert(parseBlockSize("64k", sz) && sz == 64 * 1024);
+    assert(parseBlockSize("1M", sz) && sz == 1024 * 1024);
+    assert(parseBlockSize("4M", sz) && sz == 4 * 1024 * 1024);
+    assert(parseBlockSize("16M", sz) && sz == 16 * 1024 * 1024);
+    assert(parseBlockSize("256M", sz) && sz == 256 * 1024 * 1024);
+    assert(!parseBlockSize("32K", sz)); // Unter Minimum (64K)
+    assert(!parseBlockSize("512M", sz)); // Über Maximum (256M)
+    assert(!parseBlockSize("invalid", sz));
+    assert(!parseBlockSize("", sz));
+
+    // 2. E2E mit 64 KiB Blockgröße
+    std::string pathOrig = "/tmp/rfs_test_var_blocks.dat";
+    std::string pathRest = "/tmp/rfs_test_var_blocks.restored";
+
+    {
+        std::ofstream f(pathOrig, std::ios::binary);
+        std::vector<char> data(512 * 1024);
+        for (size_t i = 0; i < data.size(); ++i) data[i] = static_cast<char>((i * 13 + 7) & 0xFF);
+        f.write(data.data(), data.size());
+    }
+
+    SplitOptions sOpts;
+    sOpts.inputPath = pathOrig;
+    sOpts.blockSize = 64 * 1024; // 64K
+    sOpts.silent = true;
+    assert(splitFile(sOpts) == 0);
+
+    RestoreOptions rOpts;
+    rOpts.file1 = pathOrig + ".rfs1";
+    rOpts.file2 = pathOrig + ".rfs2";
+    rOpts.outputPath = pathRest;
+    rOpts.blockSize = 128 * 1024; // Asymmetrische Restore-Blockgröße
+    rOpts.force = true;
+    rOpts.silent = true;
+    assert(restoreOrVerifyFile(rOpts) == 0);
+
+    {
+        std::ifstream f1(pathOrig, std::ios::binary);
+        std::ifstream f2(pathRest, std::ios::binary);
+        f1.seekg(0, std::ios::end);
+        f2.seekg(0, std::ios::end);
+        assert(f1.tellg() == f2.tellg());
+        std::vector<char> d1(f1.tellg()), d2(f2.tellg());
+        f1.seekg(0, std::ios::beg);
+        f2.seekg(0, std::ios::beg);
+        f1.read(d1.data(), d1.size());
+        f2.read(d2.data(), d2.size());
+        assert(d1 == d2);
+    }
+
+    std::remove(pathOrig.c_str());
+    std::remove((pathOrig + ".rfs1").c_str());
+    std::remove((pathOrig + ".rfs2").c_str());
+    std::remove(pathRest.c_str());
+    std::cout << "PASSED\n";
+}
+
+void test_entropy_harvesting_freshness() {
+    std::cout << "[TEST] Gehärtetes Entropie-Harvesting (OS CSPRNG + Jitter)... " << std::flush;
+    uint8_t k1[32], n1[12];
+    uint8_t k2[32], n2[12];
+
+    UniversalEntropyHarvester::harvestSeed(k1, n1);
+    UniversalEntropyHarvester::harvestSeed(k2, n2);
+
+    // Beide Aufrufe müssen völlig unabhängige Schlüssel und Nonces erzeugen
+    assert(std::memcmp(k1, k2, 32) != 0);
+    assert(std::memcmp(n1, n2, 12) != 0);
+
+    // Nicht-Trivialität (nicht nur Nullen)
+    uint8_t zeroKey[32] = {0};
+    uint8_t zeroNonce[12] = {0};
+    assert(std::memcmp(k1, zeroKey, 32) != 0);
+    assert(std::memcmp(n1, zeroNonce, 12) != 0);
+
+    secure_wipe_memory(k1, sizeof(k1));
+    secure_wipe_memory(n1, sizeof(n1));
+    secure_wipe_memory(k2, sizeof(k2));
+    secure_wipe_memory(n2, sizeof(n2));
+    std::cout << "PASSED\n";
+}
+
 int main() {
     std::cout << "=== RFS2 Test Suite ===\n";
     test_sha256();
@@ -303,7 +391,9 @@ int main() {
     test_endianness();
     test_e2e_lifecycle();
     test_large_file_pipeline();
+    test_variable_block_sizes();
     test_tamper_detection();
+    test_entropy_harvesting_freshness();
     test_file_entropy();
     std::cout << "=== Alle Tests erfolgreich abgeschlossen! ===\n";
     return 0;
