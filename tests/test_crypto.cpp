@@ -204,12 +204,106 @@ void test_file_entropy() {
     std::cout << "PASSED\n";
 }
 
+void test_large_file_pipeline() {
+    std::cout << "[TEST] Multi-Chunk Double-Buffering Pipeline (5 MB)... " << std::flush;
+    std::string pathOrig = "/tmp/rfs_test_large.dat";
+    std::string pathRest = "/tmp/rfs_test_large.restored";
+
+    // 5 MB Datei erzeugen
+    const size_t LARGE_SIZE = 5 * 1024 * 1024;
+    {
+        std::ofstream f(pathOrig, std::ios::binary);
+        std::vector<char> chunk(65536);
+        for (size_t i = 0; i < chunk.size(); ++i) chunk[i] = static_cast<char>((i * 17 + 3) & 0xFF);
+        size_t written = 0;
+        while (written < LARGE_SIZE) {
+            size_t toWrite = std::min(chunk.size(), LARGE_SIZE - written);
+            f.write(chunk.data(), toWrite);
+            written += toWrite;
+        }
+    }
+
+    SplitOptions sOpts;
+    sOpts.inputPath = pathOrig;
+    sOpts.silent = true;
+    assert(splitFile(sOpts) == 0);
+
+    RestoreOptions rOpts;
+    rOpts.file1 = pathOrig + ".rfs1";
+    rOpts.file2 = pathOrig + ".rfs2";
+    rOpts.outputPath = pathRest;
+    rOpts.force = true;
+    rOpts.silent = true;
+    assert(restoreOrVerifyFile(rOpts) == 0);
+
+    // Vergleich
+    {
+        std::ifstream f1(pathOrig, std::ios::binary);
+        std::ifstream f2(pathRest, std::ios::binary);
+        f1.seekg(0, std::ios::end);
+        f2.seekg(0, std::ios::end);
+        assert(f1.tellg() == f2.tellg());
+        assert(static_cast<size_t>(f1.tellg()) == LARGE_SIZE);
+    }
+
+    std::remove(pathOrig.c_str());
+    std::remove((pathOrig + ".rfs1").c_str());
+    std::remove((pathOrig + ".rfs2").c_str());
+    std::remove(pathRest.c_str());
+    std::cout << "PASSED\n";
+}
+
+void test_tamper_detection() {
+    std::cout << "[TEST] Integritaetsprüfung & Bit-Flip Tamper Detection... " << std::flush;
+    std::string pathOrig = "/tmp/rfs_test_tamper.dat";
+    std::string pathRest = "/tmp/rfs_test_tamper.restored";
+
+    {
+        std::ofstream f(pathOrig, std::ios::binary);
+        std::vector<char> buf(4096, 'A');
+        f.write(buf.data(), buf.size());
+    }
+
+    SplitOptions sOpts;
+    sOpts.inputPath = pathOrig;
+    sOpts.silent = true;
+    assert(splitFile(sOpts) == 0);
+
+    // Byte 10 in .rfs1 manipulieren (Bit-Flip)
+    {
+        std::fstream f1(pathOrig + ".rfs1", std::ios::in | std::ios::out | std::ios::binary);
+        f1.seekp(10, std::ios::beg);
+        char byte;
+        f1.get(byte);
+        f1.seekp(10, std::ios::beg);
+        f1.put(static_cast<char>(byte ^ 0xFF));
+    }
+
+    // Restore muss wegen SHA-256 Checksummenfehler abbrechen (Exit Code 2)
+    RestoreOptions rOpts;
+    rOpts.file1 = pathOrig + ".rfs1";
+    rOpts.file2 = pathOrig + ".rfs2";
+    rOpts.outputPath = pathRest;
+    rOpts.force = true;
+    rOpts.silent = true;
+    int res = restoreOrVerifyFile(rOpts);
+    assert(res == 2); // Hash mismatch detected!
+
+    std::remove(pathOrig.c_str());
+    std::remove((pathOrig + ".rfs1").c_str());
+    std::remove((pathOrig + ".rfs2").c_str());
+    std::remove(pathRest.c_str());
+    std::cout << "PASSED\n";
+}
+
 int main() {
     std::cout << "=== RFS2 Test Suite ===\n";
     test_sha256();
     test_chacha20();
     test_endianness();
     test_e2e_lifecycle();
+    test_large_file_pipeline();
+    test_tamper_detection();
     test_file_entropy();
     std::cout << "=== Alle Tests erfolgreich abgeschlossen! ===\n";
     return 0;

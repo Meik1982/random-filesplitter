@@ -1,7 +1,11 @@
 -Iinclude
--std=c++11
+-std=c++17
 -Wall
 -Wextra
 -O3
 -mavx2
 -pthread
+-fstack-protector-strong
+-fstack-clash-protection
+-D_FORTIFY_SOURCE=3
+-fPIE

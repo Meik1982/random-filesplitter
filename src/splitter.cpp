@@ -16,6 +16,10 @@
 #include <algorithm>
 #include <sys/stat.h>
 
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 namespace rfs {
 
 namespace {
@@ -26,7 +30,7 @@ bool fileExists(const std::string& path) {
 }
 
 // ============================================================================
-// Asynchroner I/O & Hash Worker (Double-Buffering, 0 Thread-Creation Overhead)
+// Asynchroner I/O & Hash Worker (Zero-Copy Swap Double-Buffering)
 // ============================================================================
 class SplitPipelineWorker {
 public:
@@ -80,35 +84,40 @@ public:
         if (m_thread.joinable()) {
             m_thread.join();
         }
+        secure_wipe_memory(m_buf1.data(), m_buf1.size());
+        secure_wipe_memory(m_buf2.data(), m_buf2.size());
         secure_wipe_memory(m_plain.data(), m_plain.size());
+        secure_wipe_memory(m_work1.data(), m_work1.size());
+        secure_wipe_memory(m_work2.data(), m_work2.size());
+        secure_wipe_memory(m_workPlain.data(), m_workPlain.size());
         return !m_ioError;
     }
 
 private:
     void workerLoop() {
         while (true) {
-            std::vector<char> work1, work2, workPlain;
             size_t workSize = 0;
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
                 m_cvWork.wait(lock, [this]() { return m_hasWork; });
                 if (m_stop) break;
 
-                work1 = m_buf1;
-                work2 = m_buf2;
-                workPlain = m_plain;
+                // O(1) Zero-Copy Swap der Puffer ohne Re-Allokation
+                std::swap(m_work1, m_buf1);
+                std::swap(m_work2, m_buf2);
+                std::swap(m_workPlain, m_plain);
                 workSize = m_size;
                 m_hasWork = false;
             }
 
-            m_hasher.update(reinterpret_cast<const uint8_t*>(workPlain.data()), workSize);
+            m_hasher.update(reinterpret_cast<const uint8_t*>(m_workPlain.data()), workSize);
 
-            m_f1.write(work1.data(), workSize);
-            m_f2.write(work2.data(), workSize);
+            m_f1.write(m_work1.data(), workSize);
+            m_f2.write(m_work2.data(), workSize);
 
             bool ok = m_f1.good() && m_f2.good();
 
-            secure_wipe_memory(workPlain.data(), workPlain.size());
+            secure_wipe_memory(m_workPlain.data(), workSize);
 
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
@@ -125,6 +134,9 @@ private:
     std::vector<char> m_buf1;
     std::vector<char> m_buf2;
     std::vector<char> m_plain;
+    std::vector<char> m_work1;
+    std::vector<char> m_work2;
+    std::vector<char> m_workPlain;
     size_t m_size = 0;
     bool m_busy;
     bool m_hasWork;
@@ -184,27 +196,28 @@ public:
             m_thread.join();
         }
         secure_wipe_memory(m_buf.data(), m_buf.size());
+        secure_wipe_memory(m_work.data(), m_work.size());
         return !m_ioError;
     }
 
 private:
     void workerLoop() {
         while (true) {
-            std::vector<char> work;
             size_t workSize = 0;
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
                 m_cvWork.wait(lock, [this]() { return m_hasWork; });
                 if (m_stop) break;
 
-                work = m_buf;
+                // O(1) Zero-Copy Swap der Puffer ohne Re-Allokation
+                std::swap(m_work, m_buf);
                 workSize = m_size;
                 m_hasWork = false;
             }
 
-            m_out.write(work.data(), workSize);
+            m_out.write(m_work.data(), workSize);
             bool ok = m_out.good();
-            secure_wipe_memory(work.data(), work.size());
+            secure_wipe_memory(m_work.data(), workSize);
 
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
@@ -217,6 +230,7 @@ private:
 
     std::ofstream& m_out;
     std::vector<char> m_buf;
+    std::vector<char> m_work;
     size_t m_size = 0;
     bool m_busy;
     bool m_hasWork;
@@ -311,17 +325,23 @@ int splitFile(const SplitOptions& opts) {
 
         rng.generateBytes(reinterpret_cast<uint8_t*>(cr2Buf.data()), bytesRead);
 
-        size_t words = bytesRead / 8;
-        const uint64_t* src64 = reinterpret_cast<const uint64_t*>(buffer.data());
-        const uint64_t* rnd64 = reinterpret_cast<const uint64_t*>(cr2Buf.data());
-        uint64_t* dst64       = reinterpret_cast<uint64_t*>(cr1Buf.data());
-
-        for (size_t i = 0; i < words; ++i) {
-            dst64[i] = src64[i] ^ rnd64[i];
+        size_t offset = 0;
+#if defined(__AVX2__)
+        while (offset + 32 <= static_cast<size_t>(bytesRead)) {
+            __m256i s = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(buffer.data() + offset));
+            __m256i r = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(cr2Buf.data() + offset));
+            __m256i d = _mm256_xor_si256(s, r);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(cr1Buf.data() + offset), d);
+            offset += 32;
         }
-
-        size_t tailOffset = words * 8;
-        for (size_t i = tailOffset; i < static_cast<size_t>(bytesRead); ++i) {
+#endif
+        while (offset + 8 <= static_cast<size_t>(bytesRead)) {
+            *reinterpret_cast<uint64_t*>(cr1Buf.data() + offset) =
+                *reinterpret_cast<const uint64_t*>(buffer.data() + offset) ^
+                *reinterpret_cast<const uint64_t*>(cr2Buf.data() + offset);
+            offset += 8;
+        }
+        for (size_t i = offset; i < static_cast<size_t>(bytesRead); ++i) {
             cr1Buf[i] = static_cast<char>(static_cast<uint8_t>(buffer[i]) ^ static_cast<uint8_t>(cr2Buf[i]));
         }
 
@@ -522,17 +542,23 @@ int restoreOrVerifyFile(const RestoreOptions& opts) {
         cr1.read(b1.data(), toRead);
         cr2.read(b2.data(), toRead);
 
-        size_t words = toRead / 8;
-        const uint64_t* p1_64 = reinterpret_cast<const uint64_t*>(b1.data());
-        const uint64_t* p2_64 = reinterpret_cast<const uint64_t*>(b2.data());
-        uint64_t* dst64       = reinterpret_cast<uint64_t*>(bOut.data());
-
-        for (size_t i = 0; i < words; ++i) {
-            dst64[i] = p1_64[i] ^ p2_64[i];
+        size_t offset = 0;
+#if defined(__AVX2__)
+        while (offset + 32 <= toRead) {
+            __m256i s = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b1.data() + offset));
+            __m256i r = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b2.data() + offset));
+            __m256i d = _mm256_xor_si256(s, r);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(bOut.data() + offset), d);
+            offset += 32;
         }
-
-        size_t tailOffset = words * 8;
-        for (size_t i = tailOffset; i < toRead; ++i) {
+#endif
+        while (offset + 8 <= toRead) {
+            *reinterpret_cast<uint64_t*>(bOut.data() + offset) =
+                *reinterpret_cast<const uint64_t*>(b1.data() + offset) ^
+                *reinterpret_cast<const uint64_t*>(b2.data() + offset);
+            offset += 8;
+        }
+        for (size_t i = offset; i < toRead; ++i) {
             bOut[i] = static_cast<char>(static_cast<uint8_t>(b1[i]) ^ static_cast<uint8_t>(b2[i]));
         }
 

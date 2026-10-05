@@ -13,7 +13,7 @@
 namespace rfs {
 
 constexpr const char* APP_NAME = "rfs";
-constexpr const char* APP_VERSION = "2.0.0";
+constexpr const char* APP_VERSION = "2.1.0";
 constexpr const char* FORMAT_TAG = "RFS2";
 
 constexpr size_t MAGIC_SIZE = 4;

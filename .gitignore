@@ -3,6 +3,7 @@
 /rfs-*
 /test_crypto*
 *.o
+*.d
 
 # Split files & temporary test outputs
 *.rfs1
