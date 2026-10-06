@@ -113,7 +113,7 @@ pub fn decode_footer(part1_tail: &[u8], part2_tail: &[u8]) -> Result<RfsMetadata
             xor60[i] = part1_tail[offset + i] ^ part2_tail[offset + i];
         }
 
-        if &xor60[0..4] == &RFS3_MAGIC {
+        if xor60[0..4] == RFS3_MAGIC {
             let mut blks = [0u8; BLKS_DIGEST_SIZE];
             blks.copy_from_slice(&xor60[4..4 + BLKS_DIGEST_SIZE]);
             let size = u64::from_le_bytes(
@@ -137,7 +137,7 @@ pub fn decode_footer(part1_tail: &[u8], part2_tail: &[u8]) -> Result<RfsMetadata
         xor44[i] = part1_tail[offset + i] ^ part2_tail[offset + i];
     }
 
-    if &xor44[0..4] == &RFS2_MAGIC {
+    if xor44[0..4] == RFS2_MAGIC {
         let mut sha256 = [0u8; SHA256_DIGEST_SIZE];
         sha256.copy_from_slice(&xor44[4..4 + SHA256_DIGEST_SIZE]);
         let size = u64::from_le_bytes(

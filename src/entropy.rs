@@ -140,11 +140,7 @@ pub fn run_entropy_diagnostics() -> i32 {
     // Quantisierungs-Kompensation für VMs / Hypervisor-Timer
     let mut varying_bits: u128 = 0;
     for i in 1..JITTER_SAMPLES {
-        let diff = if deltas[i] >= deltas[i - 1] {
-            deltas[i] - deltas[i - 1]
-        } else {
-            deltas[i - 1] - deltas[i]
-        };
+        let diff = deltas[i].abs_diff(deltas[i - 1]);
         varying_bits |= diff;
     }
     let shift = if varying_bits != 0 {
@@ -180,7 +176,7 @@ pub fn run_entropy_diagnostics() -> i32 {
     let jitter_variance_ok = stddev >= 1.0;
     let jitter_buckets_ok = buckets.len() >= 8;
     let jitter_bit_flips_ok =
-        (bit_flip_ratio >= 20.0 && bit_flip_ratio <= 80.0) || (raw_entropy >= 1.5 && stddev >= 5.0);
+        (20.0..=80.0).contains(&bit_flip_ratio) || (raw_entropy >= 1.5 && stddev >= 5.0);
     let jitter_entropy_ok = raw_entropy >= 1.2;
     let phase1_ok =
         jitter_variance_ok && jitter_buckets_ok && jitter_bit_flips_ok && jitter_entropy_ok;
@@ -259,7 +255,7 @@ pub fn run_entropy_diagnostics() -> i32 {
     let serial_corr = if sum_sq > 0.0 { sum_prod / sum_sq } else { 0.0 };
 
     let shannon_ok = shannon_entropy >= 7.9999;
-    let chi_ok = chi_square >= 180.0 && chi_square <= 330.0;
+    let chi_ok = (180.0..=330.0).contains(&chi_square);
     let mean_ok = (stream_mean - 127.5).abs() <= 0.1;
     let bit_balance_ok = (bit_balance_percent - 50.0).abs() <= 0.05;
     let corr_ok = serial_corr.abs() <= 0.001;
@@ -425,8 +421,7 @@ pub fn analyze_file_entropy(path: &Path) -> Result<(), String> {
     println!("============================================================");
 
     if shannon_entropy >= 7.9990
-        && chi_square >= 180.0
-        && chi_square <= 330.0
+        && (180.0..=330.0).contains(&chi_square)
         && serial_corr.abs() < 0.002
     {
         println!(" Einstufung: SEHR HOHE ENTROPIE (Kryptografische Guete)");

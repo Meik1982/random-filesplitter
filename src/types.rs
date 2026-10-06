@@ -64,7 +64,7 @@ pub fn parse_block_size(s: &str) -> Result<usize, String> {
         .checked_mul(multiplier)
         .ok_or_else(|| "Blockgröße überschreitet Adressbereich".to_string())?;
 
-    if bytes < MIN_BLOCK_SIZE || bytes > MAX_BLOCK_SIZE {
+    if !(MIN_BLOCK_SIZE..=MAX_BLOCK_SIZE).contains(&bytes) {
         return Err(format!(
             "Blockgröße {} Bytes außerhalb des erlaubten Bereichs (64 KiB - 256 MiB)",
             bytes

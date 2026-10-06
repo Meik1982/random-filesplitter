@@ -28,14 +28,17 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ---
 
-### 🟡 Stufe 2: Wichtig (High-Priority – Nächster Meilenstein)
-- [x] **Fast-Verify Modus (`rfs --verify <teil1> <teil2>`)**
+### 🟡 Stufe 2: Wichtig (High-Priority – Nächster Meilenstein) – ✅ ABGESCHLOSSEN
+- [x] **Fast-Verify Modus (`rfs --verify <teil1> <teil2>` bzw. `rfs verify <teil1> <teil2>`)**
   - Schnelle Integritäts- und Entschlüsselbarkeitsprüfung im RAM **ohne** Schreiben auf die Zielfestplatte implementiert.
-- [ ] **Unix Stdin/Stdout Streaming-Pipes**
-  - Direkte Pipe-Unterstützung: `tar -czf - /data | rfs split - teil1.rfs teil2.rfs`
+- [x] **Unix Stdin/Stdout Streaming-Pipes**
+  - Direkte Pipe-Unterstützung beim Splitten: `tar -czf - /data | rfs split - teil1.rfs teil2.rfs`
+  - Direkte Rekonstruktion nach Stdout: `rfs restore teil1.rfs teil2.rfs -o - | tar -xzf -`
   - Kein temporäres Zwischenspeichern gigantischer Archive mehr erforderlich.
-- [ ] **Entkoppelte Streaming-Pipeline (Zero-Copy Triple-Buffering Feintuning)**
-  - Reader-, Crypto/XOR- und Writer-Threads über lockfreie Ringpuffer / Scoped Channels weiter feinschleifen.
+  - Subcommands (`split`, `restore`, `verify`) und klassische POSIX-Syntax nahtlos integriert.
+- [x] **Entkoppelte Streaming-Pipeline (Zero-Copy Triple-Buffering Feintuning)**
+  - Reader-, Crypto/SIMD- und Writer-Threads über gepoolte Puffer (`crossbeam-channel`) vollständig entkoppelt.
+  - Zero-Heap-Allocation in der Streaming-Schleife, konstanter $O(1)$ Speicherbedarf.
 
 ---
 

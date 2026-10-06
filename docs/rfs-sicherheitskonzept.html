@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFS (random-filesplitter) – Sicherheit & Kryptografie erklärt</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f293d;
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-purple: #a855f7;
+      --code-bg: #030712;
+      --code-border: #1e293b;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, Monaco, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.65;
+      padding: 0;
+      margin: 0;
+    }
+
+    header {
+      background: linear-gradient(180deg, rgba(6, 182, 212, 0.12) 0%, rgba(9, 13, 22, 0) 100%);
+      border-bottom: 1px solid var(--card-border);
+      padding: 3rem 1.5rem 2.5rem;
+      text-align: center;
+    }
+
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      color: var(--accent-cyan);
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      color: #ffffff;
+      margin-bottom: 0.75rem;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin: 0 auto 1.5rem;
+    }
+
+    .nav-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1.5rem;
+    }
+
+    .nav-tabs a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      transition: all 0.2s ease;
+    }
+
+    .nav-tabs a:hover {
+      color: #ffffff;
+      border-color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.1);
+    }
+
+    main {
+      max-width: 1000px;
+      margin: 2rem auto;
+      padding: 0 1.5rem 4rem;
+    }
+
+    section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 2.25rem;
+      margin-bottom: 2.5rem;
+      scroll-margin-top: 2rem;
+    }
+
+    h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin: 1.5rem 0 0.75rem;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      color: #cbd5e1;
+    }
+
+    ul, ol {
+      margin: 0 0 1.25rem 1.5rem;
+      color: #cbd5e1;
+    }
+
+    li {
+      margin-bottom: 0.4rem;
+    }
+
+    strong {
+      color: #ffffff;
+    }
+
+    /* Callouts */
+    .callout {
+      border-left: 4px solid var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.08);
+      padding: 1rem 1.25rem;
+      border-radius: 0 8px 8px 0;
+      margin: 1.25rem 0;
+    }
+
+    .callout.warning {
+      border-left-color: var(--accent-amber);
+      background: rgba(245, 158, 11, 0.08);
+    }
+
+    .callout.success {
+      border-left-color: var(--accent-emerald);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .callout-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .callout.warning .callout-title { color: var(--accent-amber); }
+    .callout.success .callout-title { color: var(--accent-emerald); }
+    .callout .callout-title { color: var(--accent-cyan); }
+
+    /* Visual Diagram Box */
+    .diagram-container {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      overflow-x: auto;
+    }
+
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1rem;
+    }
+
+    .flow-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      position: relative;
+    }
+
+    .flow-card.accent-1 { border-top: 3px solid var(--accent-cyan); }
+    .flow-card.accent-2 { border-top: 3px solid var(--accent-purple); }
+    .flow-card.accent-3 { border-top: 3px solid var(--accent-emerald); }
+
+    .flow-card h4 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      color: #ffffff;
+    }
+
+    /* Comparison Table */
+    .table-container {
+      overflow-x: auto;
+      margin: 1.5rem 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.95rem;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.04);
+      color: #ffffff;
+      padding: 0.75rem 1rem;
+      border-bottom: 2px solid var(--card-border);
+      font-weight: 600;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--card-border);
+      color: #cbd5e1;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Math Box */
+    .math-box {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.92rem;
+      color: #e2e8f0;
+      margin: 1.25rem 0;
+      overflow-x: auto;
+      line-height: 1.7;
+    }
+
+    .math-highlight {
+      color: var(--accent-emerald);
+      font-weight: bold;
+    }
+
+    .math-symbol {
+      color: var(--accent-cyan);
+    }
+
+    /* Interactive XOR Simulator */
+    .simulator {
+      background: var(--code-bg);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .input-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-field:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .sim-button {
+      background: var(--accent-cyan);
+      color: #041019;
+      font-weight: 700;
+      padding: 0.65rem 1.25rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: opacity 0.2s;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .sim-button:hover {
+      opacity: 0.9;
+    }
+
+    .sim-button.secondary {
+      background: #1e293b;
+      color: var(--text-main);
+      border: 1px solid var(--card-border);
+    }
+
+    .sim-button.secondary:hover {
+      background: #334155;
+    }
+
+    .sim-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+
+    .sim-box {
+      background: #090e17;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+
+    .sim-box-title {
+      font-weight: 600;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .sim-data-bits {
+      word-break: break-all;
+      color: var(--accent-cyan);
+      line-height: 1.4;
+    }
+
+    .sim-data-hex {
+      word-break: break-all;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      margin-top: 0.4rem;
+    }
+
+    /* Attack Demo */
+    .attack-box {
+      margin-top: 1.25rem;
+      padding: 1rem;
+      border: 1px dashed var(--accent-rose);
+      border-radius: 8px;
+      background: rgba(244, 63, 94, 0.05);
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--card-border);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-badge">🛡️ Information-Theoretic Security</div>
+    <h1>random-filesplitter (rfs)</h1>
+    <p class="subtitle">
+      Die verständliche Erklärung für Jedermann (DAU) &amp; der unumstößliche mathematische Beweis für Informationstheoretiker.
+    </p>
+    <nav class="nav-tabs">
+      <a href="#dau">1. DAU-Erklärung (Anschaulich)</a>
+      <a href="#password-vs-rfs">2. Warum kein Passwort mithalten kann</a>
+      <a href="#tech-details">3. Funktionsweise &amp; XOR</a>
+      <a href="#proof">4. Der mathematische Beweis</a>
+      <a href="#simulator">5. Interaktiver Live-Simulator</a>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- SECTION 1: DAU ERKLÄRUNG -->
+    <section id="dau">
+      <h2><span>🧩</span> 1. Für Einsteiger &amp; DAU: Wie funktioniert das?</h2>
+      
+      <p>
+        Stell dir vor, du hast ein <strong>Geheimdokument</strong> (ein Foto, einen Vertrag oder ein Video), das absolut niemand zu Gesicht bekommen darf.
+      </p>
+      
+      <h3>Die Analogie mit den zwei transparenten Folien</h3>
+      <p>
+        Vergiss für einen Moment Passwörter. Stell dir stattdessen zwei durchsichtige Plastikfolien vor:
+      </p>
+
+      <div class="diagram-container">
+        <div class="flow-grid">
+          <div class="flow-card accent-1">
+            <h4>📄 Folie A (Teil 1)</h4>
+            <p>Auf diese Folie wird reines, zufälliges schwarzes und weißes Rauschen gedruckt – wie das Flimmern eines alten Röhrenfernsehers ohne Signal. Es gibt kein Bild, keinen Text, keine Konturen.</p>
+          </div>
+          <div class="flow-card accent-2">
+            <h4>📄 Folie B (Teil 2)</h4>
+            <p>Auf die zweite Folie wird ebenfalls ein Rauschmuster gedruckt. Allerdings nicht willkürlich: Es ist exakt so berechnet, dass es zusammen mit Folie A das Originalbild ergibt.</p>
+          </div>
+          <div class="flow-card accent-3">
+            <h4>🔍 Das Ergebnis</h4>
+            <p>Hältst du <strong>nur eine</strong> der Folien gegen das Licht, siehst du absolut <strong>nichts als Zufallsmüll</strong>. Legst du aber beide Folien <strong>exakt passgenau übereinander</strong>, erscheint augenblicklich das Originalbild in perfekter Schärfe!</p>
+          </div>
+        </div>
+      </div>
+
+      <p>
+        Genau das macht <code>rfs</code> auf dem Computer:
+      </p>
+      <ol>
+        <li><strong>Beim Aufteilen (Splitten):</strong> <code>rfs</code> nimmt deine Originaldatei und erzeugt zwei neue Dateien: <code>datei.rfs1</code> und <code>datei.rfs2</code>. Jede Datei ist exakt so groß wie das Original.</li>
+        <li><strong>Beim Zusammenführen (Restaurieren):</strong> Du gibst dem Programm beide Dateien: <code>rfs datei.rfs1 datei.rfs2</code>. In Sekundenbruchteilen rechnet <code>rfs</code> die beiden Hälften zusammen und das Original ist 1:1 wieder da.</li>
+      </ol>
+
+      <div class="callout warning">
+        <div class="callout-title">⚠️ Die goldene Regel: Strikte Trennung!</div>
+        <p>
+          Dieses System schützt dich nur dann zu 100 %, wenn du <strong>niemals beide Dateien am selben Ort aufbewahrst</strong>.<br>
+          Beispiel aus der Praxis:
+          <br>• <strong>Teil 1</strong> speicherst du auf einem USB-Stick an deinem Schlüsselbund (oder in deinem Bankschließfach).
+          <br>• <strong>Teil 2</strong> lädst du in Google Drive, Dropbox oder schickst ihn per E-Mail.
+          <br>Wird dein Cloud-Konto gehackt, hat der Angreifer nur Datei 2 – und damit besitzt er <strong>rein gar nichts</strong>.
+        </p>
+      </div>
+    </section>
+
+    <!-- SECTION 2: WARUM KEIN PASSWORT MITHALTEN KANN -->
+    <section id="password-vs-rfs">
+      <h2><span>⚔️</span> 2. Warum ist das sicherer als jedes Passwort der Welt?</h2>
+
+      <p>
+        Fast alle Menschen nutzen Passwörter (z. B. mit ZIP, 7-Zip, BitLocker oder VeraCrypt). Aber Passwörter haben ein fundamentales Problem: <strong>Sie sind nur „rechnerisch“ sicher, nicht physikalisch/mathematisch.</strong>
+      </p>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Eigenschaft</th>
+              <th>Klassische Passwort-Verschlüsselung (AES-256)</th>
+              <th>RFS Datei-Splitting (One-Time-Pad Prinzip)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Sicherheits-Typ</strong></td>
+              <td><em>Computational Security</em> (Rechnerische Sicherheit)</td>
+              <td><strong>Information-Theoretic Security</strong> (Informationstheoretisch perfekt)</td>
+            </tr>
+            <tr>
+              <td><strong>Was sieht der Angreifer?</strong></td>
+              <td>Er sieht: „Aha, eine 7-Zip/AES-Datei!“ (Dateikopf/Header verrät das Format).</td>
+              <td><strong>100 % Rauschen.</strong> Null Header, null Struktur. Es könnte auch ein kaputter Speichersektor sein.</td>
+            </tr>
+            <tr>
+              <td><strong>Angriff durch Supercomputer</strong></td>
+              <td>Möglich (durch Ausprobieren von Milliarden Passwörtern pro Sekunde oder Schwachstellen im Algorithmus).</td>
+              <td><strong>Unmöglich.</strong> Selbst ein Supercomputer so groß wie das ganze Universum kann es nicht knacken.</td>
+            </tr>
+            <tr>
+              <td><strong>Quantencomputer (Grover)</strong></td>
+              <td>Halbiert die effektive Schlüssellänge (z. B. AES-128 wird auf 64 Bit reduziert).</td>
+              <td><strong>Immun.</strong> Quantencomputer bieten 0 Vorteil gegen echte Entropie.</td>
+            </tr>
+            <tr>
+              <td><strong>Das Prüf-Kriterium</strong></td>
+              <td>Ein Hacker merkt sofort, wenn er das richtige Passwort hat (die Datei lässt sich öffnen).</td>
+              <td><strong>Es gibt kein Kriterium!</strong> Jeder erdenkliche Klartext ist gleich wahrscheinlich (siehe unten).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Das Brute-Force-Paradoxon (Der Beweis für den gesunden Menschenverstand)</h3>
+      <p>
+        Nehmen wir an, ein mächtiger Geheimdienst stiehlt <code>datei.rfs1</code> (ohne Teil 2 zu besitzen) und versucht, alle möglichen Kombinationen durchzuprobieren („Brute Force“).
+      </p>
+      <p>
+        Was passiert?
+      </p>
+      <ul>
+        <li>Kombination #1 ergibt: <em>Ein PDF mit dem Testament deiner Tante</em>.</li>
+        <li>Kombination #2 ergibt: <em>Ein Foto von Mickey Mouse</em>.</li>
+        <li>Kombination #3 ergibt: <em>Die Konstruktionspläne einer Boeing 747</em>.</li>
+        <li>Kombination #4 ergibt: <em>Ein Video von einer Katze</em>.</li>
+        <li>Kombination #1337 ergibt: <em>Deine tatsächlichen, geheimen Zugangsdaten</em>.</li>
+      </ul>
+      <p>
+        <strong>Das Dilemma des Hackers:</strong> Aus einer einzelnen Datei lässt sich <strong>jede erdenkliche Botschaft gleicher Länge</strong> erzeugen! Der Hacker hat keinerlei Möglichkeit zu wissen, welches der Milliarden sinnvollen Ergebnisse das echte war. Die mathematische Wahrscheinlichkeit für das Katzenvideo ist exakt genauso hoch wie für deine geheimen Daten!
+      </p>
+
+      <div class="callout success">
+        <div class="callout-title">🎭 Plausible Deniability (Glaubhafte Abstreitbarkeit)</div>
+        <p>
+          Weil eine einzelne RFS-Datei keinerlei Dateikennung („Magic Bytes“) besitzt, kann dir niemand nachweisen, dass es sich überhaupt um verschlüsselte Daten handelt. Selbst unter Androhung von Folter könntest du behaupten: <em>„Das ist eine Festplattensicherung mit zufälligem Datenmüll“</em> – und kein Gutachter der Welt kann das Gegenteil beweisen!
+        </p>
+      </div>
+    </section>
+
+    <!-- SECTION 3: TECHNISCHE FUNKTIONSWEISE -->
+    <section id="tech-details">
+      <h2><span>⚙️</span> 3. Wie funktioniert das unter der Haube? (XOR-Magie)</h2>
+
+      <p>
+        Die gesamte Magie von RFS basiert auf der einfachsten logischen Rechenoperation der Computerwelt: dem <strong>Exklusiv-Oder</strong> (kurz: <strong>XOR</strong>, Symbol: <code>⊕</code>).
+      </p>
+
+      <h3>Die XOR-Wahrheitstabelle</h3>
+      <p>XOR vergleicht zwei Bits. Sind sie <strong>unterschiedlich</strong>, kommt <code>1</code> heraus. Sind sie <strong>gleich</strong>, kommt <code>0</code> heraus:</p>
+
+      <div class="diagram-container" style="max-width: 480px; margin: 1rem 0;">
+        <table>
+          <thead>
+            <tr>
+              <th>Bit A (Original)</th>
+              <th>Bit B (Zufall)</th>
+              <th>A ⊕ B (Ergebnis)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>0</td><td>0</td><td><strong>0</strong> (gleich)</td></tr>
+            <tr><td>0</td><td>1</td><td><strong>1</strong> (verschieden)</td></tr>
+            <tr><td>1</td><td>0</td><td><strong>1</strong> (verschieden)</td></tr>
+            <tr><td>1</td><td>1</td><td><strong>0</strong> (gleich)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Die Selbst-Inversion (Warum Entschlüsseln so einfach ist)</h3>
+      <p>
+        XOR besitzt eine faszinierende mathematische Eigenschaft: Wendet man denselben Zufallsschlüssel ein zweites Mal an, hebt er sich selbst auf!
+      </p>
+      <div class="math-box">
+        (Original <span class="math-symbol">⊕</span> Zufall) <span class="math-symbol">⊕</span> Zufall <span class="math-symbol">=</span> Original <span class="math-symbol">⊕</span> (Zufall <span class="math-symbol">⊕</span> Zufall) <span class="math-symbol">=</span> Original <span class="math-symbol">⊕</span> 0 <span class="math-symbol">=</span> <span class="math-highlight">Original</span>
+      </div>
+
+      <h3>Der RFS2 / RFS3 Stealth-Footer</h3>
+      <p>
+        Wenn man zwei beliebige Zufallsdateien zusammenführt, woher weiß <code>rfs</code> dann, ob die Dateien überhaupt zusammengehören und ob das Original fehlerfrei wiederhergestellt wurde?
+      </p>
+      <p>
+        Normale Programme schreiben dafür sichtbare Header an den Anfang. <strong>RFS nicht!</strong><br>
+        <code>rfs</code> hängt an das Ende der Datei einen <strong>Stealth-Footer</strong> (bei RFS2 44 Bytes, bei RFS3 60 Bytes):
+      </p>
+      <ul>
+        <li>Dieser Footer enthält einen Magic-Tag (<code>"RFS2"</code> bzw. <code>"RFS3"</code>), eine kryptografische Prüfsumme (SHA-256 bzw. 384-Bit Post-Quantum BLKS) und die Original-Dateigröße.</li>
+        <li><strong>Der Clou:</strong> Dieser Footer wird <em>ebenfalls byteweise mit Zufall ge-XORt</em>!</li>
+        <li>Isoliert betrachtet ist auch das Dateiende 100 % weißes Rauschen. Erst wenn beide Teile zusammengefügt werden, entschlüsselt sich der Footer in unter 1 Millisekunde und <code>rfs</code> weiß: <em>„Volltreffer, die Prüfsumme stimmt überein!“</em></li>
+      </ul>
+    </section>
+
+    <!-- SECTION 4: MATHEMATISCHER BEWEIS -->
+    <section id="proof">
+      <h2><span>📐</span> 4. Der mathematische Beweis: Perfekte Geheimhaltung nach Shannon</h2>
+
+      <p>
+        Für Mathematiker und Kryptografen ist Sicherheit kein Gefühl, sondern eine bewiesene Wahrscheinlichkeit. Im Jahr 1949 veröffentlichte <strong>Claude Shannon</strong> seine bahnbrechende Arbeit <em>„Communication Theory of Secrecy Systems“</em>. Darin definierte er, was <strong>Perfekte Geheimhaltung (Perfect Secrecy)</strong> bedeutet.
+      </p>
+
+      <h3>1. Definition der Perfekten Geheimhaltung</h3>
+      <p>
+        Sei $\mathcal{M}$ der Raum aller möglichen Nachrichten (Klartexte), $\mathcal{C}$ der Raum aller Chiffren (Ciphertexte) und $\mathcal{K}$ der Raum aller Schlüssel (Zufallsströme). Ein Chiffriersystem besitzt <strong>perfekte Geheimhaltung</strong> genau dann, wenn für jede Nachricht $m \in \mathcal{M}$ und jedes Chiffrat $c \in \mathcal{C}$ gilt:
+      </p>
+      
+      <div class="math-box">
+        P(M = m \mid C = c) = P(M = m)
+      </div>
+
+      <p>
+        <strong>In Worten:</strong> Die Wahrscheinlichkeit, dass die ursprüngliche Nachricht $m$ lautete, ist nach Kenntnis des Chiffrats $c$ <em>exakt dieselbe</em> wie vor Kenntnis des Chiffrats. Das Chiffrat liefert dem Angreifer <strong>genau null Information</strong>.
+      </p>
+
+      <h3>2. Formaler Beweis für den XOR-One-Time-Pad in RFS</h3>
+      <p>
+        Betrachten wir Bitfolgen der Länge $n$. Es gilt $\mathcal{M} = \mathcal{C} = \mathcal{K} = \{0, 1\}^n$.<br>
+        Der Schlüssel $K$ wird durch den CSPRNG absolut gleichverteilt gewählt:
+      </p>
+      <div class="math-box">
+        \forall k \in \{0, 1\}^n: \quad P(K = k) = \frac{1}{2^n}
+      </div>
+
+      <p>Die Verschlüsselung ist definiert als $C = M \oplus K$. Wir untersuchen die bedingte Wahrscheinlichkeit $P(C = c \mid M = m)$:</p>
+      <div class="math-box">
+        P(C = c \mid M = m) = P(M \oplus K = c \mid M = m) = P(K = m \oplus c)
+      </div>
+
+      <p>
+        Da für zwei beliebige Bitfolgen $m, c \in \{0, 1\}^n$ genau ein eindeutiger Schlüssel $k^* = m \oplus c$ existiert, und dieser Schlüssel uniform verteilt ist, gilt:
+      </p>
+      <div class="math-box">
+        P(C = c \mid M = m) = P(K = k^*) = \frac{1}{2^n}
+      </div>
+
+      <p>
+        Nun berechnen wir die totale Wahrscheinlichkeit des Chiffrats $P(C = c)$:
+      </p>
+      <div class="math-box">
+        P(C = c) = \sum_{m' \in \mathcal{M}} P(C = c \mid M = m') \cdot P(M = m')
+                 = \sum_{m' \in \mathcal{M}} \frac{1}{2^n} \cdot P(M = m')
+                 = \frac{1}{2^n} \sum_{m' \in \mathcal{M}} P(M = m')
+                 = \frac{1}{2^n} \cdot 1
+                 = \frac{1}{2^n}
+      </div>
+
+      <p>Wenden wir den <strong>Satz von Bayes</strong> an, um die A-posteriori-Wahrscheinlichkeit zu berechnen:</p>
+      <div class="math-box">
+        P(M = m \mid C = c) = \frac{P(C = c \mid M = m) \cdot P(M = m)}{P(C = c)}
+                            = \frac{\frac{1}{2^n} \cdot P(M = m)}{\frac{1}{2^n}}
+                            = \mathbf{P(M = m)} \quad \blacksquare
+      </div>
+
+      <h3>3. Informationstheoretischer Entropie-Beweis</h3>
+      <p>
+        Ausgedrückt über die <strong>Shannon-Entropie $H$</strong> und die <strong>Transinformation (Mutual Information $I$)</strong>:
+      </p>
+      <div class="math-box">
+        H(M \mid C) = H(M) \\
+        I(M; C) = H(M) - H(M \mid C) = H(M) - H(M) = \mathbf{0}
+      </div>
+      <p>
+        <strong>Konsequenz:</strong> Die Transinformation $I(M; C)$ zwischen Chiffre und Klartext ist <strong>exakt Null</strong>. Es existiert keine physikalische oder mathematische Möglichkeit, aus $C$ Rückschlüsse auf $M$ zu ziehen.
+      </p>
+
+      <div class="callout">
+        <div class="callout-title">💡 Shannons Schranke: Warum Passwörter diesen Beweis NIEMALS erfüllen können</div>
+        <p>
+          Shannon bewies auch den Umkehrschluss: <strong>Perfekte Geheimhaltung ist mathematisch unmöglich, wenn der Schlüssel kürzer ist als die Nachricht ($|\mathcal{K}| < |\mathcal{M}|$).</strong><br>
+          Ein typisches Passwort hat vielleicht 40 bis 80 Bit Entropie. Deine Datei hat jedoch oft Millionen oder Milliarden Bits. Daher ist jede klassische Passwort-Verschlüsselung (AES, ChaCha, RSA) <em>angreifbar</em>, sobald man unbegrenzte Rechenzeit hat. <code>rfs</code> hingegen erzeugt einen Schlüsselstrom, der <strong>exakt so lang ist wie die Datei selbst</strong> ($|\mathcal{K}| = |\mathcal{M}|$) und erfüllt Shannons Theorem somit zu 100 %.
+        </p>
+      </div>
+    </section>
+
+    <!-- SECTION 5: LIVE SIMULATOR -->
+    <section id="simulator">
+      <h2><span>🧪</span> 5. Interaktiver Live-Simulator: Probier es selbst aus!</h2>
+      <p>
+        Tippe einen Text ein und beobachte live im Browser, wie <code>rfs</code> die Bytes zerlegt und warum ein Hacker ohne Teil 2 absolut verloren ist.
+      </p>
+
+      <div class="simulator">
+        <div class="input-group">
+          <label for="secret-input">Geheime Botschaft (Klartext):</label>
+          <input type="text" id="secret-input" class="input-field" value="TOP SECRET 2026">
+        </div>
+
+        <div>
+          <button class="sim-button" onclick="runSplit()">⚡ Datei splitten (rfs)</button>
+          <button class="sim-button secondary" onclick="runMerge()">🔄 Wiederherstellen (merge)</button>
+        </div>
+
+        <div class="sim-grid">
+          <!-- ORIGINAL -->
+          <div class="sim-box">
+            <div class="sim-box-title">
+              <span>Originaldatei (M)</span>
+              <span id="orig-size">0 Bytes</span>
+            </div>
+            <div class="sim-data-bits" id="orig-bits">-</div>
+            <div class="sim-data-hex" id="orig-hex">-</div>
+          </div>
+
+          <!-- PART 1 -->
+          <div class="sim-box">
+            <div class="sim-box-title">
+              <span>Teil 1 (.rfs1) [Zufall R]</span>
+              <span style="color:var(--accent-purple);">100% Rauschen</span>
+            </div>
+            <div class="sim-data-bits" id="rfs1-bits" style="color:var(--accent-purple);">-</div>
+            <div class="sim-data-hex" id="rfs1-hex">-</div>
+          </div>
+
+          <!-- PART 2 -->
+          <div class="sim-box">
+            <div class="sim-box-title">
+              <span>Teil 2 (.rfs2) [M ⊕ R]</span>
+              <span style="color:var(--accent-emerald);">100% Rauschen</span>
+            </div>
+            <div class="sim-data-bits" id="rfs2-bits" style="color:var(--accent-emerald);">-</div>
+            <div class="sim-data-hex" id="rfs2-hex">-</div>
+          </div>
+        </div>
+
+        <div id="merge-result" style="margin-top: 1rem; padding: 0.85rem; border-radius: 6px; display: none;"></div>
+
+        <!-- HACKER ATTACK DEMO -->
+        <div class="attack-box">
+          <div style="font-weight: 700; color: var(--accent-rose); margin-bottom: 0.5rem;">
+            🕵️ Der Brute-Force-Simulator des Angreifers
+          </div>
+          <p style="font-size: 0.88rem; margin-bottom: 0.5rem;">
+            Der Angreifer besitzt <strong>nur Teil 2 (.rfs2)</strong>. Er behauptet: <em>„Ich habe den geheimen Text geknackt!“</em><br>
+            Gib unten ein, was der Angreifer angeblich „entschlüsselt“ hat (z. B. <code>"KAUFE BRÖTCHEN"</code>):
+          </p>
+          <input type="text" id="fake-claim" class="input-field" style="margin-bottom: 0.5rem; border-color: rgba(244,63,94,0.4);" value="KAUFE BRÖTCHEN" oninput="simulateFakeDecrypt()">
+          <div style="font-family: var(--font-mono); font-size: 0.82rem; color: #cbd5e1;" id="fake-proof-output">
+            <!-- Dynamischer Beweis -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>
+      Projekt <strong>random-filesplitter (rfs)</strong> – Open Source Tool von Meik Augenblick.<br>
+      High-Performance &amp; Information-Theoretic Security.
+    </p>
+  </footer>
+
+  <script>
+    // State
+    let currentOriginal = [];
+    let currentR = [];
+    let currentXor = [];
+
+    function stringToBytes(str) {
+      return new TextEncoder().encode(str);
+    }
+
+    function bytesToString(bytes) {
+      return new TextDecoder().decode(bytes);
+    }
+
+    function toBits(bytes) {
+      return Array.from(bytes).map(b => b.toString(2).padStart(8, '0')).join(' ');
+    }
+
+    function toHex(bytes) {
+      return Array.from(bytes).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+    }
+
+    function runSplit() {
+      const text = document.getElementById('secret-input').value;
+      if (!text) return;
+
+      currentOriginal = stringToBytes(text);
+      const len = currentOriginal.length;
+
+      // CSPRNG Simulation via window.crypto
+      currentR = new Uint8Array(len);
+      window.crypto.getRandomValues(currentR);
+
+      // Compute XOR (Part 2)
+      currentXor = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        currentXor[i] = currentOriginal[i] ^ currentR[i];
+      }
+
+      // Update UI
+      document.getElementById('orig-size').innerText = len + ' Bytes';
+      document.getElementById('orig-bits').innerText = toBits(currentOriginal);
+      document.getElementById('orig-hex').innerText = 'HEX: ' + toHex(currentOriginal);
+
+      document.getElementById('rfs1-bits').innerText = toBits(currentR);
+      document.getElementById('rfs1-hex').innerText = 'HEX: ' + toHex(currentR);
+
+      document.getElementById('rfs2-bits').innerText = toBits(currentXor);
+      document.getElementById('rfs2-hex').innerText = 'HEX: ' + toHex(currentXor);
+
+      document.getElementById('merge-result').style.display = 'none';
+
+      simulateFakeDecrypt();
+    }
+
+    function runMerge() {
+      if (!currentR.length || !currentXor.length) {
+        runSplit();
+      }
+
+      const len = currentR.length;
+      const reconstructed = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        reconstructed[i] = currentR[i] ^ currentXor[i];
+      }
+
+      const recoveredText = bytesToString(reconstructed);
+      const resultEl = document.getElementById('merge-result');
+      resultEl.style.display = 'block';
+      resultEl.style.background = 'rgba(16, 185, 129, 0.15)';
+      resultEl.style.border = '1px solid var(--accent-emerald)';
+      resultEl.style.color = '#ffffff';
+      resultEl.innerHTML = `<strong>✅ Rekonstruktion bit-perfekt gelungen!</strong><br>Wiederhergestellter Klartext: <span style="color:var(--accent-emerald); font-family:var(--font-mono); font-weight:bold;">"${recoveredText}"</span>`;
+    }
+
+    function simulateFakeDecrypt() {
+      if (!currentXor.length) return;
+
+      const fakeText = document.getElementById('fake-claim').value;
+      const fakeBytes = stringToBytes(fakeText);
+      const out = document.getElementById('fake-proof-output');
+
+      // Erzeuge den passenden Fake-Schlüssel, der aus Teil 2 genau diesen Fake-Text machen würde!
+      const minLen = Math.min(currentXor.length, fakeBytes.length);
+      const fakeKey = new Uint8Array(minLen);
+      for (let i = 0; i < minLen; i++) {
+        fakeKey[i] = currentXor[i] ^ fakeBytes[i];
+      }
+
+      out.innerHTML = `
+        <div style="margin-top:0.5rem; line-height: 1.5;">
+          Wenn der Angreifer den Schlüssel <code>${toHex(fakeKey)}</code> rät, decodiert Teil 2 exakt zu: <strong style="color:var(--accent-rose); font-size:0.95rem;">"${fakeText.slice(0, minLen)}"</strong>.<br>
+          <span style="color:var(--accent-cyan); font-weight:600;">Ergebnis:</span> Da <em>jeder</em> Schlüssel mathematisch gleich wahrscheinlich ist, kann der Angreifer unmöglich wissen, ob deine echte Botschaft oder der Fake-Text das Original war!
+        </div>
+      `;
+    }
+
+    // Auto-run on load
+    window.addEventListener('DOMContentLoaded', () => {
+      runSplit();
+    });
+  </script>
+</body>
+</html>
