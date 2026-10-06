@@ -7,6 +7,7 @@
 use crate::crypto::{xor_in_place, ChaChaRng};
 use crate::entropy::UniversalEntropyHarvester;
 use crate::format::{decode_footer_n_way, encode_rfs3_footer_n_way, RfsMetadata};
+use crate::telemetry::{Telemetry, TelemetryMode};
 use crate::types::{BLKS_DIGEST_SIZE, RFS3_FOOTER_SIZE};
 use blks_core::{BlksHasher, Digest as BlksDigest};
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -15,7 +16,6 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Instant;
 
 /// Puffer-Poolgröße für Triple-Buffering (3 Puffer-Slots in-flight)
 const BUFFER_POOL_SIZE: usize = 3;
@@ -26,55 +26,6 @@ struct WriteJob {
     valid_len: usize,
 }
 
-/// Hilfsfunktion zur Ausgabe des Split-Fortschritts auf stderr (stört keine stdout-Pipes).
-fn print_split_progress(processed: u64, total: Option<u64>, elapsed_secs: f64) {
-    let speed_mb = if elapsed_secs > 0.001 {
-        (processed as f64 / 1_048_576.0) / elapsed_secs
-    } else {
-        0.0
-    };
-    match total {
-        Some(tot) if tot > 0 => {
-            let pct = (processed as f64 / tot as f64) * 100.0;
-            eprint!(
-                "\r[RFS3 Split] {:5.1}% ({}/{} Bytes, {:.1} MB/s)",
-                pct, processed, tot, speed_mb
-            );
-        }
-        _ => {
-            let processed_mb = processed as f64 / 1_048_576.0;
-            eprint!(
-                "\r[RFS3 Split Stream] {:.2} MB übertragen ({:.1} MB/s)",
-                processed_mb, speed_mb
-            );
-        }
-    }
-    let _ = io::stderr().flush();
-}
-
-/// Hilfsfunktion zur Ausgabe des Restore-Fortschritts auf stderr.
-fn print_restore_progress(processed: u64, total: u64, elapsed_secs: f64) {
-    let speed_mb = if elapsed_secs > 0.001 {
-        (processed as f64 / 1_048_576.0) / elapsed_secs
-    } else {
-        0.0
-    };
-    if total > 0 {
-        let pct = (processed as f64 / total as f64) * 100.0;
-        eprint!(
-            "\r[RFS Restore] {:5.1}% ({}/{} Bytes, {:.1} MB/s)",
-            pct, processed, total, speed_mb
-        );
-    } else {
-        let processed_mb = processed as f64 / 1_048_576.0;
-        eprint!(
-            "\r[RFS Restore Stream] {:.2} MB ({:.1} MB/s)",
-            processed_mb, speed_mb
-        );
-    }
-    let _ = io::stderr().flush();
-}
-
 /// Führt das kryptografische Splitten einer Datei oder eines Unix-Stdin-Streams in $N$ Teile durch ($N \ge 2$).
 ///
 /// Unterstützt:
@@ -82,13 +33,14 @@ fn print_restore_progress(processed: u64, total: u64, elapsed_secs: f64) {
 /// - Unix Stdin Pipes (`input_source` == `"-"`)
 /// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
 /// - Entkoppelte 3-Stufen Pipeline (Reader ➔ Crypto/SIMD ➔ Writer) mit Zero-Copy Puffer-Pooling
+/// - Maschinenlesbare NDJSON-Telemetrie (`--json`) und interaktive ANSI-Fortschrittsbalken
 pub fn split_stream_or_file(
     input_source: &str,
     output_parts: Option<&[PathBuf]>,
     num_parts: usize,
     output_prefix: Option<&str>,
     block_size: usize,
-    silent: bool,
+    telemetry_mode: TelemetryMode,
     force: bool,
 ) -> Result<Vec<PathBuf>, String> {
     // 1. Zielpfade bestimmen
@@ -223,11 +175,10 @@ pub fn split_stream_or_file(
     });
 
     // Stufe 2: Crypto & Hash Worker Thread (N-Way OTP)
+    let mut telemetry = Telemetry::new(telemetry_mode, "Split", known_size);
     let worker_handle = thread::spawn(move || -> Result<(u64, [u8; BLKS_DIGEST_SIZE]), String> {
         let mut total_processed: u64 = 0;
         let mut blks_hasher = BlksHasher::new();
-        let start_time = Instant::now();
-        let mut last_progress = Instant::now();
 
         while let Ok(msg) = data_rx.recv() {
             let (in_buf, len) = msg?;
@@ -268,27 +219,16 @@ pub fn split_stream_or_file(
                 return Err("Schreib-Thread vorzeitig beendet".to_string());
             }
 
-            if !silent && last_progress.elapsed().as_millis() >= 100 {
-                print_split_progress(
-                    total_processed,
-                    known_size,
-                    start_time.elapsed().as_secs_f64(),
-                );
-                last_progress = Instant::now();
-            }
-        }
-
-        if !silent {
-            print_split_progress(
-                total_processed,
-                known_size,
-                start_time.elapsed().as_secs_f64(),
-            );
-            eprintln!();
+            telemetry.update(total_processed);
         }
 
         drop(job_tx);
         let digest = blks_hasher.finalize();
+        telemetry.finish(
+            total_processed,
+            n_parts,
+            Some(("blks-384", &BlksDigest(digest).to_base64())),
+        );
         Ok((total_processed, digest))
     });
 
@@ -351,7 +291,7 @@ pub fn split_stream_or_file(
             .map_err(|e| format!("Flush {}: {}", k + 1, e))?;
     }
 
-    if !silent {
+    if telemetry_mode == TelemetryMode::Interactive {
         eprintln!("Erfolgreich in {} Teile gesplittet (N-Way OTP):", n_parts);
         for (i, p) in out_paths.iter().enumerate() {
             eprintln!("  Teil {}: {}", i + 1, p.display());
@@ -374,13 +314,18 @@ pub fn split_file(
     block_size: usize,
     silent: bool,
 ) -> Result<(PathBuf, PathBuf), String> {
+    let mode = if silent {
+        TelemetryMode::Silent
+    } else {
+        TelemetryMode::Interactive
+    };
     let parts = split_stream_or_file(
         input_path.to_str().unwrap_or("-"),
         None,
         2,
         output_prefix,
         block_size,
-        silent,
+        mode,
         false,
     )?;
     Ok((parts[0].clone(), parts[1].clone()))
@@ -398,7 +343,7 @@ pub fn restore_file(
     part_paths: &[PathBuf],
     output_target: Option<&str>,
     force: bool,
-    silent: bool,
+    telemetry_mode: TelemetryMode,
     verify_only: bool,
     block_size: usize,
 ) -> Result<Option<PathBuf>, String> {
@@ -576,6 +521,8 @@ pub fn restore_file(
     // Stufe 2: Compute Worker (N-Way SIMD XOR & Hashing)
     let meta_clone = meta.clone();
     let worker_free_out_tx = free_out_tx.clone();
+    let action_name = if verify_only { "Verify" } else { "Restore" };
+    let mut telemetry = Telemetry::new(telemetry_mode, action_name, Some(original_size));
     let worker_handle = thread::spawn(move || -> Result<(), String> {
         let mut blks_hasher = match meta_clone {
             RfsMetadata::Rfs3 { .. } => Some(BlksHasher::new()),
@@ -586,8 +533,6 @@ pub fn restore_file(
             _ => None,
         };
 
-        let start_time = Instant::now();
-        let mut last_progress = Instant::now();
         let mut total_processed: u64 = 0;
 
         while let Ok(msg) = data_rx.recv() {
@@ -623,45 +568,37 @@ pub fn restore_file(
                 let _ = worker_free_out_tx.send(b_out);
             }
 
-            if !silent && last_progress.elapsed().as_millis() >= 100 {
-                print_restore_progress(
-                    total_processed,
-                    original_size,
-                    start_time.elapsed().as_secs_f64(),
-                );
-                last_progress = Instant::now();
-            }
-        }
-
-        if !silent {
-            print_restore_progress(
-                total_processed,
-                original_size,
-                start_time.elapsed().as_secs_f64(),
-            );
-            eprintln!();
+            telemetry.update(total_processed);
         }
 
         drop(job_tx);
 
         // Integritätsprüfung
-        let integrity_ok = match meta_clone {
+        match meta_clone {
             RfsMetadata::Rfs3 { expected_blks, .. } => {
                 let actual_bytes = blks_hasher.unwrap().finalize();
                 let actual = BlksDigest(actual_bytes);
                 let expected_digest = BlksDigest(expected_blks);
                 if actual.ct_eq(&expected_digest) {
-                    if !silent {
-                        eprintln!("Integritätsprüfung [OK] (BLKS-384: {})", actual.to_base64());
+                    let dig_str = actual.to_base64();
+                    telemetry.finish(total_processed, n_parts, Some(("blks-384", &dig_str)));
+                    if telemetry_mode == TelemetryMode::Interactive {
+                        eprintln!("Integritätsprüfung [OK] (BLKS-384: {})", dig_str);
                     }
-                    true
+                    Ok(())
                 } else {
-                    eprintln!(
-                        "\nWARNUNG: Integritätsfehler! BLKS-384 Prüfsumme stimmt nicht überein."
-                    );
-                    eprintln!("  Erwartet:  {}", expected_digest.to_base64());
-                    eprintln!("  Berechnet: {}", actual.to_base64());
-                    false
+                    telemetry.error("Integritätsfehler! BLKS-384 Prüfsumme stimmt nicht überein.");
+                    if telemetry_mode == TelemetryMode::Interactive {
+                        eprintln!(
+                            "\nWARNUNG: Integritätsfehler! BLKS-384 Prüfsumme stimmt nicht überein."
+                        );
+                        eprintln!("  Erwartet:  {}", expected_digest.to_base64());
+                        eprintln!("  Berechnet: {}", actual.to_base64());
+                    }
+                    Err(
+                        "Integritätsfehler! Die Datei ist möglicherweise beschädigt oder manipuliert."
+                            .to_string(),
+                    )
                 }
             }
             RfsMetadata::Rfs2 {
@@ -669,27 +606,29 @@ pub fn restore_file(
             } => {
                 let actual = sha256_hasher.unwrap().finalize();
                 if actual.as_slice() == expected_sha256 {
-                    if !silent {
+                    let hex_str = expected_sha256
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>();
+                    telemetry.finish(total_processed, n_parts, Some(("sha256", &hex_str)));
+                    if telemetry_mode == TelemetryMode::Interactive {
                         eprintln!("Integritätsprüfung [OK] (Legacy RFS2 SHA-256 verifiziert)");
                     }
-                    true
+                    Ok(())
                 } else {
-                    eprintln!(
-                        "\nWARNUNG: Integritätsfehler! SHA-256 Prüfsumme stimmt nicht überein."
-                    );
-                    false
+                    telemetry.error("Integritätsfehler! SHA-256 Prüfsumme stimmt nicht überein.");
+                    if telemetry_mode == TelemetryMode::Interactive {
+                        eprintln!(
+                            "\nWARNUNG: Integritätsfehler! SHA-256 Prüfsumme stimmt nicht überein."
+                        );
+                    }
+                    Err(
+                        "Integritätsfehler! Die Datei ist möglicherweise beschädigt oder manipuliert."
+                            .to_string(),
+                    )
                 }
             }
-        };
-
-        if !integrity_ok {
-            return Err(
-                "Integritätsfehler! Die Datei ist möglicherweise beschädigt oder manipuliert."
-                    .to_string(),
-            );
         }
-
-        Ok(())
     });
 
     // Stufe 3: Writer Thread (nur aktiv wenn !verify_only)

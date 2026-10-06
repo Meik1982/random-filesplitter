@@ -6,6 +6,7 @@ mod crypto;
 mod entropy;
 mod format;
 mod pipeline;
+mod telemetry;
 mod types;
 
 use std::env;
@@ -63,6 +64,7 @@ fn display_help() {
     println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
     println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
     println!("  -o, --output <PFAD>                           Präfix für Teile bzw. Pfad der Zieldatei (oder '-' für stdout)");
+    println!("  --json                                        Maschinenlesbare NDJSON-Telemetrie auf stderr");
     println!(
         "  -f, --force                                   Zieldateien überschreiben falls vorhanden"
     );
@@ -183,6 +185,7 @@ fn main() {
     let mut verify_only = false;
     let mut force = false;
     let mut silent = false;
+    let mut json_output = false;
     let mut num_parts: usize = 2;
     let mut block_size = types::DEFAULT_BLOCK_SIZE;
     let mut output_path: Option<String> = None;
@@ -197,6 +200,8 @@ fn main() {
             force = true;
         } else if arg == "-q" || arg == "--quiet" || arg == "--silent" {
             silent = true;
+        } else if arg == "--json" {
+            json_output = true;
         } else if arg == "-n" || arg == "--parts" {
             i += 1;
             if i >= args.len() {
@@ -271,6 +276,14 @@ fn main() {
         }
     };
 
+    let telemetry_mode = if json_output {
+        telemetry::TelemetryMode::Json
+    } else if silent {
+        telemetry::TelemetryMode::Silent
+    } else {
+        telemetry::TelemetryMode::Interactive
+    };
+
     match action {
         Action::Split => {
             if positionals.is_empty() {
@@ -290,12 +303,14 @@ fn main() {
                 num_parts,
                 output_path.as_deref(),
                 block_size,
-                silent,
+                telemetry_mode,
                 force,
             ) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
-                    eprintln!("Fehler beim Splitten: {}", e);
+                    if telemetry_mode != telemetry::TelemetryMode::Json {
+                        eprintln!("Fehler beim Splitten: {}", e);
+                    }
                     process::exit(1);
                 }
             }
@@ -319,12 +334,12 @@ fn main() {
                 &parts,
                 target.as_deref(),
                 force,
-                silent,
+                telemetry_mode,
                 false,
                 block_size,
             ) {
                 Ok(restored_path_opt) => {
-                    if !silent {
+                    if telemetry_mode == telemetry::TelemetryMode::Interactive {
                         if let Some(restored) = restored_path_opt {
                             println!("Erfolgreich wiederhergestellt: {}", restored.display());
                         }
@@ -332,7 +347,9 @@ fn main() {
                     process::exit(0);
                 }
                 Err(e) => {
-                    eprintln!("Fehler bei der Wiederherstellung: {}", e);
+                    if telemetry_mode != telemetry::TelemetryMode::Json {
+                        eprintln!("Fehler bei der Wiederherstellung: {}", e);
+                    }
                     process::exit(1);
                 }
             }
@@ -344,10 +361,12 @@ fn main() {
             }
             let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
 
-            match pipeline::restore_file(&parts, None, force, silent, true, block_size) {
+            match pipeline::restore_file(&parts, None, force, telemetry_mode, true, block_size) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
-                    eprintln!("Fehler bei der Verifikation: {}", e);
+                    if telemetry_mode != telemetry::TelemetryMode::Json {
+                        eprintln!("Fehler bei der Verifikation: {}", e);
+                    }
                     process::exit(1);
                 }
             }

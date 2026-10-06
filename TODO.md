@@ -49,10 +49,13 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Vektorisierte SIMD-XOR Kaskadierung im Worker-Thread.
   - $N$-Way Stealth-Footer: $F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$. Alle $N$ Teile zwingend zur Rekonstruktion erforderlich; Fehlen oder Manipulation eines Teils wird sofort abgewiesen.
   - Dedizierte Integrationstests (`tests/n_way_tests.rs`) erfolgreich verifiziert.
-- [ ] **Maschinenlesbare JSON-Telemetrie (`--json`)**
+- [x] **Maschinenlesbare JSON-Telemetrie (`--json`)**
   - Strukturierte NDJSON-Ausgabe auf `stderr` (analog zu `blkcp`) für Skripte, CI/CD und Agenten-Pipelines.
-- [ ] **Interaktive Fortschrittsanzeige (`blkcp`-Style)**
-  - Prozentualer Balken, dynamische ETA-Kalkulation und Durchsatzanzeige in MB/s via ANSI-Escapes.
+  - Events: `progress`, `finished` (inkl. `processed_bytes`, `elapsed_s`, `avg_speed_bps`, `checksum`, `num_parts`) und `error`.
+  - Dedizierte Integrationstests in `tests/json_telemetry_tests.rs`.
+- [x] **Interaktive Fortschrittsanzeige (`blkcp`-Style)**
+  - 24-Zeichen breiter dynamischer ANSI-Balken (`[=====>----]`), Prozentanzeige, transferierte/totale Datenmengen, Durchsatzanzeige in MB/s bzw. GB/s und Live-ETA.
+  - Dedizierte Stream-Anzeige bei Pipes mit unbekannter Länge.
 - [ ] **Erweiterte NIST SP 800-22 Entropieanalyse**
   - Ausbau des `-a / --analyze` Werkzeugs um Runs-Tests, Block-Frequenztests und Krypto-Audit-Metriken.
 
