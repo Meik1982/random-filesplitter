@@ -123,20 +123,16 @@ fn parse_restore_targets(
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        display_help();
-        process::exit(1);
-    }
-
-    let first = &args[1];
-    if first == "-h" || first == "--help" {
+    if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help") {
         display_help();
         return;
     }
-    if first == "-V" || first == "--version" {
+    if args.iter().any(|a| a == "-V" || a == "--version") {
         display_version();
         return;
     }
+
+    let first = &args[1];
     if first == "-b" || first == "--benchmark" {
         let code = benchmark::run_benchmark();
         process::exit(code);
