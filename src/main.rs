@@ -4,6 +4,7 @@
 mod benchmark;
 mod crypto;
 mod entropy;
+mod fadvise;
 mod format;
 mod pipeline;
 mod telemetry;
@@ -64,6 +65,7 @@ fn display_help() {
     println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
     println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
     println!("  -o, --output <PFAD>                           Präfix für Teile bzw. Pfad der Zieldatei (oder '-' für stdout)");
+    println!("  --direct                                      Direct I/O: Kernel Page-Cache für Multi-Gigabyte-Dateien umgehen");
     println!("  --json                                        Maschinenlesbare NDJSON-Telemetrie auf stderr");
     println!(
         "  -f, --force                                   Zieldateien überschreiben falls vorhanden"
@@ -198,6 +200,7 @@ fn main() {
     let mut force = false;
     let mut silent = false;
     let mut json_output = false;
+    let mut direct_io = false;
     let mut num_parts: usize = 2;
     let mut block_size = types::DEFAULT_BLOCK_SIZE;
     let mut output_path: Option<String> = None;
@@ -214,6 +217,8 @@ fn main() {
             silent = true;
         } else if arg == "--json" {
             json_output = true;
+        } else if arg == "--direct" || arg == "--direct-io" {
+            direct_io = true;
         } else if arg == "-n" || arg == "--parts" {
             i += 1;
             if i >= args.len() {
@@ -317,6 +322,7 @@ fn main() {
                 block_size,
                 telemetry_mode,
                 force,
+                direct_io,
             ) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
@@ -349,6 +355,7 @@ fn main() {
                 telemetry_mode,
                 false,
                 block_size,
+                direct_io,
             ) {
                 Ok(restored_path_opt) => {
                     if telemetry_mode == telemetry::TelemetryMode::Interactive {
@@ -373,7 +380,15 @@ fn main() {
             }
             let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
 
-            match pipeline::restore_file(&parts, None, force, telemetry_mode, true, block_size) {
+            match pipeline::restore_file(
+                &parts,
+                None,
+                force,
+                telemetry_mode,
+                true,
+                block_size,
+                direct_io,
+            ) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
                     if telemetry_mode != telemetry::TelemetryMode::Json {

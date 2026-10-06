@@ -1,0 +1,74 @@
+#compdef rfs
+
+# Zsh completion for rfs (random-filesplitter v3.0.0)
+
+_rfs() {
+    local context state state_descr line
+    typeset -A opt_args
+
+    local -a common_opts
+    common_opts=(
+        '(-h --help)'{-h,--help}'[Hilfe anzeigen]'
+        '(-V --version)'{-V,--version}'[Version anzeigen]'
+        '(-f --force)'{-f,--force}'[Existierende Zieldateien überschreiben]'
+        '(-q --quiet --silent)'{-q,--quiet,--silent}'[Stummschalten (nur Fehler)]'
+        '--json[Maschinenlesbare NDJSON-Telemetrie auf stderr]'
+        '--direct[Direct I/O: Kernel Page-Cache umgehen]'
+    )
+
+    _arguments -C \
+        '1: :->command' \
+        '*:: :->args' && return 0
+
+    case $state in
+        command)
+            local -a subcommands
+            subcommands=(
+                'split:Datei in N Rausch-Teile aufteilen'
+                'restore:Originaldatei aus N Teilen bitgenau wiederherstellen'
+                'verify:Integrität und Prüfsummen im RAM verifizieren'
+                'benchmark:Hardware-Durchsatzmessung (SIMD, CSPRNG, BLKS)'
+                'entropy:Zweiphasige Hardware- und CSPRNG-Entropiediagnose'
+                'analyze:NIST SP 800-22 Datei-Entropieanalyse'
+            )
+            _describe -t subcommands 'Subcommands' subcommands
+            _arguments $common_opts \
+                '(-b --benchmark)'{-b,--benchmark}'[Hardware-Benchmark ausführen]' \
+                '(-e --entropy --entropy-test)'{-e,--entropy,--entropy-test}'[Entropiediagnose ausführen]' \
+                '(-a --analyze)'{-a,--analyze}'[Datei analysieren]:Datei:_files' \
+                '(-v --verify --check)'{-v,--verify,--check}'[Integrität prüfen]'
+            ;;
+        args)
+            case $words[1] in
+                split)
+                    _arguments \
+                        $common_opts \
+                        '(-n --parts)'{-n,--parts}'[Anzahl der Teile (2..64)]:Anzahl:(2 3 4 5 8 16)' \
+                        '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
+                        '(-o --output)'{-o,--output}'[Präfix oder Pfad]:Datei:_files' \
+                        '*:Eingabe- und Ausgabedateien:_files'
+                    ;;
+                restore)
+                    _arguments \
+                        $common_opts \
+                        '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
+                        '(-o --output)'{-o,--output}'[Zieldatei (oder - für stdout)]:Datei:_files' \
+                        '*:Split-Dateien:_files'
+                    ;;
+                verify)
+                    _arguments \
+                        $common_opts \
+                        '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
+                        '*:Split-Dateien:_files'
+                    ;;
+                analyze)
+                    _arguments \
+                        $common_opts \
+                        '1:Zu analysierende Datei:_files'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_rfs "$@"

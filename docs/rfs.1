@@ -1,0 +1,142 @@
+.TH RFS 1 "October 2026" "rfs 3.0.0" "User Commands"
+.SH NAME
+rfs \- High-Performance Cryptographic File Splitter & Reconstructor (Post-Quantum & Plausible Deniability)
+.SH SYNOPSIS
+.B rfs
+[\fISUBCOMMAND\fR] [\fIOPTIONS\fR] [\fIFILES...\fR]
+.br
+.B rfs split
+[\fB\-n\fR \fIPARTS\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-o\fR \fIPREFIX\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR] \fISOURCE\fR [\fIPARTS...\fR]
+.br
+.B rfs restore
+[\fB\-o\fR \fIDEST\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR] \fIPART1\fR \fIPART2\fR [\fIPART3...\fR]
+.br
+.B rfs verify
+[\fB\-B\fR \fISIZE\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR] \fIPART1\fR \fIPART2\fR [\fIPART3...\fR]
+.br
+.B rfs
+[\fB\-b\fR|\fB\-\-benchmark\fR]
+.br
+.B rfs
+[\fB\-e\fR|\fB\-\-entropy\fR]
+.br
+.B rfs
+[\fB\-a\fR|\fB\-\-analyze\fR \fIFILE\fR] [\fB\-\-json\fR]
+
+.SH DESCRIPTION
+.B rfs
+(Random File Splitter) is a high-performance, modular system utility designed for physical transport security,
+cryptographic file splitting, and bit-accurate reconstruction.
+.PP
+It operates on the mathematical foundation of
+.B Information-Theoretic Security via One-Time-Pad Chain (N-of-N XOR)
+:
+An input file or stream is split into \fIN\fR shares (\fIN\fR >= 2), where every individual share is mathematically
+indistinguishable from pure white noise (Shannon entropy >= 7.9998, Chi-Square 180..330).
+All \fIN\fR shares are strictly required to reconstruct the original data. If even a single share is missing,
+the plaintext remains unsolvable with perfect forward secrecy.
+
+.SH SUBCOMMANDS
+.TP
+.B split
+Splits an input file or Unix stdin stream into \fIN\fR shares.
+.TP
+.B restore
+Reconstructs the original file or pipes it to Unix stdout from all \fIN\fR shares.
+.TP
+.B verify
+Performs fast RAM-only integrity and BLKS-384 / SHA-256 verification without writing to disk.
+.TP
+.B benchmark
+Runs hardware throughput benchmarks measuring ChaCha20 CSPRNG streaming, AVX2/NEON SIMD-XOR, and BLKS-384 hashing.
+.TP
+.B entropy
+Executes a two-phase hardware jitter harvest and NIST SP 800-22 diagnostic test suite.
+.TP
+.B analyze
+Performs deep cryptographic entropy analysis and NIST SP 800-22 runs and block-frequency tests on a file.
+
+.SH OPTIONS
+.TP
+.BR \-n ", " \-\-parts " \fINUM\fR"
+Number of parts for N-way splitting (between 2 and 64; default: 2).
+.TP
+.BR \-B ", " \-\-block\-size " \fISIZE\fR"
+Buffer and I/O block size (e.g., 64K, 256K, 1M, 4M, 16M; default: 4M).
+.TP
+.BR \-o ", " \-\-output " \fIPATH\fR"
+Output prefix for split shares or destination file path for restore (use '\-' for stdout).
+.TP
+.BR \-\-direct ", " \-\-direct\-io
+Bypasses OS page cache using POSIX fadvise flags (POSIX_FADV_SEQUENTIAL and POSIX_FADV_DONTNEED) to prevent memory bloating on multi-gigabyte files.
+.TP
+.BR \-\-json
+Emits structured machine-readable NDJSON telemetry events (\fIprogress\fR, \fIfinished\fR, \fIerror\fR) on stderr.
+.TP
+.BR \-f ", " \-\-force
+Overwrites existing output files without prompting.
+.TP
+.BR \-q ", " \-\-quiet ", " \-\-silent
+Suppresses interactive progress bars and notices; only critical errors are emitted.
+.TP
+.BR \-h ", " \-\-help
+Displays command-line help.
+.TP
+.BR \-V ", " \-\-version
+Displays version information and format support.
+
+.SH POST-QUANTUM STEALTH FOOTER (RFS3-PQ)
+.B rfs
+v3.0.0 embeds an in-flight 60-byte metadata footer at the tail of each share:
+.IP \[bu] 2
+4 Bytes: Magic identifier (\fIRFS3\fR)
+.IP \[bu] 2
+48 Bytes: 384-Bit Post-Quantum Merkle-Tree Hash (\fIBLKS-384\fR)
+.IP \[bu] 2
+8 Bytes: Little-endian original file length
+.PP
+The footer is cascade-XORed across all \fIN\fR shares with ChaCha20 keystream. As a result, no single share contains any magic bytes, headers, or plain text metadata.
+Full backwards compatibility is maintained with historical 44-byte RFS2 SHA-256 footers.
+
+.SH EXAMPLES
+.PP
+Split a file into 3 noise shares:
+.RS
+.B rfs split -n 3 secret.iso
+.RE
+.PP
+Restore the original file from 3 shares:
+.RS
+.B rfs restore secret.iso.rfs1 secret.iso.rfs2 secret.iso.rfs3
+.RE
+.PP
+Stream tar archive into 4 shares over stdin:
+.RS
+.B tar -czf - /data | rfs split -n 4 - -o backup
+.RE
+.PP
+Restore 4 shares directly to stdout pipe:
+.RS
+.B rfs restore backup.rfs* -o - | tar -xzf -
+.RE
+.PP
+Run deep NIST SP 800-22 entropy analysis with JSON export:
+.RS
+.B rfs -a secret.iso.rfs1 --json
+.RE
+
+.SH EXIT STATUS
+.TP
+.B 0
+Success. All shares were generated or restored with bit-accurate cryptographic integrity.
+.TP
+.B 1
+Error occurred (integrity mismatch, missing share, invalid arguments, or I/O failure).
+
+.SH AUTHOR
+Written by Meik Augenblick.
+
+.SH COPYRIGHT
+Copyright (c) 2026 Meik Augenblick.
+.br
+Licensed under the GNU Lesser General Public License v3.0 (LGPL v3).

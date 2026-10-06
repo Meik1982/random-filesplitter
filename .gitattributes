@@ -1,0 +1,3 @@
+# GitHub Linguist Overrides
+legacy_cpp/** linguist-vendored
+docs/** linguist-documentation

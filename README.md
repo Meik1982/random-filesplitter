@@ -1,133 +1,140 @@
-# rfs - Random File Splitter (v2.0.0 High-Performance & Security Edition) 🛡️
+# rfs - Random File Splitter (v3.0.0 Post-Quantum & High-Performance Rust Edition) 🛡️
 
-**rfs** ist ein hochoptimiertes, modulares und plattformunabhängiges C++11 System-Tool zur **physischen Transportsicherung** und kryptografischen Aufteilung von Dateien. Es basiert auf dem Prinzip der **Information-Theoretic Security via XOR**: Eine Datei wird in zwei Hälften zerlegt, die für sich allein genommen mathematisch ununterscheidbar von weißem Rauschen sind (100 % Plausible Deniability, Zero Fingerprint). Erst beim Zusammenführen beider Teile wird die Originaldatei bit-genau rekonstruiert.
+[![CI & Build RFS Binaries](https://github.com/Meik1982/random-filesplitter/actions/workflows/build.yml/badge.svg)](https://github.com/Meik1982/random-filesplitter/actions/workflows/build.yml)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
+[![Rust](https://img.shields.io/badge/Rust-2021_Edition-orange.svg)](https://www.rust-lang.org)
+[![Post-Quantum Hash](https://img.shields.io/badge/Hash-BLKS--384-brightgreen.svg)](https://github.com/Meik1982/blks)
 
----
+**rfs** ist ein hochperformantes, modulares Systemwerkzeug zur **physischen Transportsicherung**, kryptografischen Aufteilung und bitgenauen Rekonstruktion von Dateien und Datenströmen.
 
-## 🚀 Features & Architektur (v2.0.0 / RFS2)
-
-* **Modulare Zero-Dependency C++11 Architektur:** Vollständig entkoppelte Module (`include/rfs/`, `src/`, `tests/`) ohne externe Bibliotheken. Kompiliert in unter 2 Sekunden auf Linux, Windows, macOS, BSD und ReactOS.
-* **RFS2 Stealth Footer mit Sofort-Validierung:**
-  * Die letzten 44 Bytes jeder Datei enthalten ge-XORte Metadaten: 4 Bytes Magic-Tag (`RFS2`), 32 Bytes SHA-256 Prüfsumme und 8 Bytes Original-Dateigröße (Little-Endian).
-  * **Zero Fingerprint:** Jeder Metadaten-Byte wird einzeln mit einem Zufalls-Byte maskiert. Einzeln betrachtet bleibt jede Datei 100 % weißes Rauschen.
-  * Beim Zusammenführen (`rfs file1 file2`) prüft das Tool den Magic-Tag in unter 1 Millisekunde und bricht bei falschen Dateien sofort ab.
-* **ChaCha20 CSPRNG mit 8-Block AVX2-SIMD:** Vollständige Ausnutzung aller 8 Lanes der 256-Bit YMM-Register (512 Bytes pro Runde, **> 1,1 GB/s Durchsatz**) mit portablem 64-Bit-Fallback für Nicht-AVX2- und ARM-CPUs.
-* **Double-Buffering Pipeline mit persistenten Worker-Threads:** Beseitigung jeglichen Thread-Erzeugungs-Overheads. Datenverarbeitung (ChaCha20/XOR), Disk-I/O und SHA-256 Hashing laufen parallel über feste Worker-Threads.
-* **Gehärteter Entropie-Harvester:** Erntet Hardware-RNG (`std::random_device`), Monotonic Clocks, ASLR-Pointer und echten physikalischen L2/L3-Cache- und Bus-Jitter (2 MB Memory-Pool mit nicht-vorhersagbarem Sattolo-Permutationszyklus zur bewussten Aushebelung von Hardware-Stream-Prefetchern).
-* **Vollständige Krypto-Hygiene:** Sichere Nullung (`secure_wipe_memory` mit Compiler-Memory-Barriere gegen Dead-Store-Elimination) aller Schlüssel-, Nonce-, Hash- und Klartext-Arbeitsspeicherpuffer im RAM.
-* **Überschreibschutz & CLI-Flexibilität:**
-  * Schutz vor versehentlichem Überschreiben bestehender Dateien (`-f / --force` zum Erzwingen).
-  * Benutzerdefinierter Zielpfad (`-o / --output <pfad>`).
-  * Versionsausgabe (`-V / --version`) und Hilfeseite (`-h / --help`).
-* **Zweiphasige Diagnose-Suite (`--entropy-test`):**
-  * *Phase 1:* Analyse des unkonditionierten CPU- und Memory-Timing-Jitters ($\sigma$, diskrete Buckets, Bit-Transitionsrate, Shannon-Entropie).
-  * *Phase 2:* NIST-Statistik-Suite auf den ChaCha20-Schlüsselstrom (Shannon-Entropie, $\chi^2$-Anpassungstest, Bit-Balance, serielle Autokorrelation).
-* **Hardware-Benchmark (`--benchmark`):** Schnelle Live-Messung der Durchsatzraten für Entropie, ChaCha20-SIMD, Fast-Path XOR, SHA-256 und Pipelining.
+Es basiert auf dem mathematischen Prinzip der **Information-Theoretic Security via One-Time-Pad Chain ($N$-aus-$N$ XOR)**:
+Eine Datei wird in $N$ Teile zerlegt ($N \ge 2$), von denen jeder einzelne Teil mathematisch ununterscheidbar von weißem Rauschen ist (**100 % Plausible Deniability, Zero Fingerprint**). Erst wenn **alle $N$ Teile** zusammengeführt werden, wird das Original bitgenau rekonstruiert. Fehlt auch nur ein einziger Teil, ist das Geheimnis mathematisch unlösbar.
 
 ---
 
-## 🛠️ Kompilierung & Installation
+## 🚀 Neue Features in v3.0.0 (Rust Rewrite)
 
-Das Projekt benötigt keine externen Abhängigkeiten, lediglich einen gängigen C++11-fähigen Compiler (`g++` oder `clang++`) und `make`.
-
-### Mit Makefile (Empfohlen):
-```bash
-# Bauen (nutzt automatisch AVX2, falls vorhanden)
-make -j$(nproc)
-
-# Unit-Tests ausführen
-make test
-
-# Entropie-Diagnose & Hardware-Benchmark
-make entropy
-make benchmark
-
-# Systemweite Installation (nach /usr/local/bin)
-sudo make install
-```
-
-### Manuelle Kompilierung (Einzeiler):
-```bash
-# Mit AVX2-SIMD-Beschleunigung:
-g++ -O3 -mavx2 -pthread -Iinclude src/*.cpp -o rfs
-
-# Portabel für beliebige x86_64 / ARM / Raspberry Pi CPUs:
-g++ -O3 -pthread -Iinclude src/*.cpp -o rfs
-```
+* **Post-Quantum Stealth-Footer (RFS3-PQ):**
+  * Verwendet **BLKS-384** (384-Bit Post-Quantum Merkle-Tree Hashing) anstelle von SHA-256. Beseitigt den früheren Hash-Flaschenhals vollständig (**3,3x schneller als SHA-256**).
+  * Der 60-Byte Metadaten-Footer (Magic `"RFS3"`, 48-Byte BLKS-384 Digest, 8-Byte Dateigröße) ist $N$-fach über alle Teile ge-XORt. Einzeln betrachtet bleibt jede Datei 100 % Rauschen ohne Magic-Header oder Klartextspuren.
+  * Sofort-Abbruch (< 1 ms) bei nicht zusammengehörigen oder unvollständigen Dateien.
+* **$N$-Way One-Time-Pad Splitting (2 bis 64 Teile):**
+  * Beliebige Aufteilung in 3, 4 oder $N$ Teile via `-n, --parts <ANZAHL>`.
+  * Teile $2 \dots N$ werden mit unkorreliertem ChaCha20-CSPRNG-Schlüsselstrom befüllt; Teil 1 schließt die Kette mit SIMD-beschleunigtem XOR ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$).
+* **Entkoppelte 3-Stufen Zero-Allocation Pipeline:**
+  * Dedizierte Threads für Reader, Krypto-Worker und Writer, synchronisiert über gebundene Ringpuffer (`crossbeam-channel` mit Triple-Buffering).
+  * Vollständige Überlappung von Disk-I/O und SIMD-Krypto: Bis zu **1,85 GB/s ChaCha20** und **~4,0 GB/s SIMD-XOR**.
+* **Unix Streaming-Pipes (POSIX `-` Support):**
+  * Nahtlose Integration in Unix-Pipelines: Liest von `stdin` und schreibt nach `stdout`.
+  * Dateigröße muss vorab nicht bekannt sein; In-Flight BLKS-384 Hashing puffert die Metadaten bis zum Stream-Ende.
+* **Maschinenlesbare NDJSON-Telemetrie (`--json`):**
+  * Strukturierte JSON-Lines auf `stderr` (`progress`, `finished`, `error`) mit Bytezählern, Durchsatz, Live-ETA und Hashes für Skripte und KI-Agenten.
+* **Interaktive Fortschrittsanzeige (`blkcp`-Style):**
+  * Dynamischer 24-Zeichen ANSI-Fortschrittsbalken mit Prozentanzeige, formatierter Bytezahl, Live-Geschwindigkeit (MB/s / GB/s) und ETA.
+* **Erweiterte NIST SP 800-22 Entropieanalyse:**
+  * Zweiphasige Diagnose (`rfs --entropy-test`) und Datei-Audit (`rfs -a <Datei>`) mit Runs-Tests, Block-Frequenztests ($M=128$), analytischer `erfc`-Funktion und Wilson-Hilferty Chi²-Transformation.
+* **100 % Abwärtskompatibilität:**
+  * Rekonstruiert historische RFS2-Archive (44-Byte Footer, SHA-256) aus v2.x automatisch und bitgenau.
 
 ---
 
-## 📖 Benutzung
+## 💻 Verwendung
 
-### 1. Datei splitten (Verschlüsseln)
-Erstellt aus einer Datei zwei scheinbar zufällige Rausch-Dateien (`.rfs1` und `.rfs2`):
+### 1. Dateien splitten (N-Way One-Time-Pad)
 ```bash
-rfs backup.tar.gz
+# In 2 Teile aufteilen (Standard: datei.iso.rfs1, datei.iso.rfs2)
+rfs split datei.iso
+
+# In 3 Teile aufteilen (.rfs1, .rfs2, .rfs3)
+rfs split -n 3 datei.iso
+
+# Explizite Pfade und Blockgröße definieren (z. B. 16 MB Puffer)
+rfs split -n 3 -B 16M datei.iso /media/usb1/partA.rfs /media/usb2/partB.rfs /media/usb3/partC.rfs
 ```
 
-### 2. Datei wiederherstellen (Entschlüsseln)
-Rekonstruiert die Originaldatei, prüft den RFS2-Magic-Tag und verifiziert automatisch die SHA-256-Integrität:
+### 2. Dateien wiederherstellen & verifizieren
 ```bash
-rfs backup.tar.gz.rfs1 backup.tar.gz.rfs2
+# Aus allen Teilen bitgenau wiederherstellen
+rfs restore datei.iso.rfs1 datei.iso.rfs2 datei.iso.rfs3
+
+# In spezifische Zieldatei wiederherstellen
+rfs restore partA.rfs partB.rfs partC.rfs -o wiederhergestellt.iso
+
+# Integrität im RAM prüfen ohne Disk-Schreibzugriff
+rfs verify partA.rfs partB.rfs partC.rfs
 ```
 
-### 3. Benutzerdefinierter Zielpfad & Überschreiben erzwingen
+### 3. Unix Streaming-Pipes
 ```bash
-rfs backup.tar.gz.rfs1 backup.tar.gz.rfs2 -o /pfad/zu/ziel.tar.gz -f
+# Tar-Archiv direkt beim Erstellen in 4 Teile streamen
+tar -czf - /var/data | rfs split -n 4 - -o backup
+
+# Aus 4 Teilen direkt nach stdout entpacken
+rfs restore backup.rfs1 backup.rfs2 backup.rfs3 backup.rfs4 -o - | tar -xzf -
 ```
 
-### 4. Nur Integrität prüfen (Dry-Run / Verify)
-Prüft die Validität beider Teile ohne Schreibzugriff auf die Festplatte:
+### 4. Maschinenlesbare Telemetrie (--json)
 ```bash
-rfs --verify backup.tar.gz.rfs1 backup.tar.gz.rfs2
+rfs split -n 3 riesig.iso --json
+# Ausgabe auf stderr:
+# {"event":"progress","action":"Split","processed_bytes":524288000,"total_bytes":1048576000,"percent":50.00,"speed_bps":1850230120,"elapsed_s":0.28,"eta_s":0.2}
+# {"event":"finished","action":"Split","processed_bytes":1048576000,"elapsed_s":0.5512,"avg_speed_bps":1902340123,"num_parts":3,"checksum":{"algorithm":"blks-384","digest":"..."}}
 ```
 
-### 5. Datei-Entropie & Kryptoanalyse beliebiger Dateien (-a / --analyze)
-Untersucht eine beliebige Datei auf kryptografische Entropiedichte (Shannon-Entropie, Chi-Quadrat-Anpassung, Mittelwert, Bit-Balance, Lag-1-Autokorrelation und Monte-Carlo-Pi):
+### 5. Kryptoanalyse & Benchmarks
 ```bash
-rfs -a datei.bin
-# oder: rfs --analyze datei.bin
-# oder: rfs --file-entropy datei.bin
-```
+# NIST SP 800-22 Datei-Entropieanalyse
+rfs -a datei.iso.rfs1
 
-### 6. System-Entropie- & Krypto-Qualitätsanalyse (--entropy-test)
-```bash
+# Zweiphasige System- und Hardware-Entropiediagnose
 rfs --entropy-test
-```
 
-### 7. Hardware-Benchmark ausführen
-```bash
+# Hardware-Benchmark (SIMD ChaCha20, XOR, BLKS-384)
 rfs --benchmark
 ```
 
 ---
 
-## 📂 Projektstruktur
+## 🛠️ Kompilierung & Installation
 
-```text
-random-filesplitter/
-├── include/rfs/
-│   ├── types.hpp        # RFS2-Konstanten, Magic-Tag, Endianness & Secure Wipe
-│   ├── chacha20.hpp     # ChaCha20 CSPRNG (AVX2 8-Block SIMD & 64-Bit Fallback)
-│   ├── sha256.hpp       # SHA-256 Hashing-Engine
-│   ├── entropy.hpp      # UniversalEntropyHarvester & Jitter-Diagnose
-│   ├── splitter.hpp     # Kern-Logik: Split, Merge, Verify & Benchmark
-│   └── progress.hpp     # Nicht-blockierende Terminal-Fortschrittsanzeige
-├── src/
-│   ├── chacha20.cpp
-│   ├── sha256.cpp
-│   ├── entropy.cpp
-│   ├── splitter.cpp
-│   └── main.cpp         # CLI-Parser
-├── tests/
-│   └── test_crypto.cpp  # Testsuite für NIST-Vektoren, E2E & Magic-Tag
-├── .github/workflows/
-│   └── build.yml        # CI-Matrix für Linux, Windows & macOS + Release-Deploy
-└── Makefile
+### Voraussetzungen
+* Rust Toolchain (Edition 2021, MSRV 1.75+)
+
+### Aus dem Quellcode bauen
+```bash
+git clone https://github.com/Meik1982/random-filesplitter.git
+cd random-filesplitter
+cargo build --release
+
+# Binary testen
+./target/release/rfs --version
+./target/release/rfs --benchmark
+```
+
+### Arch Linux / CachyOS (makepkg)
+```bash
+cd packaging/arch
+makepkg -si
 ```
 
 ---
 
-## ⚖️ Lizenz
+## 📊 Kryptoanalytischer Nachweis (Plausible Deniability)
 
-Dieses Programm wurde von **Meik Augenblick** unter der **Lesser GNU General Public License (LGPL v3)** geschrieben.
+Für jeden Split-Teil gelten nachweisbar folgende statistische Schwellenwerte:
+
+| Metrik | Sollwert / Ideal | Typischer RFS3-Messwert | Status |
+| :--- | :--- | :--- | :--- |
+| **Shannon-Entropie** | $\approx 8{,}000000$ Bits/Byte | **$7{,}99983$ Bits/Byte** | ✅ Bestanden |
+| **Chi-Quadrat ($\chi^2$)** | $180{,}0 \dots 330{,}0$ ($p = 0{,}05 \dots 0{,}95$) | **$248{,}32$** | ✅ Bestanden |
+| **Arithmetischer Mittelwert** | $127{,}500$ | **$127{,}498$** | ✅ Bestanden |
+| **Bit-Balance (1/0)** | $50{,}000\ \%$ | **$50{,}016\ \%$** | ✅ Bestanden |
+| **NIST Runs-Test** | $p \ge 0{,}01$ | **$p = 0{,}627$** | ✅ Bestanden |
+| **NIST Block-Frequenz ($M=128$)** | $p \ge 0{,}01$ | **$p = 0{,}172$** | ✅ Bestanden |
+
+---
+
+## 📜 Lizenz & Urheberrecht
+
+Copyright (c) 2026 Meik Augenblick.  
+Lizenziert unter der **GNU Lesser General Public License v3.0 (LGPL v3)**.

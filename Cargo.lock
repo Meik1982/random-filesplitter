@@ -187,6 +187,7 @@ dependencies = [
  "chacha20",
  "crossbeam-channel",
  "getrandom",
+ "libc",
  "sha2",
  "zeroize",
 ]

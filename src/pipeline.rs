@@ -34,6 +34,7 @@ struct WriteJob {
 /// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
 /// - Entkoppelte 3-Stufen Pipeline (Reader ➔ Crypto/SIMD ➔ Writer) mit Zero-Copy Puffer-Pooling
 /// - Maschinenlesbare NDJSON-Telemetrie (`--json`) und interaktive ANSI-Fortschrittsbalken
+#[allow(clippy::too_many_arguments)]
 pub fn split_stream_or_file(
     input_source: &str,
     output_parts: Option<&[PathBuf]>,
@@ -42,6 +43,7 @@ pub fn split_stream_or_file(
     block_size: usize,
     telemetry_mode: TelemetryMode,
     force: bool,
+    direct_io: bool,
 ) -> Result<Vec<PathBuf>, String> {
     // 1. Zielpfade bestimmen
     let (out_paths, n_parts) = if let Some(parts) = output_parts {
@@ -95,6 +97,7 @@ pub fn split_stream_or_file(
         }
         let f =
             File::open(in_path).map_err(|e| format!("Kann Eingabedatei nicht öffnen: {}", e))?;
+        crate::fadvise::advise_sequential(&f);
         let len = f
             .metadata()
             .map_err(|e| format!("Kann Dateimetadaten nicht lesen: {}", e))?
@@ -118,6 +121,7 @@ pub fn split_stream_or_file(
                     e
                 )
             })?;
+        crate::fadvise::advise_sequential(&f);
         files.push(f);
     }
 
@@ -238,6 +242,7 @@ pub fn split_stream_or_file(
             .into_iter()
             .map(|f| BufWriter::with_capacity(block_size, f))
             .collect();
+        let mut total_written: u64 = 0;
 
         while let Ok(job_res) = job_rx.recv() {
             let WriteJob { bufs, valid_len } = job_res?;
@@ -246,8 +251,16 @@ pub fn split_stream_or_file(
                 writers[k]
                     .write_all(&bufs[k][..valid_len])
                     .map_err(|e| format!("Schreibfehler auf Teil {}: {}", k + 1, e))?;
+                if direct_io {
+                    crate::fadvise::advise_drop_cache(
+                        writers[k].get_ref(),
+                        total_written as i64,
+                        valid_len as i64,
+                    );
+                }
             }
 
+            total_written += valid_len as u64;
             let _ = free_out_tx.send(bufs);
         }
 
@@ -327,14 +340,15 @@ pub fn split_file(
         block_size,
         mode,
         false,
+        false,
     )?;
     Ok((parts[0].clone(), parts[1].clone()))
 }
 
-/// Rekonstruiert eine Originaldatei aus $N$ Split-Teilen ($N \ge 2$).
+/// Führt die kryptografische Wiederherstellung oder Verifikation von $N$ Split-Dateien durch.
 ///
 /// Unterstützt:
-/// - Schreiben auf Festplatte (`output_target` != `"-"`)
+/// - Reguläre Wiederherstellung in Zieldatei
 /// - Unix-Piping nach `stdout` (`output_target` == `"-"`)
 /// - Fast-Verify im RAM (`verify_only` == true)
 /// - $N$-Way SIMD-XOR Wiederherstellung ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$)
@@ -346,6 +360,7 @@ pub fn restore_file(
     telemetry_mode: TelemetryMode,
     verify_only: bool,
     block_size: usize,
+    direct_io: bool,
 ) -> Result<Option<PathBuf>, String> {
     let n_parts = part_paths.len();
     if n_parts < 2 {
@@ -375,6 +390,7 @@ pub fn restore_file(
         } else {
             file_len = Some(len);
         }
+        crate::fadvise::advise_sequential(&f);
         files.push(f);
     }
 
@@ -506,6 +522,13 @@ pub fn restore_file(
                 if let Err(e) = r.read_exact(&mut in_bufs[k][..to_read]) {
                     let _ = data_tx.send(Err(format!("Lesefehler Teil {}: {}", k + 1, e)));
                     return Err(format!("Lesefehler Teil {}: {}", k + 1, e));
+                }
+                if direct_io {
+                    crate::fadvise::advise_drop_cache(
+                        r.get_ref(),
+                        (original_size - remaining) as i64,
+                        to_read as i64,
+                    );
                 }
             }
 
