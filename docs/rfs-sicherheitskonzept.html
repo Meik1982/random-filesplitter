@@ -576,18 +576,24 @@
         (Original <span class="math-symbol">⊕</span> Zufall) <span class="math-symbol">⊕</span> Zufall <span class="math-symbol">=</span> Original <span class="math-symbol">⊕</span> (Zufall <span class="math-symbol">⊕</span> Zufall) <span class="math-symbol">=</span> Original <span class="math-symbol">⊕</span> 0 <span class="math-symbol">=</span> <span class="math-highlight">Original</span>
       </div>
 
-      <h3>Der RFS2 / RFS3 Stealth-Footer</h3>
+      <h3>Der generalisierte RFS3 Post-Quantum Stealth-Footer</h3>
       <p>
-        Wenn man zwei beliebige Zufallsdateien zusammenführt, woher weiß <code>rfs</code> dann, ob die Dateien überhaupt zusammengehören und ob das Original fehlerfrei wiederhergestellt wurde?
+        Wenn man $N$ beliebige Zufallsdateien zusammenführt, woher weiß <code>rfs</code> dann, ob alle Teile zusammengehören und ob das Original fehlerfrei wiederhergestellt wurde?
       </p>
       <p>
         Normale Programme schreiben dafür sichtbare Header an den Anfang. <strong>RFS nicht!</strong><br>
-        <code>rfs</code> hängt an das Ende der Datei einen <strong>Stealth-Footer</strong> (bei RFS2 44 Bytes, bei RFS3 60 Bytes):
+        <code>rfs</code> hängt an das Ende jeder Split-Datei einen <strong>Stealth-Footer</strong> (bei RFS2 44 Bytes, bei RFS3 60 Bytes):
       </p>
       <ul>
-        <li>Dieser Footer enthält einen Magic-Tag (<code>"RFS2"</code> bzw. <code>"RFS3"</code>), eine kryptografische Prüfsumme (SHA-256 bzw. 384-Bit Post-Quantum BLKS) und die Original-Dateigröße.</li>
-        <li><strong>Der Clou:</strong> Dieser Footer wird <em>ebenfalls byteweise mit Zufall ge-XORt</em>!</li>
-        <li>Isoliert betrachtet ist auch das Dateiende 100 % weißes Rauschen. Erst wenn beide Teile zusammengefügt werden, entschlüsselt sich der Footer in unter 1 Millisekunde und <code>rfs</code> weiß: <em>„Volltreffer, die Prüfsumme stimmt überein!“</em></li>
+        <li><strong>Struktur (60 Bytes):</strong> Magic-Tag (<code>"RFS3"</code>, 4 Bytes) + BLKS-384 Post-Quantum Digest (48 Bytes / 384 Bit) + Originalgröße (8 Bytes Little-Endian).</li>
+        <li><strong>Generalisierte $N$-Way Maskierung:</strong> Der Klartext-Footer wird über alle $N$ Teile maskiert:
+          <div class="math-box">
+            F_1 = \text{Footer}_{\text{Plain}} \oplus F_2 \oplus F_3 \oplus \dots \oplus F_N
+          </div>
+          Die Footer $F_2 \dots F_N$ werden mit echtem ChaCha20-Zufallsstrom gefüllt. Einzeln betrachtet ist jedes Dateiende zu 100 % ununterscheidbar von weißem Rauschen. Erst wenn <strong>alle $N$ Teile</strong> zusammengelegt werden, entschlüsselt sich der Footer in unter 1 Millisekunde.
+        </li>
+        <li><strong>Post-Quantum Kollisionsresistenz:</strong> BLKS-384 bietet mit 384 Bit Ausgabebreite volle 192 Bit quantenresistente Sicherheit gegen Kollisionsangriffe (BHT-Algorithmus) und 384 Bit gegen Grover-Preimage-Angriffe.</li>
+        <li><strong>Hardware-Entropie (2 MB Sattolo-Pool):</strong> Die Initialisierung speist sich neben dem Betriebssystem-CSPRNG aus einem 2 MB großen Cache-Line-Permutationspool (32.768 Nodes à 64 Bytes). Durch Pointer-Chasing werden Prozessor-Caches durchbrochen und physikalischer Speicherbus- und Timing-Jitter mit über 6 Bits/Sample geerntet.</li>
       </ul>
     </section>
 

@@ -40,14 +40,14 @@ fn init_permutation_pool(pool: &mut [CacheLineNode], seed_val: u64) {
 pub struct UniversalEntropyHarvester;
 
 impl UniversalEntropyHarvester {
-    /// Erntet kryptografisch sichere 32-Byte Key und 12-Byte Nonce
-    pub fn harvest_seed() -> ([u8; 32], [u8; 12]) {
-        let mut key = [0u8; 32];
-        let mut nonce = [0u8; 12];
+    /// Erntet kryptografisch sichere 32-Byte Key und 12-Byte Nonce mit automatischer RAII-Nullung
+    pub fn harvest_seed() -> (zeroize::Zeroizing<[u8; 32]>, zeroize::Zeroizing<[u8; 12]>) {
+        let mut key = zeroize::Zeroizing::new([0u8; 32]);
+        let mut nonce = zeroize::Zeroizing::new([0u8; 12]);
 
         // 1. Primärquelle: OS-Kernel CSPRNG (getrandom)
-        getrandom::getrandom(&mut key).expect("OS CSPRNG Fehler bei Key");
-        getrandom::getrandom(&mut nonce).expect("OS CSPRNG Fehler bei Nonce");
+        getrandom::getrandom(key.as_mut_slice()).expect("OS CSPRNG Fehler bei Key");
+        getrandom::getrandom(nonce.as_mut_slice()).expect("OS CSPRNG Fehler bei Nonce");
 
         // 2. Defence-in-Depth: CPU-Jitter und High-Res Clock einmischen
         let now = Instant::now();

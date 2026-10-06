@@ -16,6 +16,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
+use zeroize::Zeroize;
 
 /// Puffer-Poolgröße für Triple-Buffering (3 Puffer-Slots in-flight)
 const BUFFER_POOL_SIZE: usize = 3;
@@ -102,7 +103,7 @@ pub fn split_stream_or_file(
             .metadata()
             .map_err(|e| format!("Kann Dateimetadaten nicht lesen: {}", e))?
             .len();
-        (Box::new(BufReader::with_capacity(block_size, f)), Some(len))
+        (Box::new(f), Some(len))
     };
 
     // 3. Ausgabedateien öffnen
@@ -126,8 +127,10 @@ pub fn split_stream_or_file(
     }
 
     // 4. Initialisiere Entropie & ChaCha20 CSPRNG
-    let (master_key, master_nonce) = UniversalEntropyHarvester::harvest_seed();
+    let (mut master_key, mut master_nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut rng = ChaChaRng::new(&master_key, &master_nonce);
+    master_key.zeroize();
+    master_nonce.zeroize();
 
     // 5. Kanäle für entkoppelte 3-Stufen-Pipeline & Puffer-Pools
     let (free_in_tx, free_in_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = bounded(BUFFER_POOL_SIZE);
@@ -155,24 +158,30 @@ pub fn split_stream_or_file(
         Receiver<Result<WriteJob, String>>,
     ) = bounded(2);
 
-    // Stufe 1: Reader Thread
+    // Stufe 1: Reader Thread (füllt Puffer bis zur vollen Blockgröße oder EOF)
     let reader_handle = thread::spawn(move || -> Result<(), String> {
         let mut reader = input_reader;
         while let Ok(mut buf) = free_in_rx.recv() {
-            match reader.read(&mut buf) {
-                Ok(0) => {
-                    drop(data_tx);
-                    break;
-                }
-                Ok(n) => {
-                    if data_tx.send(Ok((buf, n))).is_err() {
-                        break;
+            let mut n_read = 0;
+            while n_read < buf.len() {
+                match reader.read(&mut buf[n_read..]) {
+                    Ok(0) => break,
+                    Ok(n) => n_read += n,
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(e) => {
+                        let _ = data_tx.send(Err(format!("Lesefehler auf Eingabe: {}", e)));
+                        return Err(format!("Lesefehler auf Eingabe: {}", e));
                     }
                 }
-                Err(e) => {
-                    let _ = data_tx.send(Err(format!("Lesefehler auf Eingabe: {}", e)));
-                    break;
-                }
+            }
+
+            if n_read == 0 {
+                drop(data_tx);
+                break;
+            }
+
+            if data_tx.send(Ok((buf, n_read))).is_err() {
+                break;
             }
         }
         Ok(())
@@ -185,7 +194,7 @@ pub fn split_stream_or_file(
         let mut blks_hasher = BlksHasher::new();
 
         while let Ok(msg) = data_rx.recv() {
-            let (in_buf, len) = msg?;
+            let (mut in_buf, len) = msg?;
 
             // 1. In-flight BLKS-384 Hashing
             blks_hasher.update(&in_buf[..len]);
@@ -207,7 +216,8 @@ pub fn split_stream_or_file(
                 xor_in_place(&mut first[0][..len], &rest[0][..len]);
             }
 
-            // 5. Eingabepuffer zurück in den Reader-Pool (Zero-Allocation)
+            // 5. Eingabepuffer zurück in den Reader-Pool (Zero-Allocation & Zeroize)
+            in_buf.as_mut_slice().zeroize();
             let _ = free_in_tx.send(in_buf);
 
             total_processed += len as u64;
@@ -287,8 +297,10 @@ pub fn split_stream_or_file(
     writer_res?;
 
     // 6. RFS3-Stealth-Footers codieren & an alle N Dateien anhängen
-    let (post_rng_key, post_rng_nonce) = UniversalEntropyHarvester::harvest_seed();
+    let (mut post_rng_key, mut post_rng_nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut footer_rng = ChaChaRng::new(&post_rng_key, &post_rng_nonce);
+    post_rng_key.zeroize();
+    post_rng_nonce.zeroize();
     let footers = encode_rfs3_footer_n_way(&digest, total_processed, n_parts, &mut footer_rng);
 
     for (k, path) in out_paths.iter().enumerate() {
@@ -435,8 +447,13 @@ pub fn restore_file(
         Some(PathBuf::from(p))
     } else {
         let p_str = part_paths[0].to_str().unwrap_or("restored.bin");
-        let deduced = if let Some(stripped) = p_str.strip_suffix(".rfs1") {
-            PathBuf::from(stripped)
+        let deduced = if let Some(idx) = p_str.rfind(".rfs") {
+            let suffix = &p_str[idx + 4..];
+            if suffix.chars().all(|c| c.is_ascii_digit()) {
+                PathBuf::from(&p_str[..idx])
+            } else {
+                PathBuf::from(format!("{}.restored", p_str))
+            }
         } else if let Some(stripped) = p_str.strip_suffix(".part1.rfs") {
             PathBuf::from(stripped)
         } else {
@@ -446,6 +463,17 @@ pub fn restore_file(
     };
 
     if let Some(ref target) = target_out_path {
+        // Schutz: Ziel darf niemals eine der Quell-Split-Dateien sein
+        for (idx, p) in part_paths.iter().enumerate() {
+            if target == p {
+                return Err(format!(
+                    "Zieldatei '{}' darf nicht identisch mit Quellteil {} sein (Gefahr des Datenverlusts).",
+                    target.display(),
+                    idx + 1
+                ));
+            }
+        }
+
         if target.exists() && !force {
             return Err(format!(
                 "Zieldatei '{}' existiert bereits. Verwenden Sie --force zum Überschreiben.",
@@ -588,9 +616,9 @@ pub fn restore_file(
                     return Err("Writer vorzeitig beendet".to_string());
                 }
             } else {
+                b_out.as_mut_slice().zeroize();
                 let _ = worker_free_out_tx.send(b_out);
             }
-
             telemetry.update(total_processed);
         }
 
@@ -628,7 +656,11 @@ pub fn restore_file(
                 expected_sha256, ..
             } => {
                 let actual = sha256_hasher.unwrap().finalize();
-                if actual.as_slice() == expected_sha256 {
+                let mut ct_diff = 0u8;
+                for (a, b) in actual.as_slice().iter().zip(expected_sha256.iter()) {
+                    ct_diff |= a ^ b;
+                }
+                if ct_diff == 0 {
                     let hex_str = expected_sha256
                         .iter()
                         .map(|b| format!("{:02x}", b))
@@ -658,7 +690,7 @@ pub fn restore_file(
     let writer_handle = thread::spawn(move || -> Result<(), String> {
         if let Some(mut writer) = out_writer {
             while let Ok(msg) = job_rx.recv() {
-                let (b_out, len) = msg?;
+                let (mut b_out, len) = msg?;
                 if let Err(e) = writer.write_all(&b_out[..len]) {
                     if e.kind() == io::ErrorKind::BrokenPipe {
                         return Err("Ausgabepipe wurde vom Empfänger geschlossen (Broken Pipe)."
@@ -666,6 +698,7 @@ pub fn restore_file(
                     }
                     return Err(format!("Schreibfehler auf Ziel: {}", e));
                 }
+                b_out.as_mut_slice().zeroize();
                 let _ = free_out_tx.send(b_out);
             }
             writer.flush().map_err(|e| format!("Flush-Fehler: {}", e))?;

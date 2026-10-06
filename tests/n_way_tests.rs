@@ -211,3 +211,105 @@ fn test_n_way_tamper_detection() {
     let _ = fs::remove_file(&p3);
     let _ = fs::remove_dir(&temp_dir);
 }
+
+#[test]
+fn test_restore_source_collision_protection() {
+    let test_id = format!(
+        "rfs_protect_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let temp_dir = std::env::temp_dir().join(test_id);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let in_file = temp_dir.join("orig.iso");
+    let p1 = temp_dir.join("orig.iso.rfs1");
+    let p2 = temp_dir.join("orig.iso.rfs2");
+
+    fs::write(&in_file, b"Sicherheits-Schutztest").unwrap();
+
+    let split_res = Command::new(rfs_bin())
+        .arg("split")
+        .arg(&in_file)
+        .arg("-f")
+        .status()
+        .unwrap();
+    assert!(split_res.success());
+
+    // Versuch: Quellteil 1 als Ziel angeben -> muss mit Fehler abbrechen!
+    let restore_output = Command::new(rfs_bin())
+        .arg("restore")
+        .arg(&p1)
+        .arg(&p2)
+        .arg("-o")
+        .arg(&p1)
+        .arg("-f")
+        .output()
+        .unwrap();
+
+    assert!(
+        !restore_output.status.success(),
+        "Überschreiben einer Quelldatei muss strikt blockiert werden"
+    );
+    let stderr = String::from_utf8_lossy(&restore_output.stderr);
+    assert!(
+        stderr.contains("darf nicht identisch mit Quellteil"),
+        "Fehlermeldung erwartet: {}",
+        stderr
+    );
+
+    let _ = fs::remove_file(&in_file);
+    let _ = fs::remove_file(&p1);
+    let _ = fs::remove_file(&p2);
+    let _ = fs::remove_dir(&temp_dir);
+}
+
+#[test]
+fn test_restore_reversed_arguments_strips_suffix_properly() {
+    let test_id = format!(
+        "rfs_rev_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let temp_dir = std::env::temp_dir().join(test_id);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let in_file = temp_dir.join("payload.dat");
+    let p1 = temp_dir.join("payload.dat.rfs1");
+    let p2 = temp_dir.join("payload.dat.rfs2");
+    let expected_restored = temp_dir.join("payload.dat");
+
+    let original_data = b"Invertierte Argumentreihenfolge Testdaten";
+    fs::write(&in_file, original_data).unwrap();
+
+    let split_res = Command::new(rfs_bin())
+        .arg("split")
+        .arg(&in_file)
+        .arg("-f")
+        .status()
+        .unwrap();
+    assert!(split_res.success());
+    let _ = fs::remove_file(&in_file); // Original löschen
+
+    // Teil 2 vor Teil 1 übergeben (ohne -o): muss automatisch auf payload.dat deduzieren!
+    let restore_res = Command::new(rfs_bin())
+        .arg("restore")
+        .arg(&p2)
+        .arg(&p1)
+        .status()
+        .unwrap();
+    assert!(restore_res.success());
+    assert!(expected_restored.exists());
+    assert_eq!(fs::read(&expected_restored).unwrap(), original_data);
+
+    let _ = fs::remove_file(&p1);
+    let _ = fs::remove_file(&p2);
+    let _ = fs::remove_file(&expected_restored);
+    let _ = fs::remove_dir(&temp_dir);
+}
