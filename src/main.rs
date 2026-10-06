@@ -9,7 +9,7 @@ mod pipeline;
 mod types;
 
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 const APP_NAME: &str = "rfs";
@@ -28,17 +28,27 @@ fn display_help() {
     display_version();
     println!("\nVerwendung:");
     println!(
-        "  rfs split [Optionen] <Quelle|-> [Teil1 Teil2]   (Datei oder Stdin in 2 Teile splitten)"
+        "  rfs split [Optionen] <Quelle|-> [Teile...]      (Datei oder Stdin in 2 oder N Teile splitten)"
     );
-    println!("  rfs restore [Optionen] <Teil1> <Teil2> [Ziel|-] (Datei auf Platte oder Stdout wiederherstellen)");
-    println!("  rfs verify [Optionen] <Teil1> <Teil2>          (Integrität im RAM prüfen ohne Schreiben)");
+    println!(
+        "  rfs restore [Optionen] <Teile...> [Ziel|-]      (N Teile auf Festplatte oder Stdout wiederherstellen)"
+    );
+    println!(
+        "  rfs verify [Optionen] <Teile...>               (Integrität von N Teilen im RAM prüfen)"
+    );
     println!("\nKlassische Syntax:");
-    println!("  rfs [Optionen] <Datei|->                       (Datei oder Stdin splitten)");
-    println!("  rfs [Optionen] <Teil1> <Teil2>                 (Datei wiederherstellen)");
-    println!("  rfs --verify <Teil1> <Teil2>                   (Integrität prüfen)");
-    println!("\nUnix Streaming-Pipes:");
-    println!("  tar -czf - /data | rfs split - teil1.rfs teil2.rfs");
-    println!("  rfs restore teil1.rfs teil2.rfs -o - | tar -xzf -");
+    println!(
+        "  rfs [Optionen] <Datei|->                       (Datei oder Stdin in 2 Teile splitten)"
+    );
+    println!(
+        "  rfs [Optionen] <Teil1> <Teil2> [Teil3...]      (Datei aus N Teilen wiederherstellen)"
+    );
+    println!("  rfs --verify <Teile...>                        (Integrität von N Teilen prüfen)");
+    println!("\nN-Way One-Time-Pad & Unix Streaming-Pipes:");
+    println!("  rfs split -n 3 geheim.iso                      (In 3 Rausch-Dateien aufteilen: .rfs1, .rfs2, .rfs3)");
+    println!("  rfs restore geheim.rfs1 geheim.rfs2 geheim.rfs3 (Bitgenaue Rekonstruktion aus allen 3 Teilen)");
+    println!("  tar -czf - /data | rfs split -n 4 - -o backup  (Stdin direkt in 4 Teile streamen)");
+    println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Aus allen Teilen direkt nach Stdout pipen)");
     println!("\nBefehle & Werkzeuge:");
     println!("  -b, --benchmark                                Hardware- und Durchsatz-Benchmark");
     println!(
@@ -50,6 +60,7 @@ fn display_help() {
     println!("  -h, --help                                    Diese Hilfe anzeigen");
     println!("  -V, --version                                 Versionsnummer anzeigen");
     println!("\nOptionen:");
+    println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
     println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
     println!("  -o, --output <PFAD>                           Präfix für Teile bzw. Pfad der Zieldatei (oder '-' für stdout)");
     println!(
@@ -65,6 +76,45 @@ enum Action {
     Split,
     Restore,
     Verify,
+}
+
+fn parse_restore_targets(
+    positionals: &[String],
+    output_flag: Option<&str>,
+) -> Result<(Vec<PathBuf>, Option<String>), String> {
+    if positionals.is_empty() {
+        return Err("Keine Split-Dateien zur Wiederherstellung angegeben.".to_string());
+    }
+    if let Some(target) = output_flag {
+        let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
+        return Ok((parts, Some(target.to_string())));
+    }
+
+    let last = &positionals[positionals.len() - 1];
+    if last == "-" {
+        let parts: Vec<PathBuf> = positionals[..positionals.len() - 1]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        return Ok((parts, Some("-".to_string())));
+    }
+
+    let all_exist = positionals.iter().all(|p| Path::new(p).exists());
+    if all_exist {
+        let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
+        return Ok((parts, None));
+    }
+
+    if positionals.len() >= 3 && !Path::new(last).exists() {
+        let parts: Vec<PathBuf> = positionals[..positionals.len() - 1]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        return Ok((parts, Some(last.clone())));
+    }
+
+    let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
+    Ok((parts, None))
 }
 
 fn main() {
@@ -133,6 +183,7 @@ fn main() {
     let mut verify_only = false;
     let mut force = false;
     let mut silent = false;
+    let mut num_parts: usize = 2;
     let mut block_size = types::DEFAULT_BLOCK_SIZE;
     let mut output_path: Option<String> = None;
     let mut positionals: Vec<String> = Vec::new();
@@ -146,6 +197,26 @@ fn main() {
             force = true;
         } else if arg == "-q" || arg == "--quiet" || arg == "--silent" {
             silent = true;
+        } else if arg == "-n" || arg == "--parts" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Fehler: Option {} erfordert eine Anzahl.", arg);
+                process::exit(1);
+            }
+            match args[i].parse::<usize>() {
+                Ok(n) if (2..=64).contains(&n) => num_parts = n,
+                Ok(n) => {
+                    eprintln!(
+                        "Fehler: Anzahl der Teile ({}) muss zwischen 2 und 64 liegen.",
+                        n
+                    );
+                    process::exit(1);
+                }
+                Err(_) => {
+                    eprintln!("Fehler: Ungültige Zahl für Option {}: '{}'", arg, args[i]);
+                    process::exit(1);
+                }
+            }
         } else if arg == "-B" || arg == "--block-size" {
             i += 1;
             if i >= args.len() {
@@ -192,30 +263,10 @@ fn main() {
                 eprintln!("Fehler: Keine Eingabedatei(en) angegeben.");
                 eprintln!("Führen Sie 'rfs --help' für Hilfe aus.");
                 process::exit(1);
-            } else if positionals.len() == 1 {
+            } else if positionals.len() == 1 || (positionals[0] == "-" && positionals.len() >= 3) {
                 Action::Split
-            } else if positionals.len() == 2 {
-                Action::Restore
-            } else if positionals.len() == 3 {
-                if positionals[0] == "-" {
-                    Action::Split
-                } else if positionals[2] == "-"
-                    || positionals[0].ends_with(".rfs1")
-                    || positionals[1].ends_with(".rfs2")
-                {
-                    Action::Restore
-                } else if Path::new(&positionals[0]).exists()
-                    && !Path::new(&positionals[1]).exists()
-                {
-                    Action::Split
-                } else {
-                    Action::Restore
-                }
             } else {
-                eprintln!(
-                    "Fehler: Zu viele Positionsargumente. Erwartet 1 (Split) oder 2-3 (Restore)."
-                );
-                process::exit(1);
+                Action::Restore
             }
         }
     };
@@ -227,15 +278,16 @@ fn main() {
                 process::exit(1);
             }
             let input_source = &positionals[0];
-            let output_parts = if positionals.len() >= 3 {
-                Some((Path::new(&positionals[1]), Path::new(&positionals[2])))
+            let output_parts: Option<Vec<PathBuf>> = if positionals.len() > 1 {
+                Some(positionals[1..].iter().map(PathBuf::from).collect())
             } else {
                 None
             };
 
             match pipeline::split_stream_or_file(
                 input_source,
-                output_parts,
+                output_parts.as_deref(),
+                num_parts,
                 output_path.as_deref(),
                 block_size,
                 silent,
@@ -249,19 +301,28 @@ fn main() {
             }
         }
         Action::Restore => {
-            if positionals.len() < 2 {
+            let (parts, target) = match parse_restore_targets(&positionals, output_path.as_deref())
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    eprintln!("Fehler: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            if parts.len() < 2 {
                 eprintln!("Fehler: Restore erfordert mindestens 2 Split-Dateien.");
                 process::exit(1);
             }
-            let p1 = Path::new(&positionals[0]);
-            let p2 = Path::new(&positionals[1]);
-            let target_arg = if positionals.len() >= 3 {
-                Some(positionals[2].as_str())
-            } else {
-                output_path.as_deref()
-            };
 
-            match pipeline::restore_file(p1, p2, target_arg, force, silent, false, block_size) {
+            match pipeline::restore_file(
+                &parts,
+                target.as_deref(),
+                force,
+                silent,
+                false,
+                block_size,
+            ) {
                 Ok(restored_path_opt) => {
                     if !silent {
                         if let Some(restored) = restored_path_opt {
@@ -278,13 +339,12 @@ fn main() {
         }
         Action::Verify => {
             if positionals.len() < 2 {
-                eprintln!("Fehler: Verify erfordert 2 Split-Dateien zur Prüfung.");
+                eprintln!("Fehler: Verify erfordert mindestens 2 Split-Dateien zur Prüfung.");
                 process::exit(1);
             }
-            let p1 = Path::new(&positionals[0]);
-            let p2 = Path::new(&positionals[1]);
+            let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
 
-            match pipeline::restore_file(p1, p2, None, force, silent, true, block_size) {
+            match pipeline::restore_file(&parts, None, force, silent, true, block_size) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
                     eprintln!("Fehler bei der Verifikation: {}", e);

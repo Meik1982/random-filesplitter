@@ -43,9 +43,12 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 ---
 
 ### 🟢 Stufe 3: Empfohlen (Power-Features & Ergonomie)
-- [ ] **N-Way Splitting (Aufteilung in 3, 4 oder N Teile)**
+- [x] **N-Way Splitting (Aufteilung in 3, 4 oder N Teile)**
   - Beliebig viele Teile über One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_n$.
-  - Alle Teile zwingend zur Rekonstruktion erforderlich.
+  - Option `-n, --parts <ANZAHL>` (2 bis 64 Teile) in CLI integriert.
+  - Vektorisierte SIMD-XOR Kaskadierung im Worker-Thread.
+  - $N$-Way Stealth-Footer: $F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$. Alle $N$ Teile zwingend zur Rekonstruktion erforderlich; Fehlen oder Manipulation eines Teils wird sofort abgewiesen.
+  - Dedizierte Integrationstests (`tests/n_way_tests.rs`) erfolgreich verifiziert.
 - [ ] **Maschinenlesbare JSON-Telemetrie (`--json`)**
   - Strukturierte NDJSON-Ausgabe auf `stderr` (analog zu `blkcp`) für Skripte, CI/CD und Agenten-Pipelines.
 - [ ] **Interaktive Fortschrittsanzeige (`blkcp`-Style)**

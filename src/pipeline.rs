@@ -1,11 +1,12 @@
 //! Streaming Split & Restore Engine with Zero-Allocation Triple-Buffering,
-//! In-Flight BLKS-384 / SHA-256 Hashing, Unix Pipe Support, and Plausible Deniability Footers.
+//! In-Flight BLKS-384 / SHA-256 Hashing, Unix Pipe Support, N-Way OTP Splitting,
+//! and Plausible Deniability Footers.
 
 #![allow(clippy::type_complexity)]
 
-use crate::crypto::{xor_buffers, ChaChaRng};
+use crate::crypto::{xor_in_place, ChaChaRng};
 use crate::entropy::UniversalEntropyHarvester;
-use crate::format::{decode_footer, encode_rfs3_footer, RfsMetadata};
+use crate::format::{decode_footer_n_way, encode_rfs3_footer_n_way, RfsMetadata};
 use crate::types::{BLKS_DIGEST_SIZE, RFS3_FOOTER_SIZE};
 use blks_core::{BlksHasher, Digest as BlksDigest};
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -21,8 +22,7 @@ const BUFFER_POOL_SIZE: usize = 3;
 
 /// Job für den asynchronen I/O-Schreiber im Split-Modus
 struct WriteJob {
-    buf1: Vec<u8>,
-    buf2: Vec<u8>,
+    bufs: Vec<Vec<u8>>,
     valid_len: usize,
 }
 
@@ -75,44 +75,55 @@ fn print_restore_progress(processed: u64, total: u64, elapsed_secs: f64) {
     let _ = io::stderr().flush();
 }
 
-/// Führt das kryptografische Splitten einer Datei oder eines Unix-Stdin-Streams durch.
+/// Führt das kryptografische Splitten einer Datei oder eines Unix-Stdin-Streams in $N$ Teile durch ($N \ge 2$).
 ///
 /// Unterstützt:
 /// - Reguläre Dateien (`input_source` != `"-"`)
 /// - Unix Stdin Pipes (`input_source` == `"-"`)
-/// - Explizite Ausgabepfade oder automatische Präfix-Generierung
+/// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
 /// - Entkoppelte 3-Stufen Pipeline (Reader ➔ Crypto/SIMD ➔ Writer) mit Zero-Copy Puffer-Pooling
 pub fn split_stream_or_file(
     input_source: &str,
-    output_parts: Option<(&Path, &Path)>,
+    output_parts: Option<&[PathBuf]>,
+    num_parts: usize,
     output_prefix: Option<&str>,
     block_size: usize,
     silent: bool,
     force: bool,
-) -> Result<(PathBuf, PathBuf), String> {
+) -> Result<Vec<PathBuf>, String> {
     // 1. Zielpfade bestimmen
-    let (out1_path, out2_path) = if let Some((p1, p2)) = output_parts {
-        (p1.to_path_buf(), p2.to_path_buf())
-    } else if let Some(prefix) = output_prefix {
-        (
-            PathBuf::from(format!("{}.rfs1", prefix)),
-            PathBuf::from(format!("{}.rfs2", prefix)),
-        )
-    } else if input_source == "-" {
-        (PathBuf::from("stdin.rfs1"), PathBuf::from("stdin.rfs2"))
+    let (out_paths, n_parts) = if let Some(parts) = output_parts {
+        if parts.len() < 2 || parts.len() > 64 {
+            return Err(
+                "Anzahl der expliziten Ausgabeteile muss zwischen 2 und 64 liegen.".to_string(),
+            );
+        }
+        (parts.to_vec(), parts.len())
     } else {
-        (
-            PathBuf::from(format!("{}.rfs1", input_source)),
-            PathBuf::from(format!("{}.rfs2", input_source)),
-        )
+        let count = num_parts.clamp(2, 64);
+        let paths: Vec<PathBuf> = (1..=count)
+            .map(|i| {
+                if let Some(prefix) = output_prefix {
+                    PathBuf::from(format!("{}.rfs{}", prefix, i))
+                } else if input_source == "-" {
+                    PathBuf::from(format!("stdin.rfs{}", i))
+                } else {
+                    PathBuf::from(format!("{}.rfs{}", input_source, i))
+                }
+            })
+            .collect();
+        (paths, count)
     };
 
-    if !force && (out1_path.exists() || out2_path.exists()) {
-        return Err(format!(
-            "Eine der Ausgabedateien ('{}', '{}') existiert bereits. Nutzen Sie --force zum Überschreiben.",
-            out1_path.display(),
-            out2_path.display()
-        ));
+    if !force {
+        for path in &out_paths {
+            if path.exists() {
+                return Err(format!(
+                    "Ausgabedatei '{}' existiert bereits. Nutzen Sie --force zum Überschreiben.",
+                    path.display()
+                ));
+            }
+        }
     }
 
     // 2. Eingabe vorbereiten (Stdin oder Datei)
@@ -140,18 +151,23 @@ pub fn split_stream_or_file(
     };
 
     // 3. Ausgabedateien öffnen
-    let f1 = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&out1_path)
-        .map_err(|e| format!("Kann Ausgabedatei 1 nicht erstellen: {}", e))?;
-    let f2 = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&out2_path)
-        .map_err(|e| format!("Kann Ausgabedatei 2 nicht erstellen: {}", e))?;
+    let mut files: Vec<File> = Vec::with_capacity(n_parts);
+    for (idx, p) in out_paths.iter().enumerate() {
+        let f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(p)
+            .map_err(|e| {
+                format!(
+                    "Kann Ausgabedatei {} ('{}') nicht erstellen: {}",
+                    idx + 1,
+                    p.display(),
+                    e
+                )
+            })?;
+        files.push(f);
+    }
 
     // 4. Initialisiere Entropie & ChaCha20 CSPRNG
     let (master_key, master_nonce) = UniversalEntropyHarvester::harvest_seed();
@@ -168,12 +184,14 @@ pub fn split_stream_or_file(
         Receiver<Result<(Vec<u8>, usize), String>>,
     ) = bounded(2);
 
-    let (free_out_tx, free_out_rx): (Sender<(Vec<u8>, Vec<u8>)>, Receiver<(Vec<u8>, Vec<u8>)>) =
+    let (free_out_tx, free_out_rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) =
         bounded(BUFFER_POOL_SIZE);
     for _ in 0..BUFFER_POOL_SIZE {
-        free_out_tx
-            .send((vec![0u8; block_size], vec![0u8; block_size]))
-            .unwrap();
+        let mut slot = Vec::with_capacity(n_parts);
+        for _ in 0..n_parts {
+            slot.push(vec![0u8; block_size]);
+        }
+        free_out_tx.send(slot).unwrap();
     }
 
     let (job_tx, job_rx): (
@@ -204,7 +222,7 @@ pub fn split_stream_or_file(
         Ok(())
     });
 
-    // Stufe 2: Crypto & Hash Worker Thread
+    // Stufe 2: Crypto & Hash Worker Thread (N-Way OTP)
     let worker_handle = thread::spawn(move || -> Result<(u64, [u8; BLKS_DIGEST_SIZE]), String> {
         let mut total_processed: u64 = 0;
         let mut blks_hasher = BlksHasher::new();
@@ -217,16 +235,22 @@ pub fn split_stream_or_file(
             // 1. In-flight BLKS-384 Hashing
             blks_hasher.update(&in_buf[..len]);
 
-            // 2. Freie Ausgabepuffer anfordern
-            let (mut p1, mut p2) = free_out_rx
+            // 2. Freie Ausgabepuffer anfordern (N Puffer)
+            let mut part_bufs = free_out_rx
                 .recv()
                 .map_err(|_| "Schreib-Thread vorzeitig beendet".to_string())?;
 
-            // 3. ChaCha20 Keystream generieren
-            rng.fill_bytes(&mut p2[..len]);
+            // 3. Teile 2..N mit ChaCha20-CSPRNG füllen
+            for buf in part_bufs.iter_mut().take(n_parts).skip(1) {
+                rng.fill_bytes(&mut buf[..len]);
+            }
 
-            // 4. SIMD XOR: p1 = in_buf ^ p2
-            xor_buffers(&mut p1[..len], &in_buf[..len], &p2[..len]);
+            // 4. Teil 1 schließt die XOR-Kette: part_bufs[0] = in_buf ^ part_bufs[1] ^ ... ^ part_bufs[N-1]
+            part_bufs[0][..len].copy_from_slice(&in_buf[..len]);
+            for k in 1..n_parts {
+                let (first, rest) = part_bufs.split_at_mut(k);
+                xor_in_place(&mut first[0][..len], &rest[0][..len]);
+            }
 
             // 5. Eingabepuffer zurück in den Reader-Pool (Zero-Allocation)
             let _ = free_in_tx.send(in_buf);
@@ -236,8 +260,7 @@ pub fn split_stream_or_file(
             // 6. Job an Writer-Thread weiterreichen
             if job_tx
                 .send(Ok(WriteJob {
-                    buf1: p1,
-                    buf2: p2,
+                    bufs: part_bufs,
                     valid_len: len,
                 }))
                 .is_err()
@@ -269,30 +292,29 @@ pub fn split_stream_or_file(
         Ok((total_processed, digest))
     });
 
-    // Stufe 3: Writer Thread
+    // Stufe 3: Writer Thread (Schreibt alle N Dateien)
     let writer_handle = thread::spawn(move || -> Result<(), String> {
-        let mut w1 = BufWriter::with_capacity(block_size, f1);
-        let mut w2 = BufWriter::with_capacity(block_size, f2);
+        let mut writers: Vec<BufWriter<File>> = files
+            .into_iter()
+            .map(|f| BufWriter::with_capacity(block_size, f))
+            .collect();
 
         while let Ok(job_res) = job_rx.recv() {
-            let WriteJob {
-                buf1,
-                buf2,
-                valid_len,
-            } = job_res?;
+            let WriteJob { bufs, valid_len } = job_res?;
 
-            w1.write_all(&buf1[..valid_len])
-                .map_err(|e| format!("Schreibfehler auf Teil 1: {}", e))?;
-            w2.write_all(&buf2[..valid_len])
-                .map_err(|e| format!("Schreibfehler auf Teil 2: {}", e))?;
+            for k in 0..n_parts {
+                writers[k]
+                    .write_all(&bufs[k][..valid_len])
+                    .map_err(|e| format!("Schreibfehler auf Teil {}: {}", k + 1, e))?;
+            }
 
-            let _ = free_out_tx.send((buf1, buf2));
+            let _ = free_out_tx.send(bufs);
         }
 
-        w1.flush()
-            .map_err(|e| format!("Flush-Fehler auf Teil 1: {}", e))?;
-        w2.flush()
-            .map_err(|e| format!("Flush-Fehler auf Teil 2: {}", e))?;
+        for (k, w) in writers.iter_mut().enumerate() {
+            w.flush()
+                .map_err(|e| format!("Flush-Fehler auf Teil {}: {}", k + 1, e))?;
+        }
         Ok(())
     });
 
@@ -311,44 +333,40 @@ pub fn split_stream_or_file(
     let (total_processed, digest) = worker_res?;
     writer_res?;
 
-    // 6. RFS3-Stealth-Footer codieren & anhängen
+    // 6. RFS3-Stealth-Footers codieren & an alle N Dateien anhängen
     let (post_rng_key, post_rng_nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut footer_rng = ChaChaRng::new(&post_rng_key, &post_rng_nonce);
-    let (footer1, footer2) = encode_rfs3_footer(&digest, total_processed, &mut footer_rng);
+    let footers = encode_rfs3_footer_n_way(&digest, total_processed, n_parts, &mut footer_rng);
 
-    let mut append_f1 = OpenOptions::new()
-        .append(true)
-        .open(&out1_path)
-        .map_err(|e| format!("Kann Teil 1 für Footer nicht öffnen: {}", e))?;
-    let mut append_f2 = OpenOptions::new()
-        .append(true)
-        .open(&out2_path)
-        .map_err(|e| format!("Kann Teil 2 für Footer nicht öffnen: {}", e))?;
-
-    append_f1
-        .write_all(&footer1)
-        .map_err(|e| format!("Fehler beim Schreiben des Footers 1: {}", e))?;
-    append_f2
-        .write_all(&footer2)
-        .map_err(|e| format!("Fehler beim Schreiben des Footers 2: {}", e))?;
-
-    append_f1.flush().map_err(|e| format!("Flush 1: {}", e))?;
-    append_f2.flush().map_err(|e| format!("Flush 2: {}", e))?;
+    for (k, path) in out_paths.iter().enumerate() {
+        let mut append_file = OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(|e| format!("Kann Teil {} für Footer nicht öffnen: {}", k + 1, e))?;
+        append_file
+            .write_all(&footers[k])
+            .map_err(|e| format!("Fehler beim Schreiben des Footers {}: {}", k + 1, e))?;
+        append_file
+            .flush()
+            .map_err(|e| format!("Flush {}: {}", k + 1, e))?;
+    }
 
     if !silent {
+        eprintln!("Erfolgreich in {} Teile gesplittet (N-Way OTP):", n_parts);
+        for (i, p) in out_paths.iter().enumerate() {
+            eprintln!("  Teil {}: {}", i + 1, p.display());
+        }
         eprintln!(
-            "Erfolgreich gesplittet:\n  Teil 1: {}\n  Teil 2: {}\n  Originalgröße: {} Bytes\n  BLKS-384: {}",
-            out1_path.display(),
-            out2_path.display(),
+            "  Originalgröße: {} Bytes\n  BLKS-384: {}",
             total_processed,
             BlksDigest(digest).to_base64()
         );
     }
 
-    Ok((out1_path, out2_path))
+    Ok(out_paths)
 }
 
-/// Convenience-Wrapper für Abwärtskompatibilität
+/// Convenience-Wrapper für Abwärtskompatibilität (2 Teile)
 #[allow(dead_code)]
 pub fn split_file(
     input_path: &Path,
@@ -356,65 +374,86 @@ pub fn split_file(
     block_size: usize,
     silent: bool,
 ) -> Result<(PathBuf, PathBuf), String> {
-    split_stream_or_file(
+    let parts = split_stream_or_file(
         input_path.to_str().unwrap_or("-"),
         None,
+        2,
         output_prefix,
         block_size,
         silent,
         false,
-    )
+    )?;
+    Ok((parts[0].clone(), parts[1].clone()))
 }
 
-/// Rekonstruiert eine Originaldatei aus zwei Split-Teilen.
+/// Rekonstruiert eine Originaldatei aus $N$ Split-Teilen ($N \ge 2$).
 ///
 /// Unterstützt:
 /// - Schreiben auf Festplatte (`output_target` != `"-"`)
 /// - Unix-Piping nach `stdout` (`output_target` == `"-"`)
 /// - Fast-Verify im RAM (`verify_only` == true)
+/// - $N$-Way SIMD-XOR Wiederherstellung ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$)
 /// - Auto-Erkennung von RFS3 (BLKS-384) und RFS2 (SHA-256)
-/// - Entkoppelte Triple-Buffering Streaming-Pipeline
 pub fn restore_file(
-    part1_path: &Path,
-    part2_path: &Path,
+    part_paths: &[PathBuf],
     output_target: Option<&str>,
     force: bool,
     silent: bool,
     verify_only: bool,
     block_size: usize,
 ) -> Result<Option<PathBuf>, String> {
-    let mut f1 = File::open(part1_path).map_err(|e| format!("Kann Teil 1 nicht öffnen: {}", e))?;
-    let mut f2 = File::open(part2_path).map_err(|e| format!("Kann Teil 2 nicht öffnen: {}", e))?;
-
-    let len1 = f1.metadata().map_err(|e| e.to_string())?.len();
-    let len2 = f2.metadata().map_err(|e| e.to_string())?.len();
-
-    if len1 != len2 {
-        return Err(
-            "Dateigrößen stimmen nicht überein (Teile beschädigt oder unvollständig).".to_string(),
-        );
+    let n_parts = part_paths.len();
+    if n_parts < 2 {
+        return Err("Mindestens 2 Teile für die Wiederherstellung erforderlich.".to_string());
     }
 
+    let mut files: Vec<File> = Vec::with_capacity(n_parts);
+    let mut file_len: Option<u64> = None;
+
+    for (idx, p) in part_paths.iter().enumerate() {
+        let f = File::open(p).map_err(|e| {
+            format!(
+                "Kann Teil {} ('{}') nicht öffnen: {}",
+                idx + 1,
+                p.display(),
+                e
+            )
+        })?;
+        let len = f.metadata().map_err(|e| e.to_string())?.len();
+        if let Some(fl) = file_len {
+            if fl != len {
+                return Err(format!(
+                    "Dateigrößen stimmen nicht überein (Teil {} weicht von Teil 1 ab).",
+                    idx + 1
+                ));
+            }
+        } else {
+            file_len = Some(len);
+        }
+        files.push(f);
+    }
+
+    let len1 = file_len.unwrap();
     if len1 < RFS3_FOOTER_SIZE as u64 {
         return Err("Dateigröße kleiner als RFS-Footer.".to_string());
     }
 
-    // 1. Footer lesen (letzte 60 Bytes)
+    // 1. Footer lesen (letzte 60 Bytes von allen N Dateien)
     let tail_len = RFS3_FOOTER_SIZE;
-    f1.seek(SeekFrom::End(-(tail_len as i64)))
-        .map_err(|e| format!("Seek 1: {}", e))?;
-    f2.seek(SeekFrom::End(-(tail_len as i64)))
-        .map_err(|e| format!("Seek 2: {}", e))?;
+    let mut tails: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
 
-    let mut tail1 = vec![0u8; tail_len];
-    let mut tail2 = vec![0u8; tail_len];
-    f1.read_exact(&mut tail1)
-        .map_err(|e| format!("Read tail 1: {}", e))?;
-    f2.read_exact(&mut tail2)
-        .map_err(|e| format!("Read tail 2: {}", e))?;
+    for (idx, f) in files.iter_mut().enumerate() {
+        f.seek(SeekFrom::End(-(tail_len as i64)))
+            .map_err(|e| format!("Seek Teil {}: {}", idx + 1, e))?;
+        let mut t = vec![0u8; tail_len];
+        f.read_exact(&mut t)
+            .map_err(|e| format!("Read tail Teil {}: {}", idx + 1, e))?;
+        tails.push(t);
+    }
 
-    // Auto-Detecting Decode
-    let meta = decode_footer(&tail1, &tail2)?;
+    // N-Way Decode
+    let tail_refs: Vec<&[u8]> = tails.iter().map(|t| t.as_slice()).collect();
+    let meta = decode_footer_n_way(&tail_refs)?;
     let footer_size = meta.footer_size();
     let original_size = meta.original_size();
 
@@ -434,7 +473,7 @@ pub fn restore_file(
     } else if let Some(p) = output_target {
         Some(PathBuf::from(p))
     } else {
-        let p_str = part1_path.to_str().unwrap_or("restored.bin");
+        let p_str = part_paths[0].to_str().unwrap_or("restored.bin");
         let deduced = if let Some(stripped) = p_str.strip_suffix(".rfs1") {
             PathBuf::from(stripped)
         } else if let Some(stripped) = p_str.strip_suffix(".part1.rfs") {
@@ -455,10 +494,10 @@ pub fn restore_file(
     }
 
     // Zurück an Dateianfang springen
-    f1.seek(SeekFrom::Start(0))
-        .map_err(|e| format!("Seek 0 (1): {}", e))?;
-    f2.seek(SeekFrom::Start(0))
-        .map_err(|e| format!("Seek 0 (2): {}", e))?;
+    for (idx, f) in files.iter_mut().enumerate() {
+        f.seek(SeekFrom::Start(0))
+            .map_err(|e| format!("Seek 0 Teil {}: {}", idx + 1, e))?;
+    }
 
     // 3. Ausgabeschreiber initialisieren
     let out_writer: Option<Box<dyn Write + Send>> = if verify_only {
@@ -477,17 +516,19 @@ pub fn restore_file(
     };
 
     // 4. Entkoppelte Pipeline mit Puffer-Pools
-    let (free_pair_tx, free_pair_rx): (Sender<(Vec<u8>, Vec<u8>)>, Receiver<(Vec<u8>, Vec<u8>)>) =
+    let (free_in_tx, free_in_rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) =
         bounded(BUFFER_POOL_SIZE);
     for _ in 0..BUFFER_POOL_SIZE {
-        free_pair_tx
-            .send((vec![0u8; block_size], vec![0u8; block_size]))
-            .unwrap();
+        let mut slot = Vec::with_capacity(n_parts);
+        for _ in 0..n_parts {
+            slot.push(vec![0u8; block_size]);
+        }
+        free_in_tx.send(slot).unwrap();
     }
 
     let (data_tx, data_rx): (
-        Sender<Result<(Vec<u8>, Vec<u8>, usize), String>>,
-        Receiver<Result<(Vec<u8>, Vec<u8>, usize), String>>,
+        Sender<Result<(Vec<Vec<u8>>, usize), String>>,
+        Receiver<Result<(Vec<Vec<u8>>, usize), String>>,
     ) = bounded(2);
 
     let (free_out_tx, free_out_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) =
@@ -501,30 +542,30 @@ pub fn restore_file(
         Receiver<Result<(Vec<u8>, usize), String>>,
     ) = bounded(2);
 
-    // Stufe 1: Dual-Reader Thread
+    // Stufe 1: N-Way Reader Thread
     let reader_handle = thread::spawn(move || -> Result<(), String> {
-        let mut r1 = BufReader::with_capacity(block_size, f1);
-        let mut r2 = BufReader::with_capacity(block_size, f2);
+        let mut readers: Vec<BufReader<File>> = files
+            .into_iter()
+            .map(|f| BufReader::with_capacity(block_size, f))
+            .collect();
         let mut remaining = original_size;
 
         while remaining > 0 {
             let to_read = (block_size as u64).min(remaining) as usize;
-            let (mut b1, mut b2) = match free_pair_rx.recv() {
-                Ok(pair) => pair,
+            let mut in_bufs = match free_in_rx.recv() {
+                Ok(slot) => slot,
                 Err(_) => break,
             };
 
-            if let Err(e) = r1.read_exact(&mut b1[..to_read]) {
-                let _ = data_tx.send(Err(format!("Lesefehler Teil 1: {}", e)));
-                return Err(format!("Lesefehler Teil 1: {}", e));
-            }
-            if let Err(e) = r2.read_exact(&mut b2[..to_read]) {
-                let _ = data_tx.send(Err(format!("Lesefehler Teil 2: {}", e)));
-                return Err(format!("Lesefehler Teil 2: {}", e));
+            for (k, r) in readers.iter_mut().enumerate() {
+                if let Err(e) = r.read_exact(&mut in_bufs[k][..to_read]) {
+                    let _ = data_tx.send(Err(format!("Lesefehler Teil {}: {}", k + 1, e)));
+                    return Err(format!("Lesefehler Teil {}: {}", k + 1, e));
+                }
             }
 
             remaining -= to_read as u64;
-            if data_tx.send(Ok((b1, b2, to_read))).is_err() {
+            if data_tx.send(Ok((in_bufs, to_read))).is_err() {
                 break;
             }
         }
@@ -532,7 +573,7 @@ pub fn restore_file(
         Ok(())
     });
 
-    // Stufe 2: Compute Worker (SIMD XOR & Hashing)
+    // Stufe 2: Compute Worker (N-Way SIMD XOR & Hashing)
     let meta_clone = meta.clone();
     let worker_free_out_tx = free_out_tx.clone();
     let worker_handle = thread::spawn(move || -> Result<(), String> {
@@ -550,13 +591,16 @@ pub fn restore_file(
         let mut total_processed: u64 = 0;
 
         while let Ok(msg) = data_rx.recv() {
-            let (b1, b2, len) = msg?;
+            let (in_bufs, len) = msg?;
             let mut b_out = free_out_rx
                 .recv()
                 .map_err(|_| "Writer vorzeitig beendet".to_string())?;
 
-            // SIMD XOR: b_out = b1 ^ b2
-            xor_buffers(&mut b_out[..len], &b1[..len], &b2[..len]);
+            // SIMD XOR über alle N Teile: b_out = in_bufs[0] ^ in_bufs[1] ^ ... ^ in_bufs[N-1]
+            b_out[..len].copy_from_slice(&in_bufs[0][..len]);
+            for in_buf in in_bufs.iter().take(n_parts).skip(1) {
+                xor_in_place(&mut b_out[..len], &in_buf[..len]);
+            }
 
             // In-flight Hashing
             if let Some(ref mut h) = blks_hasher {
@@ -566,8 +610,8 @@ pub fn restore_file(
                 h.update(&b_out[..len]);
             }
 
-            // Pufferpaar zurück an Reader
-            let _ = free_pair_tx.send((b1, b2));
+            // Puffer-Slot zurück an Reader
+            let _ = free_in_tx.send(in_bufs);
 
             total_processed += len as u64;
 
