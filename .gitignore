@@ -2,6 +2,10 @@
 /rfs
 /rfs-*
 /test_crypto*
+legacy_cpp/rfs*
+legacy_cpp/test_crypto*
+legacy_cpp/*.o
+legacy_cpp/*.d
 *.o
 *.d
 
@@ -10,3 +14,8 @@
 *.rfs2
 *.orig
 *.restored
+
+
+# Added by cargo
+
+/target

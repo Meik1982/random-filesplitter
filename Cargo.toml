@@ -1,0 +1,31 @@
+[package]
+name = "random-filesplitter"
+version = "3.0.0"
+edition = "2021"
+authors = ["Meik Augenblick"]
+license = "LGPL-3.0-or-later"
+description = "Cryptographically secure file splitter & reconstructor with plausible deniability, ChaCha20, and 384-bit PQ BLKS integrity"
+
+[[bin]]
+name = "rfs"
+path = "src/main.rs"
+
+[dependencies]
+blks-core = { path = "../blks/crates/blks-core" }
+chacha20 = "0.9"
+sha2 = "0.10"
+getrandom = "0.2"
+crossbeam-channel = "0.5"
+zeroize = { version = "1.8", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
