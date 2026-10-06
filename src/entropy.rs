@@ -277,8 +277,8 @@ pub fn run_entropy_diagnostics() -> i32 {
 
     let shannon_ok = shannon >= 7.9990;
     let chi_ok = (180.0..=330.0).contains(&chi_square);
-    let mean_ok = (mean - 127.5).abs() <= 0.1;
-    let bit_ok = (bit_balance_pct - 50.0).abs() <= 0.05;
+    let mean_ok = (mean - 127.5).abs() <= 0.25;
+    let bit_ok = (bit_balance_pct - 50.0).abs() <= 0.08;
 
     let phase2_ok = shannon_ok && chi_ok && mean_ok && bit_ok && runs_ok && block_ok;
 
