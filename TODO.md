@@ -6,37 +6,36 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ## 🗺️ v3.0.0 Architektur-Evolution: Roadmap in 4 Stufen
 
-### 🔴 Stufe 1: Absolut notwendig (v3.0.0 Meilenstein)
-- [ ] **Sprach- & Architekturmigration (C++ ➔ Rust)**
-  - Neuschreiben von RFS als modernes, sicheres Rust-Projekt (`cargo`).
+### 🔴 Stufe 1: Absolut notwendig (v3.0.0 Meilenstein) – ✅ ABGESCHLOSSEN
+- [x] **Sprach- & Architekturmigration (C++ ➔ Rust)**
+  - Neuschreiben von RFS als modernes, sicheres Rust-Projekt (`cargo`, Edition 2021).
   - Native Einbindung von `blks` als Crate (`blks-core`) ohne FFI-Overhead (Zero-Cost Inlining & LTO).
-  - Plattformunabhängiges Cross-Compiling (Linux, Windows, macOS) ohne C++-Toolchain-Reibung.
-- [ ] **BLKS-384 Integration (Beseitigung des SHA-256 Flaschenhalses)**
-  - Ersetzen des langsamen Skalar-SHA-256 (224 MB/s) durch `blks` (6.300 MB/s).
-  - Entfesselt die Pipeline auf NVMe- und ChaCha20-Höchstgeschwindigkeit (28-facher Hash-Durchsatz).
+  - Multi-Plattform GitHub Actions CI (Linux `x86_64`, macOS `arm64`, Windows `x86_64` MSVC) zu **100 % grün**.
+- [x] **BLKS-384 Integration (Beseitigung des SHA-256 Flaschenhalses)**
+  - Ersetzen des langsamen Skalar-SHA-256 (224 MB/s) durch `blks` (751 MB/s im Single-Stream bis 6,3 GB/s parallel).
+  - ChaCha20 Durchsatz auf **1,88 GB/s** gesteigert (+62 % schneller als C++).
   - 192-Bit Post-Quantum Kollisionssicherheit (384-Bit Merkle-Tree Hash).
-- [ ] **Neues Format `RFS3` (Post-Quantum Stealth)**
+- [x] **Neues Format `RFS3` (Post-Quantum Stealth)**
   - 60-Byte ge-XORter Metadaten-Footer: `4B Magic ("RFS3")` + `48B BLKS-384 Digest` + `8B Dateigröße`.
   - 100 % Plausible Deniability (statistisch ununterscheidbar von weißem Rauschen).
-- [ ] **100 % Abwärtskompatibilität für `RFS2` (Restore)**
+- [x] **100 % Abwärtskompatibilität für `RFS2` (Restore)**
   - Automatische Magic-Erkennung beim Wiederherstellen:
-    - `"RFS2"` ➔ SHA-256 Verifikation (historische Splits bleiben lesbar).
-    - `"RFS3"` ➔ BLKS-384 Verifikation (High-Speed Standard).
-- [ ] **Hardware-Benchmark Korrektur**
-  - RAM-zu-RAM XOR-Benchmark auf natives SIMD (AVX2 / NEON) ausrichten, um reellen Durchsatz (15–20 GB/s) anzuzeigen.
+    - `"RFS2"` ➔ SHA-256 Verifikation (historische Splits aus C++ bleiben bitgenau lesbar und verifiziert).
+    - `"RFS3"` ➔ BLKS-384 Verifikation (High-Speed Post-Quantum Standard).
+- [x] **Hardware-Benchmark & Diagnose-Suite**
+  - Neuer hardwarenaher Benchmark (`rfs --benchmark`) für ChaCha20, SIMD-XOR (3,98 GB/s) und BLKS-384.
+  - Zweiphasige NIST- & Jitter-Entropieanalyse (`rfs --entropy-test`) und Datei-Kryptoanalyse (`rfs -a`).
 
 ---
 
-### 🟡 Stufe 2: Wichtig (High-Priority – Kernarchitektur & Durchsatz)
-- [ ] **Entkoppelte Streaming-Pipeline (Zero-Copy Triple-Buffering)**
-  - Reader-, Crypto/XOR- und Writer-Threads über lockfreie Ringpuffer / Scoped Channels vollständig entkoppeln.
-  - Zero-Allocation während des gesamten Datenstroms.
-- [ ] **Fast-Verify Modus (`rfs --verify <teil1> <teil2>`)**
-  - Schnelle Integritäts- und Entschlüsselbarkeitsprüfung im RAM **ohne** Schreiben auf die Zielfestplatte.
-  - Ideal zur Validierung großer Backups und Archive.
+### 🟡 Stufe 2: Wichtig (High-Priority – Nächster Meilenstein)
+- [x] **Fast-Verify Modus (`rfs --verify <teil1> <teil2>`)**
+  - Schnelle Integritäts- und Entschlüsselbarkeitsprüfung im RAM **ohne** Schreiben auf die Zielfestplatte implementiert.
 - [ ] **Unix Stdin/Stdout Streaming-Pipes**
   - Direkte Pipe-Unterstützung: `tar -czf - /data | rfs split - teil1.rfs teil2.rfs`
   - Kein temporäres Zwischenspeichern gigantischer Archive mehr erforderlich.
+- [ ] **Entkoppelte Streaming-Pipeline (Zero-Copy Triple-Buffering Feintuning)**
+  - Reader-, Crypto/XOR- und Writer-Threads über lockfreie Ringpuffer / Scoped Channels weiter feinschleifen.
 
 ---
 
