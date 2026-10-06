@@ -146,10 +146,16 @@ fn main() {
     if first == "-a" || first == "--analyze" || first == "--file-entropy" {
         if args.len() < 3 {
             eprintln!("Fehler: Option {} erfordert einen Dateipfad.", first);
-            eprintln!("Verwendung: rfs -a <Datei>");
+            eprintln!("Verwendung: rfs -a <Datei> [--json]");
             process::exit(1);
         }
-        if let Err(e) = entropy::analyze_file_entropy(Path::new(&args[2])) {
+        let json_mode = args.iter().any(|a| a == "--json");
+        let file_arg = args
+            .iter()
+            .skip(2)
+            .find(|a| *a != "--json")
+            .unwrap_or(&args[2]);
+        if let Err(e) = entropy::analyze_file_entropy(Path::new(file_arg), json_mode) {
             eprintln!("Fehler: {}", e);
             process::exit(1);
         }
@@ -171,10 +177,16 @@ fn main() {
     } else if first == "analyze" {
         if args.len() < 3 {
             eprintln!("Fehler: Subcommand 'analyze' erfordert einen Dateipfad.");
-            eprintln!("Verwendung: rfs analyze <Datei>");
+            eprintln!("Verwendung: rfs analyze <Datei> [--json]");
             process::exit(1);
         }
-        if let Err(e) = entropy::analyze_file_entropy(Path::new(&args[2])) {
+        let json_mode = args.iter().any(|a| a == "--json");
+        let file_arg = args
+            .iter()
+            .skip(2)
+            .find(|a| *a != "--json")
+            .unwrap_or(&args[2]);
+        if let Err(e) = entropy::analyze_file_entropy(Path::new(file_arg), json_mode) {
             eprintln!("Fehler: {}", e);
             process::exit(1);
         }

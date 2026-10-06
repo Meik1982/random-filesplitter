@@ -42,7 +42,7 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ---
 
-### 🟢 Stufe 3: Empfohlen (Power-Features & Ergonomie)
+### 🟢 Stufe 3: Empfohlen (Power-Features & Ergonomie) – ✅ ABGESCHLOSSEN
 - [x] **N-Way Splitting (Aufteilung in 3, 4 oder N Teile)**
   - Beliebig viele Teile über One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_n$.
   - Option `-n, --parts <ANZAHL>` (2 bis 64 Teile) in CLI integriert.
@@ -56,8 +56,10 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 - [x] **Interaktive Fortschrittsanzeige (`blkcp`-Style)**
   - 24-Zeichen breiter dynamischer ANSI-Balken (`[=====>----]`), Prozentanzeige, transferierte/totale Datenmengen, Durchsatzanzeige in MB/s bzw. GB/s und Live-ETA.
   - Dedizierte Stream-Anzeige bei Pipes mit unbekannter Länge.
-- [ ] **Erweiterte NIST SP 800-22 Entropieanalyse**
-  - Ausbau des `-a / --analyze` Werkzeugs um Runs-Tests, Block-Frequenztests und Krypto-Audit-Metriken.
+- [x] **Erweiterte NIST SP 800-22 Entropieanalyse**
+  - Ausbau des `-a / --analyze` Werkzeugs um NIST SP 800-22 Runs-Tests (Bit-Dynamik) und Block-Frequenztests ($M=128$).
+  - Eigene analytische `erfc`-Implementierung und Wilson-Hilferty Chi-Square P-Wert-Transformation.
+  - Optionale JSON-Ausgabe via `rfs -a <Datei> --json` für automatisierte Krypto-Audits.
 
 ---
 
