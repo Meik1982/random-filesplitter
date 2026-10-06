@@ -56,13 +56,14 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 ---
 
 ### 🔵 Stufe 4: Nice to Have (Zukunfts-Vision)
-- [ ] **Shamir's Secret Sharing Modus ($K$-aus-$N$ Threshold)**
-  - Mathematische Rekonstruktion aus beliebigen $K$ von $N$ Teilen (Kryptografische Oberklasse).
 - [ ] **Direct I/O (`O_DIRECT`) auf Linux**
   - Umgehung des OS Page-Caches bei Multi-Gigabyte-Dateien zur Schonung des Systemspeichers.
 - [ ] **Paketierung & Systemintegration**
   - Arch Linux / CachyOS PKGBUILD (`rfs` / `rfs-git`).
   - Shell-Completions für Bash, Zsh und Fish sowie vollständige Manpages (`rfs.1`).
+- [*] **Architektur-Entscheidung: Bewusster Verzicht auf $K$-aus-$N$ Threshold / Shamir**
+  - Gewährleistet strikte *Plausible Deniability* (statistische Ununterscheidbarkeit von weißem Rauschen).
+  - Fokus bleibt zu 100 % auf purem One-Time-Pad ($N$-aus-$N$ XOR-Chains).
 
 ---
 
