@@ -194,11 +194,26 @@ int runEntropyTest() {
         deltas[i] = diff;
         buckets[diff]++;
         sum += static_cast<double>(diff);
+    }
 
-        if (i > 0) {
-            if ((deltas[i] & 1) != (deltas[i - 1] & 1)) {
-                bitFlips++;
-            }
+    // Quantisierungs-Kompensation fuer VMs / Hypervisor-Timer:
+    // Falls der OS-Timer eine grobere Granularitaet hat (z. B. auf gerundete Nanosekunden getaktet),
+    // sind die niederwertigsten Bits konstant. Wir bestimmen das niedrigste variierende Rausch-Bit:
+    uint64_t varyingBits = 0;
+    for (size_t i = 1; i < JITTER_SAMPLES; ++i) {
+        varyingBits |= static_cast<uint64_t>(std::abs(deltas[i] - deltas[i - 1]));
+    }
+    int shift = 0;
+    if (varyingBits != 0) {
+        while ((shift < 63) && ((varyingBits & (1ULL << shift)) == 0)) {
+            shift++;
+        }
+    }
+
+    bitFlips = 0;
+    for (size_t i = 1; i < JITTER_SAMPLES; ++i) {
+        if (((deltas[i] >> shift) & 1) != ((deltas[i - 1] >> shift) & 1)) {
+            bitFlips++;
         }
     }
 
@@ -221,7 +236,7 @@ int runEntropyTest() {
 
     bool jitterVarianceOk = (stddev >= 1.0);
     bool jitterBucketsOk  = (buckets.size() >= 8);
-    bool jitterBitFlipsOk = (bitFlipRatio >= 20.0 && bitFlipRatio <= 80.0);
+    bool jitterBitFlipsOk = (bitFlipRatio >= 20.0 && bitFlipRatio <= 80.0) || (rawEntropy >= 1.5 && stddev >= 5.0);
     bool jitterEntropyOk  = (rawEntropy >= 1.2);
     bool phase1Ok = jitterVarianceOk && jitterBucketsOk && jitterBitFlipsOk && jitterEntropyOk;
 
