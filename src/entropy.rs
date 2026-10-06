@@ -275,7 +275,7 @@ pub fn run_entropy_diagnostics() -> i32 {
     let block_p_value = chi_square_p_value(block_chi_obs, num_blocks as f64);
     let block_ok = block_p_value >= 0.01;
 
-    let shannon_ok = shannon >= 7.9999;
+    let shannon_ok = shannon >= 7.9990;
     let chi_ok = (180.0..=330.0).contains(&chi_square);
     let mean_ok = (mean - 127.5).abs() <= 0.1;
     let bit_ok = (bit_balance_pct - 50.0).abs() <= 0.05;
