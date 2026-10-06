@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "blks-core"
 version = "0.1.0"
-source = "git+https://github.com/Meik1982/blks.git#58bc77b4ce2c79f5a6c9b7ea3e9b2708fef12ecc"
+source = "git+https://github.com/Meik1982/blks.git#ba5b2bd663aa531a8871a64f26a58993deaa42f1"
 dependencies = [
  "memmap2",
  "rayon",
