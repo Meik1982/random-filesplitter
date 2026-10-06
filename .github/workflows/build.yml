@@ -37,18 +37,21 @@ jobs:
             runner: ubuntu-latest
             cc: g++
             cflags: "-O3 -Wall -Wextra -std=c++17 -static -pthread -Iinclude"
+            ldflags: ""
             artifact_name: rfs-linux-x86_64
             arch: x86_64
           - os: windows
             runner: ubuntu-latest
             cc: x86_64-w64-mingw32-g++
             cflags: "-O3 -Wall -Wextra -std=c++17 -static -pthread -Iinclude"
+            ldflags: "-lbcrypt"
             artifact_name: rfs-windows-x86_64.exe
             arch: x86_64
           - os: macos
             runner: macos-latest
             cc: clang++
             cflags: "-O3 -Wall -Wextra -std=c++17 -pthread -Iinclude"
+            ldflags: ""
             artifact_name: rfs-macos-arm64
             arch: arm64
 
@@ -64,7 +67,7 @@ jobs:
 
       - name: Compile
         run: |
-          ${{ matrix.cc }} ${{ matrix.cflags }} src/chacha20.cpp src/sha256.cpp src/entropy.cpp src/splitter.cpp src/main.cpp -o ${{ matrix.artifact_name }}
+          ${{ matrix.cc }} ${{ matrix.cflags }} src/chacha20.cpp src/sha256.cpp src/entropy.cpp src/splitter.cpp src/main.cpp -o ${{ matrix.artifact_name }} ${{ matrix.ldflags }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
