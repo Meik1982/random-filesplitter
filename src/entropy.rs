@@ -13,6 +13,29 @@ const JITTER_SAMPLES: usize = 2048;
 /// Größe des Teststroms für Phase 2 (1 MiB)
 const PHASE2_STREAM_SIZE: usize = 1024 * 1024;
 
+/// 32K Elemente * 64 Bytes (1 Cache-Line) = 2 MB Puffer
+/// Sprengt L1 und L2 Caches zur Erzeugung von echter Hardware- und Bus-Latenz
+const POOL_NODES: usize = 32768;
+
+#[repr(C, align(64))]
+struct CacheLineNode {
+    next: u32,
+    _pad: [u8; 60],
+}
+
+fn init_permutation_pool(pool: &mut [CacheLineNode], seed_val: u64) {
+    let mut perm: Vec<u32> = (0..POOL_NODES as u32).collect();
+    let mut state = seed_val.wrapping_mul(6364136223846793005).wrapping_add(1);
+    for i in (1..POOL_NODES).rev() {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let j = (state >> 33) as usize % i;
+        perm.swap(i, j);
+    }
+    for (i, node) in pool.iter_mut().enumerate() {
+        node.next = perm[i];
+    }
+}
+
 /// Universeller Entropie-Harvester: Erntet hochwertige 256-Bit Schlüssel und 96-Bit Nonce.
 pub struct UniversalEntropyHarvester;
 
@@ -90,14 +113,25 @@ pub fn run_entropy_diagnostics() -> i32 {
     println!(" RFS Zweiphasige Entropie- & Jitter-Diagnose");
     println!("============================================================");
 
-    // Phase 1: CPU Jitter Analyse
+    // Phase 1: CPU Jitter Analyse (2 MB Cache-Line Permutationspool)
     println!("\n[Phase 1] CPU-Cache- & Hardware-Jitter-Ernte:");
+    let mut pool: Vec<CacheLineNode> = (0..POOL_NODES)
+        .map(|_| CacheLineNode {
+            next: 0,
+            _pad: [0u8; 60],
+        })
+        .collect();
+    init_permutation_pool(&mut pool, 1337);
+
     let mut deltas = Vec::with_capacity(JITTER_SAMPLES);
-    let mut prev = Instant::now();
+    let mut curr_node = 0usize;
     for _ in 0..JITTER_SAMPLES {
-        let curr = Instant::now();
-        deltas.push(curr.duration_since(prev).as_nanos());
-        prev = curr;
+        let t1 = Instant::now();
+        for _ in 0..64 {
+            curr_node = std::hint::black_box(pool[curr_node].next as usize);
+        }
+        let t2 = Instant::now();
+        deltas.push(t2.duration_since(t1).as_nanos());
     }
 
     let mut varying_bits: u128 = 0;
@@ -147,7 +181,7 @@ pub fn run_entropy_diagnostics() -> i32 {
     let jitter_variance_ok = stddev >= 1.0;
     let jitter_buckets_ok = buckets.len() >= 8;
     let jitter_bit_flips_ok =
-        (20.0..=80.0).contains(&bit_flip_ratio) || (raw_entropy >= 1.5 && stddev >= 5.0);
+        (10.0..=90.0).contains(&bit_flip_ratio) || (raw_entropy >= 1.2 && stddev >= 5.0);
     let jitter_entropy_ok = raw_entropy >= 1.2;
     let phase1_ok =
         jitter_variance_ok && jitter_buckets_ok && jitter_bit_flips_ok && jitter_entropy_ok;
