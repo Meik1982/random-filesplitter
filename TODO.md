@@ -1,44 +1,81 @@
-# random-filesplitter (rfs): Roadmap, Härtung & Quality Gates
+# random-filesplitter (rfs): Roadmap, Architektur & Quality Gates
 
-Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausibler Abstreitbarkeit (Plausible Deniability), ChaCha20-CSPRNG und RFS2-Stealth-Footer.
+Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausibler Abstreitbarkeit (Plausible Deniability), ChaCha20-CSPRNG, RFS2/RFS3-Stealth-Footer und nativer 384-Bit Post-Quantum BLKS-Integrität.
 
 ---
 
-## ✅ Abgeschlossene Härtungen & Optimierungen (v2.1.0)
+## 🗺️ v3.0.0 Architektur-Evolution: Roadmap in 4 Stufen
+
+### 🔴 Stufe 1: Absolut notwendig (v3.0.0 Meilenstein)
+- [ ] **Sprach- & Architekturmigration (C++ ➔ Rust)**
+  - Neuschreiben von RFS als modernes, sicheres Rust-Projekt (`cargo`).
+  - Native Einbindung von `blks` als Crate (`blks-core`) ohne FFI-Overhead (Zero-Cost Inlining & LTO).
+  - Plattformunabhängiges Cross-Compiling (Linux, Windows, macOS) ohne C++-Toolchain-Reibung.
+- [ ] **BLKS-384 Integration (Beseitigung des SHA-256 Flaschenhalses)**
+  - Ersetzen des langsamen Skalar-SHA-256 (224 MB/s) durch `blks` (6.300 MB/s).
+  - Entfesselt die Pipeline auf NVMe- und ChaCha20-Höchstgeschwindigkeit (28-facher Hash-Durchsatz).
+  - 192-Bit Post-Quantum Kollisionssicherheit (384-Bit Merkle-Tree Hash).
+- [ ] **Neues Format `RFS3` (Post-Quantum Stealth)**
+  - 60-Byte ge-XORter Metadaten-Footer: `4B Magic ("RFS3")` + `48B BLKS-384 Digest` + `8B Dateigröße`.
+  - 100 % Plausible Deniability (statistisch ununterscheidbar von weißem Rauschen).
+- [ ] **100 % Abwärtskompatibilität für `RFS2` (Restore)**
+  - Automatische Magic-Erkennung beim Wiederherstellen:
+    - `"RFS2"` ➔ SHA-256 Verifikation (historische Splits bleiben lesbar).
+    - `"RFS3"` ➔ BLKS-384 Verifikation (High-Speed Standard).
+- [ ] **Hardware-Benchmark Korrektur**
+  - RAM-zu-RAM XOR-Benchmark auf natives SIMD (AVX2 / NEON) ausrichten, um reellen Durchsatz (15–20 GB/s) anzuzeigen.
+
+---
+
+### 🟡 Stufe 2: Wichtig (High-Priority – Kernarchitektur & Durchsatz)
+- [ ] **Entkoppelte Streaming-Pipeline (Zero-Copy Triple-Buffering)**
+  - Reader-, Crypto/XOR- und Writer-Threads über lockfreie Ringpuffer / Scoped Channels vollständig entkoppeln.
+  - Zero-Allocation während des gesamten Datenstroms.
+- [ ] **Fast-Verify Modus (`rfs --verify <teil1> <teil2>`)**
+  - Schnelle Integritäts- und Entschlüsselbarkeitsprüfung im RAM **ohne** Schreiben auf die Zielfestplatte.
+  - Ideal zur Validierung großer Backups und Archive.
+- [ ] **Unix Stdin/Stdout Streaming-Pipes**
+  - Direkte Pipe-Unterstützung: `tar -czf - /data | rfs split - teil1.rfs teil2.rfs`
+  - Kein temporäres Zwischenspeichern gigantischer Archive mehr erforderlich.
+
+---
+
+### 🟢 Stufe 3: Empfohlen (Power-Features & Ergonomie)
+- [ ] **N-Way Splitting (Aufteilung in 3, 4 oder N Teile)**
+  - Beliebig viele Teile über One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_n$.
+  - Alle Teile zwingend zur Rekonstruktion erforderlich.
+- [ ] **Maschinenlesbare JSON-Telemetrie (`--json`)**
+  - Strukturierte NDJSON-Ausgabe auf `stderr` (analog zu `blkcp`) für Skripte, CI/CD und Agenten-Pipelines.
+- [ ] **Interaktive Fortschrittsanzeige (`blkcp`-Style)**
+  - Prozentualer Balken, dynamische ETA-Kalkulation und Durchsatzanzeige in MB/s via ANSI-Escapes.
+- [ ] **Erweiterte NIST SP 800-22 Entropieanalyse**
+  - Ausbau des `-a / --analyze` Werkzeugs um Runs-Tests, Block-Frequenztests und Krypto-Audit-Metriken.
+
+---
+
+### 🔵 Stufe 4: Nice to Have (Zukunfts-Vision)
+- [ ] **Shamir's Secret Sharing Modus ($K$-aus-$N$ Threshold)**
+  - Mathematische Rekonstruktion aus beliebigen $K$ von $N$ Teilen (Kryptografische Oberklasse).
+- [ ] **Direct I/O (`O_DIRECT`) auf Linux**
+  - Umgehung des OS Page-Caches bei Multi-Gigabyte-Dateien zur Schonung des Systemspeichers.
+- [ ] **Paketierung & Systemintegration**
+  - Arch Linux / CachyOS PKGBUILD (`rfs` / `rfs-git`).
+  - Shell-Completions für Bash, Zsh und Fish sowie vollständige Manpages (`rfs.1`).
+
+---
+
+## ✅ Historie: Abgeschlossene Härtungen (v2.1.0 C++17)
 
 - [x] **Compiler- & Linker-Härtung (Full-RELRO Standard)**
-  - Linker-Härtung: `-pie -Wl,-z,relro,-z,now -Wl,-z,noexecstack` (Full-RELRO, NX Stack).
-  - Stack-Schutz: `-fstack-protector-strong` und `-fstack-clash-protection`.
-  - Quellcode-Schutz: `-D_FORTIFY_SOURCE=3` und `-fPIE`.
-  - C++17 Standard-Upgrade (`-std=c++17`).
-- [x] **Sanitizer-Integration im Makefile**
-  - `make asan`: Automatisierter Testsuite-Durchlauf mit AddressSanitizer (`-fsanitize=address,undefined`).
-  - `make ubsan`: Automatisierter Testsuite-Durchlauf mit UndefinedBehaviorSanitizer (`-fsanitize=undefined`).
-  - `make release`: Optimierter Build mit `-O3 -flto` und gestrippten Binaries.
+  - Linker: `-pie -Wl,-z,relro,-z,now -Wl,-z,noexecstack` (Full-RELRO, NX Stack).
+  - Schutzschilde: `-fstack-protector-strong`, `-fstack-clash-protection`, `-D_FORTIFY_SOURCE=3`.
+  - C++17 Upgrade und Clang/GCC Multi-Target CI.
+- [x] **Sanitizer-Integration & Zero-Warning Policy**
+  - `make asan` (AddressSanitizer) & `make ubsan` (UndefinedBehaviorSanitizer).
+  - 0 Warnings unter `-Wall -Wextra` auf Linux, macOS und Windows MinGW.
 - [x] **I/O-Pipeline & Zero-Allocation Double-Buffering**
-  - `SplitPipelineWorker` und `RestorePipelineWorker` auf O(1) Zero-Copy Pointer-Swapping (`std::swap`) umgestellt (beseitigt 3 Vektor-Allokationen und Deep-Copies pro Block).
-  - Vektorisierter 256-Bit AVX2-XOR Fast-Path (`_mm256_xor_si256`) mit 64-Bit Fallback und Byte-Alignment.
-  - Sichere Speicherlöschung (`secure_wipe_memory`) aller Worker-Arbeitspuffer bei Beendigung.
-- [x] **Konfigurierbare Puffergröße (`-B / --block-size`) analog zu `blkcp`**
-  - CLI-Option mit Suffix-Parser (`K`, `M`, `G` für z.B. `64K`, `1M`, `4M`, `16M`, `64M`).
-  - Standardwert: 4 MiB; Grenzbereich: 64 KiB bis 256 MiB.
-- [x] **Plattform-optimierte Kernel-I/O (`posix_fadvise`)**
-  - `SequentialInputStream` mit `posix_fadvise(POSIX_FADV_SEQUENTIAL)` auf Linux/glibc via `__gnu_cxx::stdio_filebuf`.
-  - Portabler Fallback auf Standard C++ `ifstream` auf anderen Plattformen.
-- [x] **Gehärtetes Hybrid-Entropie-Harvesting**
-  - Primärquelle: OS Kernel-CSPRNG (`getrandom(2)` auf Linux mit Fallback auf `/dev/urandom`, `BCryptGenRandom` auf Windows).
-  - Defence-in-Depth: Zusätzliches Einmischen von High-Res-Clocks, ASLR-Pointer-Layout und CPU-Cache-Jitter in den SHA-256-Mixer.
-- [x] **Erweiterte Testsuite & Quality Gates**
-  - Multi-Chunk Pipeline-Test mit 5 MB Testdaten.
-  - Variable Blockgrößen & Suffix-Parser-Test (64 KiB bis 256 MiB).
-  - Bit-Flip & Tamper Detection Test (erzwingt SHA-256 Integritätsprüfung und Abbruch).
-  - Entropie-Frische- und Nicht-Trivialitäts-Test.
-  - Alle Tests laufen unter ASan und UBSan fehlerfrei durch (100% grün).
-
----
-
-## 🔮 Zukünftige Erweiterungen (Backlog)
-
-- [ ] Mehrteiliges Splitten in N Teile (z.B. k-aus-n Secret Sharing oder kaskadiertes N-Way XOR)
-- [ ] Direkte Linux AIO / io_uring Integration für Direct-I/O
-- [ ] Autovervollständigungsskripte für Bash, Zsh und Fish
+  - Worker mit O(1) Pointer-Swapping (`std::swap`).
+  - Vektorisierter AVX2 256-Bit Fast-Path (`_mm256_xor_si256`).
+  - Sichere Speicherhygiene (`secure_wipe_memory`).
+- [x] **Konfigurierbare Puffergröße (`-B / --block-size`) & Kernel-Readahead (`posix_fadvise`)**
+- [x] **Gehärtetes Hybrid-Entropie-Harvesting & VM-Quantisierungskompensation**
