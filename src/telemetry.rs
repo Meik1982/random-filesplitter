@@ -2,27 +2,29 @@
 //! Supports interactive ANSI terminal bars, dynamic ETA, throughput tracking,
 //! and machine-readable NDJSON telemetry on stderr.
 
+use std::cell::Cell;
 use std::io::{self, Write};
 use std::time::Instant;
 
-/// Betriebsmodus für Telemetrie und Fortschrittsanzeige
+/// Betriebsmodi für Telemetrie und Fortschrittsanzeige
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TelemetryMode {
-    /// Keine Ausgabe (außer fatale Fehler)
-    Silent,
-    /// Interaktiver Fortschrittsbalken mit ANSI-Escapes auf stderr
+    /// Interaktive ANSI-Konsole (Fortschrittsbalken mit Durchsatz und ETA auf stderr)
     Interactive,
-    /// Maschinenlesbare NDJSON-Streams auf stderr
+    /// Maschinenlesbare NDJSON-Events auf stderr (für CI/CD und Agenten)
     Json,
+    /// Keine Fortschrittsanzeige (nur Fehler)
+    Silent,
 }
 
-/// Einheitliche Telemetrie-Instanz für Split- und Restore-Pipelines
+/// Einheitliche Telemetrie- und Fortschritts-Engine
 pub struct Telemetry {
     mode: TelemetryMode,
     action: &'static str,
     total_bytes: Option<u64>,
     start_time: Instant,
     last_update: Instant,
+    last_line_len: Cell<usize>,
 }
 
 impl Telemetry {
@@ -34,6 +36,7 @@ impl Telemetry {
             total_bytes,
             start_time: now,
             last_update: now,
+            last_line_len: Cell::new(0),
         }
     }
 
@@ -97,8 +100,9 @@ impl Telemetry {
                 );
             }
             TelemetryMode::Interactive => {
-                // Bei Interactive eine neue Zeile nach dem Fortschrittsbalken setzen
-                eprintln!();
+                // Bei Interactive die Zeile sauber abschließen und neue Zeile beginnen
+                eprintln!("\x1b[K");
+                let _ = io::stderr().flush();
             }
             TelemetryMode::Silent => {}
         }
@@ -112,6 +116,9 @@ impl Telemetry {
                 "{{\"event\":\"error\",\"action\":\"{}\",\"message\":\"{}\"}}",
                 self.action, escaped
             );
+            let _ = io::stderr().flush();
+        } else if self.mode == TelemetryMode::Interactive {
+            eprint!("\r\x1b[2K");
             let _ = io::stderr().flush();
         }
     }
@@ -170,7 +177,7 @@ impl Telemetry {
     fn print_interactive_progress(&self, processed: u64, _elapsed_s: f64, speed_bps: f64) {
         let speed_str = format_speed(speed_bps);
 
-        if let Some(total) = self.total_bytes {
+        let line = if let Some(total) = self.total_bytes {
             if total > 0 {
                 let ratio = (processed as f64 / total as f64).clamp(0.0, 1.0);
                 let pct = ratio * 100.0;
@@ -183,8 +190,8 @@ impl Telemetry {
                 let proc_str = format_bytes(processed);
                 let tot_str = format_bytes(total);
 
-                eprint!(
-                    "\r[RFS {}] {} {:5.1}% ({}/{}) {:>10}  ETA {:>4}",
+                format!(
+                    "[RFS {}] {} {:5.1}% ({}/{}) {:>10}  ETA {:>4}",
                     self.action,
                     bar,
                     pct,
@@ -192,23 +199,33 @@ impl Telemetry {
                     tot_str,
                     speed_str,
                     format_eta(eta_s)
-                );
+                )
             } else {
-                eprint!(
-                    "\r[RFS {}] [========================] 100.0% ({}) {:>10}",
+                format!(
+                    "[RFS {}] [========================] 100.0% ({}) {:>10}",
                     self.action,
                     format_bytes(processed),
                     speed_str
-                );
+                )
             }
         } else {
-            eprint!(
-                "\r[RFS {} Stream] {} übertragen  {:>10}",
+            format!(
+                "[RFS {} Stream] {} übertragen  {:>10}",
                 self.action,
                 format_bytes(processed),
                 speed_str
-            );
-        }
+            )
+        };
+
+        let prev_len = self.last_line_len.get();
+        let pad = if line.len() < prev_len {
+            " ".repeat(prev_len - line.len())
+        } else {
+            String::new()
+        };
+        self.last_line_len.set(line.len());
+
+        eprint!("\r{}{}\x1b[K", line, pad);
         let _ = io::stderr().flush();
     }
 }
