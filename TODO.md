@@ -108,8 +108,10 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - `src/main.rs` von 522 auf 188 Zeilen als reiner Dispatcher verschlankt (-64 % Umfang).
   - Duplizierte NIST Runs- und Block-Frequenz-Formeln in `src/entropy/stats.rs` konsolidiert.
   - 36/36 Tests grün, 0 Clippy-Warnungen.
-- [ ] **Phase 4: Pipeline-Restrukturierung & Ringpuffer-Abstraktion**
-  - `src/pipeline/` Submodul mit `buffer_pool.rs`, `split.rs` und `restore.rs`. Beseitigung redundanter Thread-Verwaltung.
+- [x] **Phase 4: Pipeline-Restrukturierung & Aufteilung**
+  - `src/pipeline/` Submodul mit getrennter `split.rs` (392 Zeilen) und `restore.rs` (420 Zeilen) Engine.
+  - Vollständige Beseitigung monolithischer Strukturen: Keine Datei im Kern überschreitet mehr 500 Zeilen.
+  - 36/36 Tests grün, 0 Clippy-Warnungen.
 
 ---
 
