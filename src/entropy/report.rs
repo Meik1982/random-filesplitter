@@ -1,5 +1,4 @@
-//! Universal High-Resolution Entropy Harvesting, NIST SP 800-22 Test Suite,
-//! and Deep Cryptographic Randomness Diagnostics.
+//! Interaktive und maschinenlesbare Entropie-Diagnose und Kryptoanalyse-Reports.
 
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -7,104 +6,16 @@ use std::path::Path;
 use std::time::Instant;
 use zeroize::Zeroize;
 
+use super::harvester::{
+    init_permutation_pool, CacheLineNode, UniversalEntropyHarvester, POOL_NODES,
+};
+use super::stats::{chi_square_p_value, erfc};
+
 /// Anzahl der Jitter-Stichproben für Phase 1
 const JITTER_SAMPLES: usize = 2048;
 
 /// Größe des Teststroms für Phase 2 (1 MiB)
 const PHASE2_STREAM_SIZE: usize = 1024 * 1024;
-
-/// 32K Elemente * 64 Bytes (1 Cache-Line) = 2 MB Puffer
-/// Sprengt L1 und L2 Caches zur Erzeugung von echter Hardware- und Bus-Latenz
-const POOL_NODES: usize = 32768;
-
-#[repr(C, align(64))]
-struct CacheLineNode {
-    next: u32,
-    _pad: [u8; 60],
-}
-
-fn init_permutation_pool(pool: &mut [CacheLineNode], seed_val: u64) {
-    let mut perm: Vec<u32> = (0..POOL_NODES as u32).collect();
-    let mut state = seed_val.wrapping_mul(6364136223846793005).wrapping_add(1);
-    for i in (1..POOL_NODES).rev() {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        let j = (state >> 33) as usize % i;
-        perm.swap(i, j);
-    }
-    for (i, node) in pool.iter_mut().enumerate() {
-        node.next = perm[i];
-    }
-}
-
-/// Universeller Entropie-Harvester: Erntet hochwertige 256-Bit Schlüssel und 96-Bit Nonce.
-pub struct UniversalEntropyHarvester;
-
-impl UniversalEntropyHarvester {
-    /// Erntet kryptografisch sichere 32-Byte Key und 12-Byte Nonce mit automatischer RAII-Nullung
-    pub fn harvest_seed() -> (zeroize::Zeroizing<[u8; 32]>, zeroize::Zeroizing<[u8; 12]>) {
-        let mut key = zeroize::Zeroizing::new([0u8; 32]);
-        let mut nonce = zeroize::Zeroizing::new([0u8; 12]);
-
-        // 1. Primärquelle: OS-Kernel CSPRNG (getrandom)
-        getrandom::getrandom(key.as_mut_slice()).expect("OS CSPRNG Fehler bei Key");
-        getrandom::getrandom(nonce.as_mut_slice()).expect("OS CSPRNG Fehler bei Nonce");
-
-        // 2. Defence-in-Depth: CPU-Jitter und High-Res Clock einmischen
-        let now = Instant::now();
-        let nanos = now.elapsed().as_nanos();
-        let jitter = Self::sample_cpu_jitter();
-
-        for (i, b) in key.iter_mut().enumerate() {
-            *b ^= ((nanos >> (i * 2)) as u8) ^ jitter[i % jitter.len()];
-        }
-        for (i, b) in nonce.iter_mut().enumerate() {
-            *b ^= ((nanos >> (i * 3 + 1)) as u8) ^ jitter[(i + 7) % jitter.len()];
-        }
-
-        (key, nonce)
-    }
-
-    /// Schneller CPU-Jitter-Sampler für Entropie-Mischung
-    fn sample_cpu_jitter() -> [u8; 16] {
-        let mut out = [0u8; 16];
-        let mut prev = Instant::now();
-        for (i, b) in out.iter_mut().enumerate() {
-            let mut acc = 0u64;
-            for _ in 0..64 {
-                let curr = Instant::now();
-                let delta = curr.duration_since(prev).as_nanos() as u64;
-                acc = acc.wrapping_mul(6364136223846793005).wrapping_add(delta);
-                prev = curr;
-            }
-            *b = (acc ^ (acc >> 8) ^ (acc >> 16) ^ (acc >> 24) ^ (i as u64)) as u8;
-        }
-        out
-    }
-}
-
-/// Komplementäre Fehlerfunktion erfc(x) mit hoher Präzision (Abramowitz & Stegun 7.1.26).
-/// Maximaler Fehler: < 1.5e-7 über den gesamten Definitionsbereich.
-pub fn erfc(x: f64) -> f64 {
-    if x < 0.0 {
-        return 2.0 - erfc(-x);
-    }
-    let p = 0.3275911;
-    let t = 1.0 / (1.0 + p * x);
-    let poly = t
-        * (0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-    poly * (-x * x).exp()
-}
-
-/// Berechnet den P-Wert für Chi-Quadrat mit $k$ Freiheitsgraden via Wilson-Hilferty Transformation.
-pub fn chi_square_p_value(chi_square: f64, k: f64) -> f64 {
-    if k <= 0.0 || chi_square < 0.0 {
-        return 0.0;
-    }
-    let q = 2.0 / (9.0 * k);
-    let z = ((chi_square / k).powf(1.0 / 3.0) - (1.0 - q)) / q.sqrt();
-    (0.5 * erfc(z / std::f64::consts::SQRT_2)).clamp(0.0, 1.0)
-}
 
 /// Führt die zweiphasige Entropiediagnose der lokalen Systemumgebung aus.
 #[allow(clippy::chunks_exact_to_as_chunks)]
@@ -624,23 +535,4 @@ pub fn analyze_file_entropy(path: &Path, json_mode: bool) -> Result<(), String> 
     println!("============================================================\n");
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_erfc_accuracy() {
-        assert!((erfc(0.0) - 1.0).abs() < 1e-6);
-        assert!((erfc(1.0) - 0.157299).abs() < 1e-4);
-        assert!(erfc(5.0) < 1e-10);
-    }
-
-    #[test]
-    fn test_chi_square_p_value() {
-        // Bei chi_square == k sollte der p-Wert ca. 0.5 sein
-        let p = chi_square_p_value(100.0, 100.0);
-        assert!((p - 0.5).abs() < 0.05);
-    }
 }

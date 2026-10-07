@@ -100,8 +100,9 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - `src/decoy.rs`: Eigenständiges Decoy-Subsystem (Größenanalyse, Rauschgenerator, Vorlagenerkennung).
   - `src/pipeline.rs` von 1.196 auf 805 Zeilen verschlankt (-33 % Umfang).
   - 36/36 Tests grün, 0 Clippy-Warnungen.
-- [ ] **Phase 2: Entropie-Modularisierung**
-  - `src/entropy/` in `harvester.rs` (Jitter-Seed-Pool), `stats.rs` (NIST-Tests & Mathematik) und `report.rs` (Terminal-Reports) zerlegen.
+- [x] **Phase 2: Entropie-Modularisierung**
+  - `src/entropy/` in `harvester.rs` (Jitter-Seed-Pool), `stats.rs` (NIST-Tests & Mathematik) und `report.rs` (Terminal-Reports) zerlegt.
+  - Saubere Trennung von Krypto-Harvester und Reporting. 36/36 Tests grün, 0 Clippy-Warnungen.
 - [ ] **Phase 3: CLI-Entflechtung**
   - `src/cli/` Submodul mit typisiertem Argument-Parsing, Validierung und Entlastung von `main.rs` (< 80 Zeilen).
 - [ ] **Phase 4: Pipeline-Restrukturierung & Ringpuffer-Abstraktion**
