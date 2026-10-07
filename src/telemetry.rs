@@ -250,7 +250,7 @@ fn render_ansi_bar(ratio: f64, width: usize) -> String {
 }
 
 /// Formatiert Bytes menschenlesbar (z. B. "12.4 MB", "1.25 GB")
-fn format_bytes(bytes: u64) -> String {
+pub fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
     const GB: f64 = MB * 1024.0;

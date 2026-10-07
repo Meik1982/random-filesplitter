@@ -4,10 +4,11 @@ _rfs_completions() {
     local cur prev words cword
     _init_completion || return
 
-    local subcommands="split restore verify benchmark entropy analyze"
+    local subcommands="split restore verify decoy benchmark entropy analyze"
     local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct"
-    local split_opts="-n --parts -B --block-size -o --output"
+    local split_opts="-n --parts -d --decoys -B --block-size -o --output"
     local restore_opts="-o --output -B --block-size"
+    local decoy_opts="-c --count -s --size -t --template -o --output -B --block-size"
 
     if [[ $cword -eq 1 ]]; then
         if [[ "$cur" == -* ]]; then
@@ -21,15 +22,15 @@ _rfs_completions() {
     local subcommand="${words[1]}"
 
     case "$prev" in
-        -n|--parts)
-            COMPREPLY=( $(compgen -W "2 3 4 5 8 16" -- "$cur") )
+        -n|--parts|-d|--decoys|-c|--count)
+            COMPREPLY=( $(compgen -W "1 2 3 4 5 8 16" -- "$cur") )
             return 0
             ;;
-        -B|--block-size)
-            COMPREPLY=( $(compgen -W "64K 256K 1M 4M 8M 16M" -- "$cur") )
+        -B|--block-size|-s|--size)
+            COMPREPLY=( $(compgen -W "64K 256K 1M 4M 8M 16M 100M 1G" -- "$cur") )
             return 0
             ;;
-        -o|--output|-a|--analyze)
+        -o|--output|-a|--analyze|-t|--template)
             _filedir
             return 0
             ;;
@@ -45,6 +46,9 @@ _rfs_completions() {
                 ;;
             verify)
                 COMPREPLY=( $(compgen -W "$common_opts -B --block-size" -- "$cur") )
+                ;;
+            decoy)
+                COMPREPLY=( $(compgen -W "$common_opts $decoy_opts" -- "$cur") )
                 ;;
             analyze)
                 COMPREPLY=( $(compgen -W "$common_opts" -- "$cur") )

@@ -74,9 +74,56 @@ pub fn parse_block_size(s: &str) -> Result<usize, String> {
     Ok(bytes)
 }
 
+/// Parst eine beliebige Dateigröße (z. B. "1024", "64K", "10M", "4G", "1T").
+pub fn parse_file_size(s: &str) -> Result<u64, String> {
+    let s_clean = s.trim();
+    if s_clean.is_empty() {
+        return Err("Dateigrößenangabe darf nicht leer sein.".to_string());
+    }
+
+    let (num_part, multiplier) = if s_clean.ends_with(|c: char| c.is_ascii_alphabetic()) {
+        let (num, suffix) = s_clean.split_at(s_clean.len() - 1);
+        let m = match suffix.to_ascii_uppercase().as_str() {
+            "B" => 1u64,
+            "K" => 1024u64,
+            "M" => 1024 * 1024,
+            "G" => 1024 * 1024 * 1024,
+            "T" => 1024 * 1024 * 1024 * 1024,
+            _ => {
+                return Err(format!(
+                    "Unbekannter Größensuffix: '{}'. Erlaubt sind B, K, M, G, T.",
+                    suffix
+                ))
+            }
+        };
+        (num, m)
+    } else {
+        (s_clean, 1u64)
+    };
+
+    let val = num_part
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| format!("Ungültige Zahl in Größenangabe: '{}'", s))?;
+
+    val.checked_mul(multiplier)
+        .ok_or_else(|| "Dateigröße überschreitet 64-Bit Adressbereich".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_file_size() {
+        assert_eq!(parse_file_size("0").unwrap(), 0);
+        assert_eq!(parse_file_size("100B").unwrap(), 100);
+        assert_eq!(parse_file_size("64K").unwrap(), 65536);
+        assert_eq!(parse_file_size("10M").unwrap(), 10 * 1024 * 1024);
+        assert_eq!(parse_file_size("2G").unwrap(), 2 * 1024 * 1024 * 1024);
+        assert!(parse_file_size("invalid").is_err());
+        assert!(parse_file_size("10X").is_err());
+    }
 
     #[test]
     fn test_parse_block_size() {

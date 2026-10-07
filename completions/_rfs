@@ -27,6 +27,7 @@ _rfs() {
                 'split:Datei in N Rausch-Teile aufteilen'
                 'restore:Originaldatei aus N Teilen bitgenau wiederherstellen'
                 'verify:Integrität und Prüfsummen im RAM verifizieren'
+                'decoy:Ununterscheidbare Köderdateien (Decoys) erzeugen'
                 'benchmark:Hardware-Durchsatzmessung (SIMD, CSPRNG, BLKS)'
                 'entropy:Zweiphasige Hardware- und CSPRNG-Entropiediagnose'
                 'analyze:NIST SP 800-22 Datei-Entropieanalyse'
@@ -44,9 +45,20 @@ _rfs() {
                     _arguments \
                         $common_opts \
                         '(-n --parts)'{-n,--parts}'[Anzahl der Teile (2..64)]:Anzahl:(2 3 4 5 8 16)' \
+                        '(-d --decoys)'{-d,--decoys}'[Anzahl zusätzlicher Köderdateien]:Anzahl:(1 2 3 4 5)' \
                         '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
                         '(-o --output)'{-o,--output}'[Präfix oder Pfad]:Datei:_files' \
                         '*:Eingabe- und Ausgabedateien:_files'
+                    ;;
+                decoy)
+                    _arguments \
+                        $common_opts \
+                        '(-c --count)'{-c,--count}'[Anzahl der Köderdateien]:Anzahl:(1 2 3 4 5 10)' \
+                        '(-s --size)'{-s,--size}'[Explizite Dateigröße]:Größe:(64K 1M 10M 100M 1G)' \
+                        '(-t --template)'{-t,--template}'[Musterdatei (Rohdatei +60B oder RFS 1:1)]:Musterdatei:_files' \
+                        '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
+                        '(-o --output)'{-o,--output}'[Präfix oder Dateipfad]:Datei:_files' \
+                        '*:Optionale Musterdatei:_files'
                     ;;
                 restore)
                     _arguments \

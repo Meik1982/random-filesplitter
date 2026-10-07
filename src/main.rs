@@ -40,6 +40,9 @@ fn display_help() {
     println!(
         "  rfs verify [Optionen] <Teile...>               (Integrität von N Teilen im RAM prüfen)"
     );
+    println!(
+        "  rfs decoy [Optionen] [-t <Muster>] [-s <Größe>] (Köderdateien mit ChaCha20-Zufallsrauschen erzeugen)"
+    );
     println!("\nKlassische Syntax:");
     println!(
         "  rfs [Optionen] <Datei|->                       (Datei oder Stdin in 2 Teile splitten)"
@@ -66,6 +69,10 @@ fn display_help() {
     println!("\nOptionen:");
     println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
     println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
+    println!("  -d, --decoys <ANZAHL>                         Zusätzliche Köderdateien (Decoys) beim Splitten erzeugen");
+    println!("  -c, --count <ANZAHL>                          Anzahl der Köderdateien für 'rfs decoy' (Standard: 1)");
+    println!("  -s, --size <GRÖSSE>                           Explizite Bytegröße für 'rfs decoy' (z. B. 64K, 10M, 1G)");
+    println!("  -t, --template <DATEI>                        Musterdatei für 'rfs decoy' (Rohdatei +60B Footer oder RFS 1:1)");
     println!("  -o, --output <PFAD>                           Präfix für Teile bzw. Pfad der Zieldatei (oder '-' für stdout)");
     println!("  --direct                                      Direct I/O: Kernel Page-Cache für Multi-Gigabyte-Dateien umgehen");
     println!("  --json                                        Maschinenlesbare NDJSON-Telemetrie auf stderr");
@@ -82,6 +89,7 @@ enum Action {
     Split,
     Restore,
     Verify,
+    Decoy,
 }
 
 fn parse_restore_targets(
@@ -165,7 +173,7 @@ fn main() {
     // Subcommand-Erkennung
     let mut explicit_subcommand: Option<&str> = None;
     let mut start_idx = 1;
-    if first == "split" || first == "restore" || first == "verify" {
+    if first == "split" || first == "restore" || first == "verify" || first == "decoy" {
         explicit_subcommand = Some(first.as_str());
         start_idx = 2;
     } else if first == "benchmark" {
@@ -200,6 +208,10 @@ fn main() {
     let mut json_output = false;
     let mut direct_io = false;
     let mut num_parts: usize = 2;
+    let mut num_decoys: usize = 0;
+    let mut decoy_count: usize = 1;
+    let mut decoy_size: Option<u64> = None;
+    let mut decoy_template: Option<String> = None;
     let mut block_size = types::DEFAULT_BLOCK_SIZE;
     let mut output_path: Option<String> = None;
     let mut positionals: Vec<String> = Vec::new();
@@ -250,6 +262,59 @@ fn main() {
                     process::exit(1);
                 }
             }
+        } else if arg == "-d" || arg == "--decoys" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Fehler: Option {} erfordert eine Anzahl.", arg);
+                process::exit(1);
+            }
+            match args[i].parse::<usize>() {
+                Ok(n) => num_decoys = n,
+                Err(_) => {
+                    eprintln!("Fehler: Ungültige Zahl für Option {}: '{}'", arg, args[i]);
+                    process::exit(1);
+                }
+            }
+        } else if arg == "-c" || arg == "--count" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Fehler: Option {} erfordert eine Anzahl.", arg);
+                process::exit(1);
+            }
+            match args[i].parse::<usize>() {
+                Ok(n) if (1..=1000).contains(&n) => decoy_count = n,
+                Ok(n) => {
+                    eprintln!(
+                        "Fehler: Anzahl der Köderdateien ({}) muss zwischen 1 und 1000 liegen.",
+                        n
+                    );
+                    process::exit(1);
+                }
+                Err(_) => {
+                    eprintln!("Fehler: Ungültige Zahl für Option {}: '{}'", arg, args[i]);
+                    process::exit(1);
+                }
+            }
+        } else if arg == "-s" || arg == "--size" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Fehler: Option {} erfordert eine Größenangabe.", arg);
+                process::exit(1);
+            }
+            match types::parse_file_size(&args[i]) {
+                Ok(sz) => decoy_size = Some(sz),
+                Err(e) => {
+                    eprintln!("Fehler: {}", e);
+                    process::exit(1);
+                }
+            }
+        } else if arg == "-t" || arg == "--template" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Fehler: Option {} erfordert einen Dateipfad.", arg);
+                process::exit(1);
+            }
+            decoy_template = Some(args[i].clone());
         } else if arg == "-o" || arg == "--output" {
             i += 1;
             if i >= args.len() {
@@ -271,6 +336,7 @@ fn main() {
         Some("split") => Action::Split,
         Some("restore") => Action::Restore,
         Some("verify") => Action::Verify,
+        Some("decoy") => Action::Decoy,
         Some(cmd) => {
             eprintln!("Fehler: Unbekannter Befehl '{}'", cmd);
             display_help();
@@ -316,6 +382,7 @@ fn main() {
                 input_source,
                 output_parts.as_deref(),
                 num_parts,
+                num_decoys,
                 output_path.as_deref(),
                 block_size,
                 telemetry_mode,
@@ -394,6 +461,38 @@ fn main() {
                     }
                     process::exit(1);
                 }
+            }
+        }
+        Action::Decoy => {
+            if decoy_template.is_none() && !positionals.is_empty() {
+                decoy_template = Some(positionals[0].clone());
+            }
+
+            let interactive = telemetry_mode == telemetry::TelemetryMode::Interactive;
+            let (target_size, base_name) = match pipeline::determine_decoy_size(
+                decoy_template.as_deref().map(Path::new),
+                decoy_size,
+                interactive,
+            ) {
+                Ok(res) => res,
+                Err(e) => {
+                    eprintln!("Fehler: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            if let Err(e) = pipeline::generate_decoy_files(
+                target_size,
+                decoy_count,
+                output_path.as_deref(),
+                base_name.as_deref(),
+                block_size,
+                telemetry_mode,
+                force,
+                direct_io,
+            ) {
+                eprintln!("Fehler bei der Köder-Erstellung: {}", e);
+                process::exit(1);
             }
         }
     }

@@ -8,11 +8,11 @@ use crate::crypto::{xor_in_place, ChaChaRng};
 use crate::entropy::UniversalEntropyHarvester;
 use crate::format::{decode_footer_n_way, encode_rfs3_footer_n_way, RfsMetadata};
 use crate::telemetry::{Telemetry, TelemetryMode};
-use crate::types::{BLKS_DIGEST_SIZE, RFS3_FOOTER_SIZE};
+use crate::types::{self, BLKS_DIGEST_SIZE, RFS3_FOOTER_SIZE};
 use blks_core::{BlksHasher, Digest as BlksDigest};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use sha2::{Digest as Sha2Digest, Sha256};
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -40,6 +40,7 @@ pub fn split_stream_or_file(
     input_source: &str,
     output_parts: Option<&[PathBuf]>,
     num_parts: usize,
+    num_decoys: usize,
     output_prefix: Option<&str>,
     block_size: usize,
     telemetry_mode: TelemetryMode,
@@ -328,7 +329,253 @@ pub fn split_stream_or_file(
         );
     }
 
+    if num_decoys > 0 {
+        let share_size = total_processed + RFS3_FOOTER_SIZE as u64;
+        let base_name = if input_source == "-" {
+            Some("stdin")
+        } else {
+            Some(input_source)
+        };
+        let decoy_paths = generate_decoy_files(
+            share_size,
+            num_decoys,
+            output_prefix,
+            base_name,
+            block_size,
+            telemetry_mode,
+            force,
+            direct_io,
+        )?;
+        if telemetry_mode == TelemetryMode::Interactive {
+            eprintln!(
+                "  Zusätzliche Köderdateien (Decoys, exakt {} Bytes):",
+                share_size
+            );
+            for (i, p) in decoy_paths.iter().enumerate() {
+                eprintln!("    Köder {}: {}", i + 1, p.display());
+            }
+        }
+    }
+
     Ok(out_paths)
+}
+
+/// Analysiert eine Musterdatei oder Größenangabe und berechnet transparent die Zielgröße für Decoys.
+pub fn determine_decoy_size(
+    template_path: Option<&Path>,
+    explicit_size: Option<u64>,
+    interactive: bool,
+) -> Result<(u64, Option<String>), String> {
+    if let Some(target) = explicit_size {
+        if interactive {
+            eprintln!(
+                "[Decoy-Analyse] Explizite Zielgröße vorgegeben: {} Bytes ({}).",
+                target,
+                crate::telemetry::format_bytes(target)
+            );
+        }
+        return Ok((target, None));
+    }
+
+    if let Some(path) = template_path {
+        if !path.exists() {
+            return Err(format!("Musterdatei '{}' existiert nicht.", path.display()));
+        }
+        let meta = fs::metadata(path)
+            .map_err(|e| format!("Kann Metadaten von '{}' nicht lesen: {}", path.display(), e))?;
+        let file_size = meta.len();
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        let is_rfs = if file_name.ends_with(".rfs")
+            || (file_name.contains(".part") && file_name.ends_with(".rfs"))
+        {
+            true
+        } else if let Some(idx) = file_name.rfind(".rfs") {
+            let suffix = &file_name[idx + 4..];
+            !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit())
+        } else {
+            false
+        };
+
+        let (target_size, rfs_detected) = if is_rfs {
+            (file_size, true)
+        } else {
+            (file_size + RFS3_FOOTER_SIZE as u64, false)
+        };
+
+        if interactive {
+            eprintln!(
+                "[Decoy-Analyse] Musterdatei: '{}' ({} Bytes / {})",
+                path.display(),
+                file_size,
+                crate::telemetry::format_bytes(file_size)
+            );
+            if rfs_detected {
+                eprintln!(
+                    "[Decoy-Erkennung] Typ: Bestehende RFS-Split-Datei (.rfs-Dateiendung erkannt)."
+                );
+                eprintln!(
+                    "[Decoy-Berechnung] Exakte 1:1 Übernahme der Share-Größe: {} Bytes.",
+                    target_size
+                );
+            } else {
+                eprintln!("[Decoy-Erkennung] Typ: Rohdatei (Original-Klartext).");
+                eprintln!(
+                    "[Decoy-Berechnung] +{} Bytes für RFS3-Stealth-Footer einkalkuliert: {} + {} = {} Bytes.",
+                    RFS3_FOOTER_SIZE,
+                    file_size,
+                    RFS3_FOOTER_SIZE,
+                    target_size
+                );
+                eprintln!(
+                    "[Decoy-Begründung] Köderdateien müssen im Transportnetzwerk exakt dieselbe Bytegröße wie echte RFS-Shares besitzen."
+                );
+            }
+        }
+
+        let base_name = if is_rfs {
+            if let Some(idx) = file_name.rfind(".rfs") {
+                let suffix = &file_name[idx + 4..];
+                if suffix.chars().all(|c| c.is_ascii_digit()) {
+                    file_name[..idx].to_string()
+                } else {
+                    file_name.to_string()
+                }
+            } else {
+                file_name.to_string()
+            }
+        } else {
+            file_name.to_string()
+        };
+
+        return Ok((target_size, Some(base_name)));
+    }
+
+    Err("Bitte geben Sie entweder eine Musterdatei (-t <DATEI>) oder eine explizite Größe (-s <GRÖSSE>) an.".to_string())
+}
+
+/// Erzeugt eine beliebige Anzahl von Köderdateien (Decoys) gefüllt mit ChaCha20-CSPRNG-Zufallsrauschen.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_decoy_files(
+    target_size: u64,
+    count: usize,
+    output_prefix: Option<&str>,
+    template_base: Option<&str>,
+    block_size: usize,
+    telemetry_mode: TelemetryMode,
+    force: bool,
+    direct_io: bool,
+) -> Result<Vec<PathBuf>, String> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if count > 1000 {
+        return Err("Anzahl der Köderdateien darf höchstens 1000 betragen.".to_string());
+    }
+
+    // 1. Zieldateipfade ableiten
+    let mut decoy_paths: Vec<PathBuf> = Vec::with_capacity(count);
+    for idx in 1..=count {
+        let path = if let Some(prefix) = output_prefix {
+            if count == 1 && prefix.contains('.') {
+                PathBuf::from(prefix)
+            } else {
+                PathBuf::from(format!("{}.decoy{}.rfs", prefix, idx))
+            }
+        } else if let Some(base) = template_base {
+            PathBuf::from(format!("{}.decoy{}.rfs", base, idx))
+        } else {
+            PathBuf::from(format!("decoy_{}.rfs", idx))
+        };
+        decoy_paths.push(path);
+    }
+
+    // 2. Kollisionsprüfung
+    for p in &decoy_paths {
+        if p.exists() && !force {
+            return Err(format!(
+                "Köderdatei '{}' existiert bereits. Verwenden Sie -f / --force zum Überschreiben.",
+                p.display()
+            ));
+        }
+    }
+
+    // 3. Entropie & CSPRNG Initialisierung
+    let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
+    let mut rng = ChaChaRng::new(&key, &nonce);
+    key.zeroize();
+    nonce.zeroize();
+
+    let chunk_size = block_size.clamp(types::MIN_BLOCK_SIZE, types::MAX_BLOCK_SIZE);
+    let mut buffer = vec![0u8; chunk_size];
+    let total_all_decoys = target_size.saturating_mul(count as u64);
+
+    let mut telemetry = Telemetry::new(telemetry_mode, "Decoy", Some(total_all_decoys));
+    let mut processed_total: u64 = 0;
+
+    for path in &decoy_paths {
+        let f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .map_err(|e| {
+                format!(
+                    "Kann Köderdatei '{}' nicht erstellen: {}",
+                    path.display(),
+                    e
+                )
+            })?;
+
+        if direct_io {
+            crate::fadvise::advise_sequential(&f);
+        }
+
+        let mut writer = BufWriter::with_capacity(chunk_size, f);
+        let mut remaining = target_size;
+        let mut file_written: u64 = 0;
+
+        while remaining > 0 {
+            let to_write = std::cmp::min(remaining, chunk_size as u64) as usize;
+            rng.fill_bytes(&mut buffer[..to_write]);
+
+            writer
+                .write_all(&buffer[..to_write])
+                .map_err(|e| format!("Schreibfehler auf Köderdatei '{}': {}", path.display(), e))?;
+
+            if direct_io {
+                crate::fadvise::advise_drop_cache(
+                    writer.get_ref(),
+                    file_written as i64,
+                    to_write as i64,
+                );
+            }
+
+            file_written += to_write as u64;
+            remaining -= to_write as u64;
+            processed_total += to_write as u64;
+            telemetry.update(processed_total);
+        }
+
+        writer
+            .flush()
+            .map_err(|e| format!("Flush-Fehler auf Köderdatei '{}': {}", path.display(), e))?;
+    }
+
+    buffer.as_mut_slice().zeroize();
+    telemetry.finish(processed_total, count, None);
+
+    if telemetry_mode == TelemetryMode::Interactive {
+        eprintln!(
+            "Erfolgreich {} Köderdatei(en) (Decoys) generiert (100% ChaCha20-Zufallsrauschen):",
+            count
+        );
+        for (i, p) in decoy_paths.iter().enumerate() {
+            eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), target_size);
+        }
+    }
+
+    Ok(decoy_paths)
 }
 
 /// Convenience-Wrapper für Abwärtskompatibilität (2 Teile)
@@ -348,6 +595,7 @@ pub fn split_file(
         input_path.to_str().unwrap_or("-"),
         None,
         2,
+        0,
         output_prefix,
         block_size,
         mode,

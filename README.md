@@ -35,6 +35,10 @@ Eine Datei wird in $N$ Teile zerlegt ($N \ge 2$), von denen jeder einzelne Teil 
   * Zweiphasige Diagnose (`rfs --entropy-test`) und Datei-Audit (`rfs -a <Datei>`) mit Runs-Tests, Block-Frequenztests ($M=128$), analytischer `erfc`-Funktion und Wilson-Hilferty Chi²-Transformation.
 * **100 % Abwärtskompatibilität:**
   * Rekonstruiert historische RFS2-Archive (44-Byte Footer, SHA-256) aus v2.x automatisch und bitgenau.
+* **Anti-Forensik Köderdateien (Decoys & Traffic-Obfuscation):**
+  * Erzeugung beliebiger ununterscheidbarer Köderdateien mit 100 % ChaCha20-Zufallsrauschen (`-d, --decoys` beim Splitten oder Subcommand `rfs decoy`).
+  * Intelligente Mustererkennung: Berechnet bei Rohdateien automatisch die künftige Share-Größe (`Originalgröße + 60 Bytes Stealth-Footer`) und übernimmt bei RFS-Shares die Dateigröße exakt 1:1.
+  * Zerstört Traffic-Analysen und lässt Abhörer im Unklaren darüber, wie viele und welche Dateien echte Geheimnis-Shares sind.
 
 ---
 
@@ -73,7 +77,22 @@ tar -czf - /var/data | rfs split -n 4 - -o backup
 rfs restore backup.rfs1 backup.rfs2 backup.rfs3 backup.rfs4 -o - | tar -xzf -
 ```
 
-### 4. Maschinenlesbare Telemetrie (--json)
+### 4. Köderdateien (Decoys) zur Traffic-Verschleierung
+```bash
+# Beim Splitten sofort 4 identisch große Köderdateien mitgenerieren (insg. 7 Dateien)
+rfs split -n 3 geheim.iso -d 4
+
+# Nachträglich Köder basierend auf einer Rohdatei erstellen (+60 Bytes Footer auto-berechnet)
+rfs decoy -t vertrag.pdf -c 5
+
+# Nachträglich Köder basierend auf einem RFS-Share erstellen (1:1 Bytegröße)
+rfs decoy -t vertrag.pdf.rfs1 -c 3
+
+# Köder mit expliziter Zielgröße erzeugen (z. B. 50 MB)
+rfs decoy -s 50M -c 2 -o fake_share
+```
+
+### 5. Maschinenlesbare Telemetrie (--json)
 ```bash
 rfs split -n 3 riesig.iso --json
 # Ausgabe auf stderr:

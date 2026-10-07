@@ -537,6 +537,13 @@
           Weil eine einzelne RFS-Datei keinerlei Dateikennung („Magic Bytes“) besitzt, kann dir niemand nachweisen, dass es sich überhaupt um verschlüsselte Daten handelt. Selbst unter Androhung von Folter könntest du behaupten: <em>„Das ist eine Festplattensicherung mit zufälligem Datenmüll“</em> – und kein Gutachter der Welt kann das Gegenteil beweisen!
         </p>
       </div>
+
+      <div class="callout">
+        <div class="callout-title">🪤 Köderdateien (Decoys) gegen Verkehrsanalysen</div>
+        <p>
+          Beim Transport über getrennte Kanäle kann <code>rfs</code> zusätzlich beliebige <strong>Köderdateien (Decoys)</strong> erzeugen (<code>rfs split -d &lt;ANZAHL&gt;</code> oder <code>rfs decoy</code>). Da jede Köderdatei aus echtem ChaCha20-Zufall besteht und exakt dieselbe Bytegröße wie ein echter Share besitzt, kann ein Abhörer weder erkennen, aus wie vielen Teilen das Geheimnis besteht, noch welche der übertragenen Dateien echte Shares und welche reine Attrappen sind.
+        </p>
+      </div>
     </section>
 
     <!-- SECTION 3: TECHNISCHE FUNKTIONSWEISE -->

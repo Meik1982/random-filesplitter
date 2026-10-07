@@ -285,3 +285,129 @@ fn test_direct_io_and_quiet_mode() {
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn test_decoy_generation_standalone_and_during_split() {
+    let temp_dir = std::env::temp_dir().join(format!(
+        "rfs_decoys_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let raw_file = temp_dir.join("document.pdf");
+    let raw_payload = vec![0x37u8; 5000]; // 5000 Bytes
+    fs::write(&raw_file, &raw_payload).unwrap();
+
+    // 1. Split mit integrierter Köder-Erstellung (-d 3)
+    let split_decoy = Command::new(rfs_bin())
+        .arg("split")
+        .arg("-n")
+        .arg("2")
+        .arg("-d")
+        .arg("3")
+        .arg(&raw_file)
+        .arg("-f")
+        .status()
+        .expect("rfs split mit -d fehlgeschlagen");
+    assert!(split_decoy.success());
+
+    let s1 = temp_dir.join("document.pdf.rfs1");
+    let s2 = temp_dir.join("document.pdf.rfs2");
+    let d1 = temp_dir.join("document.pdf.decoy1.rfs");
+    let d2 = temp_dir.join("document.pdf.decoy2.rfs");
+    let d3 = temp_dir.join("document.pdf.decoy3.rfs");
+
+    assert!(s1.exists() && s2.exists());
+    assert!(d1.exists() && d2.exists() && d3.exists());
+
+    // Alle 5 Dateien müssen exakt 5060 Bytes groß sein (5000 + 60)
+    let expected_len = 5060u64;
+    assert_eq!(fs::metadata(&s1).unwrap().len(), expected_len);
+    assert_eq!(fs::metadata(&s2).unwrap().len(), expected_len);
+    assert_eq!(fs::metadata(&d1).unwrap().len(), expected_len);
+    assert_eq!(fs::metadata(&d2).unwrap().len(), expected_len);
+    assert_eq!(fs::metadata(&d3).unwrap().len(), expected_len);
+
+    // Echte Shares rekonstruieren einwandfrei
+    let res_ok = temp_dir.join("doc.restored");
+    let restore = Command::new(rfs_bin())
+        .arg("restore")
+        .arg(&s1)
+        .arg(&s2)
+        .arg("-o")
+        .arg(&res_ok)
+        .status()
+        .expect("Restore fehlgeschlagen");
+    assert!(restore.success());
+    assert_eq!(fs::read(&res_ok).unwrap(), raw_payload);
+
+    // Einmischung eines Decoys anstelle eines echten Shares scheitert sofort
+    let fake_restore = Command::new(rfs_bin())
+        .arg("restore")
+        .arg(&s1)
+        .arg(&d1)
+        .status()
+        .expect("Restore fehlgeschlagen");
+    assert!(
+        !fake_restore.success(),
+        "Decoy durfte nicht decodiert werden"
+    );
+
+    // 2. Standalone Decoy mit Rohdatei-Muster: Muss automatisch +60 Bytes addieren
+    let standalone_raw = Command::new(rfs_bin())
+        .arg("decoy")
+        .arg("-t")
+        .arg(&raw_file)
+        .arg("-c")
+        .arg("2")
+        .arg("-o")
+        .arg(temp_dir.join("stand_raw").to_str().unwrap())
+        .arg("-f")
+        .status()
+        .expect("rfs decoy fehlgeschlagen");
+    assert!(standalone_raw.success());
+    let sr1 = temp_dir.join("stand_raw.decoy1.rfs");
+    let sr2 = temp_dir.join("stand_raw.decoy2.rfs");
+    assert_eq!(fs::metadata(&sr1).unwrap().len(), expected_len);
+    assert_eq!(fs::metadata(&sr2).unwrap().len(), expected_len);
+
+    // 3. Standalone Decoy mit RFS-Muster: Muss exakt 1:1 Dateigröße übernehmen (5060 Bytes)
+    let standalone_rfs = Command::new(rfs_bin())
+        .arg("decoy")
+        .arg("-t")
+        .arg(&s1)
+        .arg("-c")
+        .arg("1")
+        .arg("-o")
+        .arg(temp_dir.join("stand_rfs.rfs").to_str().unwrap())
+        .arg("-f")
+        .status()
+        .expect("rfs decoy fehlgeschlagen");
+    assert!(standalone_rfs.success());
+    let s_rfs = temp_dir.join("stand_rfs.rfs");
+    assert_eq!(fs::metadata(&s_rfs).unwrap().len(), expected_len);
+
+    // 4. Standalone Decoy mit expliziter Größe (-s 128K)
+    let explicit_decoy = Command::new(rfs_bin())
+        .arg("decoy")
+        .arg("-s")
+        .arg("128K")
+        .arg("-c")
+        .arg("1")
+        .arg("-o")
+        .arg(temp_dir.join("exact.decoy").to_str().unwrap())
+        .arg("-f")
+        .status()
+        .expect("rfs decoy mit -s fehlgeschlagen");
+    assert!(explicit_decoy.success());
+    assert_eq!(
+        fs::metadata(temp_dir.join("exact.decoy")).unwrap().len(),
+        128 * 1024
+    );
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}

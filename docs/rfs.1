@@ -14,6 +14,9 @@ rfs \- High-Performance Cryptographic File Splitter & Reconstructor (Post-Quantu
 .B rfs verify
 [\fB\-B\fR \fISIZE\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR] \fIPART1\fR \fIPART2\fR [\fIPART3...\fR]
 .br
+.B rfs decoy
+[\fB\-c\fR \fICOUNT\fR] [\fB\-t\fR \fITEMPLATE\fR] [\fB\-s\fR \fISIZE\fR] [\fB\-o\fR \fIPREFIX\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR]
+.br
 .B rfs
 [\fB\-b\fR|\fB\-\-benchmark\fR]
 .br
@@ -47,6 +50,9 @@ Reconstructs the original file or pipes it to Unix stdout from all \fIN\fR share
 .B verify
 Performs fast RAM-only integrity and BLKS-384 / SHA-256 verification without writing to disk.
 .TP
+.B decoy
+Generates indistinguishable noise decoy files for traffic analysis resistance and multi-path obfuscation.
+.TP
 .B benchmark
 Runs hardware throughput benchmarks measuring ChaCha20 CSPRNG streaming, AVX2/NEON SIMD-XOR, and BLKS-384 hashing.
 .TP
@@ -60,6 +66,18 @@ Performs deep cryptographic entropy analysis and NIST SP 800-22 runs and block-f
 .TP
 .BR \-n ", " \-\-parts " \fINUM\fR"
 Number of parts for N-way splitting (between 2 and 64; default: 2).
+.TP
+.BR \-d ", " \-\-decoys " \fINUM\fR"
+Number of indistinguishable decoy files to generate concurrently during split.
+.TP
+.BR \-c ", " \-\-count " \fINUM\fR"
+Number of decoy files to generate in standalone decoy subcommand (between 1 and 1000; default: 1).
+.TP
+.BR \-s ", " \-\-size " \fISIZE\fR"
+Explicit target byte size for decoy generation (e.g., 64K, 10M, 1G).
+.TP
+.BR \-t ", " \-\-template " \fIFILE\fR"
+Template file for decoy generation (automatically calculates +60B stealth footer for raw files or copies 1:1 size for RFS shares).
 .TP
 .BR \-B ", " \-\-block\-size " \fISIZE\fR"
 Buffer and I/O block size (e.g., 64K, 256K, 1M, 4M, 16M; default: 4M).
