@@ -103,8 +103,11 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 - [x] **Phase 2: Entropie-Modularisierung**
   - `src/entropy/` in `harvester.rs` (Jitter-Seed-Pool), `stats.rs` (NIST-Tests & Mathematik) und `report.rs` (Terminal-Reports) zerlegt.
   - Saubere Trennung von Krypto-Harvester und Reporting. 36/36 Tests grün, 0 Clippy-Warnungen.
-- [ ] **Phase 3: CLI-Entflechtung**
-  - `src/cli/` Submodul mit typisiertem Argument-Parsing, Validierung und Entlastung von `main.rs` (< 80 Zeilen).
+- [x] **Phase 3: CLI-Entflechtung & NIST-Deduplizierung**
+  - Neues `src/cli/` Submodul mit typisiertem `CliCommand`-Enum, robuster Argument-Validierung und Hilfe/Version.
+  - `src/main.rs` von 522 auf 188 Zeilen als reiner Dispatcher verschlankt (-64 % Umfang).
+  - Duplizierte NIST Runs- und Block-Frequenz-Formeln in `src/entropy/stats.rs` konsolidiert.
+  - 36/36 Tests grün, 0 Clippy-Warnungen.
 - [ ] **Phase 4: Pipeline-Restrukturierung & Ringpuffer-Abstraktion**
   - `src/pipeline/` Submodul mit `buffer_pool.rs`, `split.rs` und `restore.rs`. Beseitigung redundanter Thread-Verwaltung.
 

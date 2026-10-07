@@ -9,7 +9,7 @@ use zeroize::Zeroize;
 use super::harvester::{
     init_permutation_pool, CacheLineNode, UniversalEntropyHarvester, POOL_NODES,
 };
-use super::stats::{chi_square_p_value, erfc};
+use super::stats::{calculate_block_frequency_test, calculate_runs_test};
 
 /// Anzahl der Jitter-Stichproben für Phase 1
 const JITTER_SAMPLES: usize = 2048;
@@ -203,22 +203,10 @@ pub fn run_entropy_diagnostics() -> i32 {
     let pi_ones = ones_count as f64 / total_bits;
     let bit_balance_pct = pi_ones * 100.0;
 
-    // NIST Runs Test P-Wert
-    let tau = 2.0 / total_bits.sqrt();
-    let runs_p_value = if (pi_ones - 0.5).abs() >= tau {
-        0.0
-    } else {
-        let v_n = 1.0 + transitions as f64;
-        let numer = (v_n - 2.0 * total_bits * pi_ones * (1.0 - pi_ones)).abs();
-        let denom = 2.0 * (2.0 * total_bits).sqrt() * pi_ones * (1.0 - pi_ones);
-        erfc(numer / denom)
-    };
-    let runs_ok = runs_p_value >= 0.01;
-
-    // NIST Block Frequency Test P-Wert
-    let block_chi_obs = 512.0 * block_chi_sum;
-    let block_p_value = chi_square_p_value(block_chi_obs, num_blocks as f64);
-    let block_ok = block_p_value >= 0.01;
+    // NIST SP 800-22 Tests (Runs & Block-Frequenz)
+    let (runs_p_value, runs_ok) = calculate_runs_test(pi_ones, transitions, total_bits);
+    let (block_p_value, block_ok) =
+        calculate_block_frequency_test(block_chi_sum, num_blocks as u64);
 
     let shannon_ok = shannon >= 7.9990;
     let chi_ok = (180.0..=330.0).contains(&chi_square);
@@ -408,26 +396,9 @@ pub fn analyze_file_entropy(path: &Path, json_mode: bool) -> Result<(), String> 
     };
     let pi_err = ((pi_est - std::f64::consts::PI).abs() / std::f64::consts::PI) * 100.0;
 
-    // NIST SP 800-22 Runs Test P-Wert
-    let tau = 2.0 / total_bits.sqrt();
-    let runs_p_value = if (pi_ones - 0.5).abs() >= tau {
-        0.0
-    } else {
-        let v_n = 1.0 + transitions as f64;
-        let numer = (v_n - 2.0 * total_bits * pi_ones * (1.0 - pi_ones)).abs();
-        let denom = 2.0 * (2.0 * total_bits).sqrt() * pi_ones * (1.0 - pi_ones);
-        erfc(numer / denom)
-    };
-    let runs_ok = runs_p_value >= 0.01;
-
-    // NIST SP 800-22 Block-Frequenztest P-Wert
-    let (block_p_value, block_ok) = if num_blocks > 0 {
-        let obs = 512.0 * block_chi_sum;
-        let p_val = chi_square_p_value(obs, num_blocks as f64);
-        (p_val, p_val >= 0.01)
-    } else {
-        (1.0, true)
-    };
+    // NIST SP 800-22 Tests (Runs & Block-Frequenz)
+    let (runs_p_value, runs_ok) = calculate_runs_test(pi_ones, transitions, total_bits);
+    let (block_p_value, block_ok) = calculate_block_frequency_test(block_chi_sum, num_blocks);
 
     let shannon_ok = shannon_entropy >= 7.9990;
     let chi_ok = (180.0..=330.0).contains(&chi_square);

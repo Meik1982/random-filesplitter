@@ -24,6 +24,41 @@ pub fn chi_square_p_value(chi_square: f64, k: f64) -> f64 {
     (0.5 * erfc(z / std::f64::consts::SQRT_2)).clamp(0.0, 1.0)
 }
 
+/// Berechnet den NIST SP 800-22 Runs Test P-Wert (Bit-Dynamik).
+///
+/// Liefert `(p_value, passed)`.
+pub fn calculate_runs_test(pi_ones: f64, transitions: u64, total_bits: f64) -> (f64, bool) {
+    if total_bits <= 0.0 {
+        return (0.0, false);
+    }
+    let tau = 2.0 / total_bits.sqrt();
+    let p_value = if (pi_ones - 0.5).abs() >= tau {
+        0.0
+    } else {
+        let v_n = 1.0 + transitions as f64;
+        let numer = (v_n - 2.0 * total_bits * pi_ones * (1.0 - pi_ones)).abs();
+        let denom = 2.0 * (2.0 * total_bits).sqrt() * pi_ones * (1.0 - pi_ones);
+        if denom == 0.0 {
+            0.0
+        } else {
+            erfc(numer / denom)
+        }
+    };
+    (p_value, p_value >= 0.01)
+}
+
+/// Berechnet den NIST SP 800-22 Block-Frequenztest P-Wert ($M=128$).
+///
+/// Liefert `(p_value, passed)`.
+pub fn calculate_block_frequency_test(block_chi_sum: f64, num_blocks: u64) -> (f64, bool) {
+    if num_blocks == 0 {
+        return (1.0, true);
+    }
+    let block_chi_obs = 512.0 * block_chi_sum;
+    let p_value = chi_square_p_value(block_chi_obs, num_blocks as f64);
+    (p_value, p_value >= 0.01)
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
