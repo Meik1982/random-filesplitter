@@ -5,17 +5,24 @@
 #![allow(clippy::type_complexity)]
 
 use crate::crypto::{xor_in_place, ChaChaRng};
+use crate::decoy::write_decoy_files_to_paths;
 use crate::entropy::UniversalEntropyHarvester;
 use crate::format::{decode_footer_n_way, encode_rfs4_footer_n_way, RfsMetadata};
+use crate::naming::{check_destination_collision, deduce_restore_target, determine_split_paths};
 use crate::telemetry::{Telemetry, TelemetryMode};
 use crate::types::{
-    self, BLKS_DIGEST_SIZE, RFS2_FOOTER_SIZE, RFS3_FOOTER_SIZE, RFS4_ALIGN_BLOCK_SIZE, RFS4_MAGIC,
-    RFS4_TRAILER_SIZE,
+    BLKS_DIGEST_SIZE, RFS2_FOOTER_SIZE, RFS3_FOOTER_SIZE, RFS4_MAGIC, RFS4_TRAILER_SIZE,
 };
+
+#[allow(unused_imports)]
+pub use crate::decoy::{determine_decoy_size, generate_decoy_files};
+#[allow(unused_imports)]
+pub use crate::naming::{generate_unique_hex_tokens, shuffle_paths};
+
 use blks_core::{BlksHasher, Digest as BlksDigest};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use sha2::{Digest as Sha2Digest, Sha256};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -28,48 +35,6 @@ const BUFFER_POOL_SIZE: usize = 3;
 struct WriteJob {
     bufs: Vec<Vec<u8>>,
     valid_len: usize,
-}
-
-/// Unterstützt:
-/// - Reguläre Dateien (`input_source` != `"-"`)
-/// - Unix Stdin Pipes (`input_source` == `"-"`)
-///
-/// Generiert `count` eindeutige 6-stellige Hex-Zufallstokens (z. B. "a9f4c2", "7c1b3e")
-fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
-    let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
-    let mut rng = ChaChaRng::new(&key, &nonce);
-    key.zeroize();
-    nonce.zeroize();
-
-    let mut set = std::collections::HashSet::new();
-    let mut tokens = Vec::with_capacity(count);
-    while tokens.len() < count {
-        let mut rnd = [0u8; 3];
-        rng.fill_bytes(&mut rnd);
-        let tok = format!("{:02x}{:02x}{:02x}", rnd[0], rnd[1], rnd[2]);
-        if set.insert(tok.clone()) {
-            tokens.push(tok);
-        }
-    }
-    tokens
-}
-
-/// Verwürfelt Pfade in-place via ChaCha20 Fisher-Yates Shuffle
-fn shuffle_paths(paths: &mut [PathBuf]) {
-    if paths.len() <= 1 {
-        return;
-    }
-    let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
-    let mut rng = ChaChaRng::new(&key, &nonce);
-    key.zeroize();
-    nonce.zeroize();
-
-    for i in (1..paths.len()).rev() {
-        let mut rnd_u32 = [0u8; 4];
-        rng.fill_bytes(&mut rnd_u32);
-        let j = (u32::from_le_bytes(rnd_u32) as usize) % (i + 1);
-        paths.swap(i, j);
-    }
 }
 
 /// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
@@ -90,51 +55,13 @@ pub fn split_stream_or_file(
     direct_io: bool,
 ) -> Result<Vec<PathBuf>, String> {
     // 1. Zielpfade bestimmen (<token6>.rfs als Standard für maximale OPSEC)
-    let (real_paths, decoy_paths, n_parts) = if let Some(parts) = output_parts {
-        if parts.len() < 2 || parts.len() > 64 {
-            return Err(
-                "Anzahl der expliziten Ausgabeteile muss zwischen 2 und 64 liegen.".to_string(),
-            );
-        }
-        (parts.to_vec(), Vec::new(), parts.len())
-    } else {
-        let count = num_parts.clamp(2, 64);
-        let total_files = count + num_decoys;
-        let tokens = generate_unique_hex_tokens(total_files);
-
-        let parent = if input_source != "-" {
-            Path::new(input_source).parent().unwrap_or(Path::new(""))
-        } else {
-            Path::new("")
-        };
-
-        let mut all_paths: Vec<PathBuf> = tokens
-            .into_iter()
-            .map(|t| {
-                if let Some(prefix) = output_prefix {
-                    let p = Path::new(prefix);
-                    if p.is_dir() || prefix.ends_with('/') {
-                        p.join(format!("{}.rfs", t))
-                    } else {
-                        PathBuf::from(format!("{}.{}.rfs", prefix, t))
-                    }
-                } else if parent.as_os_str().is_empty() {
-                    PathBuf::from(format!("{}.rfs", t))
-                } else {
-                    parent.join(format!("{}.rfs", t))
-                }
-            })
-            .collect();
-
-        // Wenn Decoys vorhanden sind: Slots zufällig mit ChaCha20 verwürfeln (Fisher-Yates)
-        if num_decoys > 0 {
-            shuffle_paths(&mut all_paths);
-        }
-
-        let real = all_paths[0..count].to_vec();
-        let decoys = all_paths[count..total_files].to_vec();
-        (real, decoys, count)
-    };
+    let (real_paths, decoy_paths, n_parts) = determine_split_paths(
+        input_source,
+        output_parts,
+        num_parts,
+        num_decoys,
+        output_prefix,
+    )?;
 
     let out_paths = real_paths.clone();
 
@@ -449,278 +376,6 @@ pub fn split_stream_or_file(
     Ok(out_paths)
 }
 
-/// Analysiert eine Musterdatei oder Größenangabe und berechnet transparent die Zielgröße für Decoys.
-pub fn determine_decoy_size(
-    template_path: Option<&Path>,
-    explicit_size: Option<u64>,
-    interactive: bool,
-) -> Result<(u64, Option<String>), String> {
-    if let Some(target) = explicit_size {
-        if interactive {
-            eprintln!(
-                "[Decoy-Analyse] Explizite Zielgröße vorgegeben: {} Bytes ({}).",
-                target,
-                crate::telemetry::format_bytes(target)
-            );
-        }
-        return Ok((target, None));
-    }
-
-    if let Some(path) = template_path {
-        if !path.exists() {
-            return Err(format!("Musterdatei '{}' existiert nicht.", path.display()));
-        }
-        let meta = fs::metadata(path)
-            .map_err(|e| format!("Kann Metadaten von '{}' nicht lesen: {}", path.display(), e))?;
-        let file_size = meta.len();
-        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        let is_rfs = if file_name.ends_with(".rfs")
-            || (file_name.contains(".part") && file_name.ends_with(".rfs"))
-        {
-            true
-        } else if let Some(idx) = file_name.rfind(".rfs") {
-            let suffix = &file_name[idx + 4..];
-            !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit())
-        } else {
-            false
-        };
-
-        let (target_size, rfs_detected) = if is_rfs {
-            (file_size, true)
-        } else {
-            let fn_len = file_name.len() as u64;
-            let min_size = file_size + fn_len + RFS4_TRAILER_SIZE as u64;
-            let rem = min_size % RFS4_ALIGN_BLOCK_SIZE as u64;
-            let aligned = if rem == 0 {
-                min_size + RFS4_ALIGN_BLOCK_SIZE as u64
-            } else {
-                min_size + (RFS4_ALIGN_BLOCK_SIZE as u64 - rem)
-            };
-            (aligned, false)
-        };
-
-        if interactive {
-            eprintln!(
-                "[Decoy-Analyse] Musterdatei: '{}' ({} Bytes / {})",
-                path.display(),
-                file_size,
-                crate::telemetry::format_bytes(file_size)
-            );
-            if rfs_detected {
-                eprintln!(
-                    "[Decoy-Erkennung] Typ: Bestehende RFS-Split-Datei (.rfs-Dateiendung erkannt)."
-                );
-                eprintln!(
-                    "[Decoy-Berechnung] Exakte 1:1 Übernahme der Share-Größe: {} Bytes.",
-                    target_size
-                );
-            } else {
-                eprintln!("[Decoy-Erkennung] Typ: Rohdatei (Original-Klartext).");
-                eprintln!(
-                    "[Decoy-Berechnung] RFS4-Footer + 4 KiB Cluster-Padding einkalkuliert: {} Bytes -> Zielgröße: {} Bytes.",
-                    file_size, target_size
-                );
-                eprintln!(
-                    "[Decoy-Begründung] Köderdateien müssen im Transportnetzwerk exakt dieselbe Bytegröße wie echte RFS-Shares besitzen."
-                );
-            }
-        }
-
-        let base_name = if is_rfs {
-            if let Some(idx) = file_name.rfind(".rfs") {
-                let suffix = &file_name[idx + 4..];
-                if suffix.chars().all(|c| c.is_ascii_digit()) {
-                    file_name[..idx].to_string()
-                } else if let Some(before) = file_name.strip_suffix(".rfs") {
-                    if let Some(dot_idx) = before.rfind('.') {
-                        let tok = &before[dot_idx + 1..];
-                        if (tok.len() == 4 || tok.len() == 6)
-                            && tok.chars().all(|c| c.is_ascii_hexdigit())
-                            || tok.starts_with("part")
-                            || tok.starts_with("decoy")
-                        {
-                            before[..dot_idx].to_string()
-                        } else {
-                            before.to_string()
-                        }
-                    } else {
-                        before.to_string()
-                    }
-                } else {
-                    file_name.to_string()
-                }
-            } else {
-                file_name.to_string()
-            }
-        } else {
-            file_name.to_string()
-        };
-
-        return Ok((target_size, Some(base_name)));
-    }
-
-    Err("Bitte geben Sie entweder eine Musterdatei (-t <DATEI>) oder eine explizite Größe (-s <GRÖSSE>) an.".to_string())
-}
-
-/// Schreibt reines ChaCha20-Zufallsrauschen in die angegebenen Zieldateipfade.
-pub fn write_decoy_files_to_paths(
-    decoy_paths: &[PathBuf],
-    target_size: u64,
-    block_size: usize,
-    telemetry_mode: TelemetryMode,
-    direct_io: bool,
-) -> Result<(), String> {
-    if decoy_paths.is_empty() {
-        return Ok(());
-    }
-    let count = decoy_paths.len();
-
-    let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
-    let mut rng = ChaChaRng::new(&key, &nonce);
-    key.zeroize();
-    nonce.zeroize();
-
-    let chunk_size = block_size.clamp(types::MIN_BLOCK_SIZE, types::MAX_BLOCK_SIZE);
-    let mut buffer = vec![0u8; chunk_size];
-    let total_all_decoys = target_size.saturating_mul(count as u64);
-
-    let mut telemetry = Telemetry::new(telemetry_mode, "Decoy", Some(total_all_decoys));
-    let mut processed_total: u64 = 0;
-
-    for path in decoy_paths {
-        let f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)
-            .map_err(|e| {
-                format!(
-                    "Kann Köderdatei '{}' nicht erstellen: {}",
-                    path.display(),
-                    e
-                )
-            })?;
-
-        if direct_io {
-            crate::fadvise::advise_sequential(&f);
-        }
-
-        let mut writer = BufWriter::with_capacity(chunk_size, f);
-        let mut remaining = target_size;
-        let mut file_written: u64 = 0;
-
-        while remaining > 0 {
-            let to_write = std::cmp::min(remaining, chunk_size as u64) as usize;
-            rng.fill_bytes(&mut buffer[..to_write]);
-
-            writer
-                .write_all(&buffer[..to_write])
-                .map_err(|e| format!("Schreibfehler auf Köderdatei '{}': {}", path.display(), e))?;
-
-            if direct_io {
-                crate::fadvise::advise_drop_cache(
-                    writer.get_ref(),
-                    file_written as i64,
-                    to_write as i64,
-                );
-            }
-
-            file_written += to_write as u64;
-            remaining -= to_write as u64;
-            processed_total += to_write as u64;
-            telemetry.update(processed_total);
-        }
-
-        writer
-            .flush()
-            .map_err(|e| format!("Flush-Fehler auf Köderdatei '{}': {}", path.display(), e))?;
-    }
-
-    buffer.as_mut_slice().zeroize();
-    telemetry.finish(processed_total, count, None);
-    Ok(())
-}
-
-/// Erzeugt eine beliebige Anzahl von Köderdateien (Decoys) gefüllt mit ChaCha20-CSPRNG-Zufallsrauschen.
-#[allow(clippy::too_many_arguments)]
-pub fn generate_decoy_files(
-    target_size: u64,
-    count: usize,
-    token_mode: bool,
-    output_prefix: Option<&str>,
-    _template_base: Option<&str>,
-    block_size: usize,
-    telemetry_mode: TelemetryMode,
-    force: bool,
-    direct_io: bool,
-) -> Result<Vec<PathBuf>, String> {
-    if count == 0 {
-        return Ok(Vec::new());
-    }
-    if count > 1000 {
-        return Err("Anzahl der Köderdateien darf höchstens 1000 betragen.".to_string());
-    }
-
-    let tokens = generate_unique_hex_tokens(count);
-
-    // 1. Zieldateipfade ableiten (<token6>.rfs für maximale OPSEC)
-    let mut decoy_paths: Vec<PathBuf> = Vec::with_capacity(count);
-    for idx in 1..=count {
-        let t = &tokens[idx - 1];
-        let path = if let Some(prefix) = output_prefix {
-            if count == 1 && prefix.contains('.') {
-                PathBuf::from(prefix)
-            } else {
-                let p = Path::new(prefix);
-                if p.is_dir() || prefix.ends_with('/') {
-                    p.join(format!("{}.rfs", t))
-                } else {
-                    PathBuf::from(format!("{}.{}.rfs", prefix, t))
-                }
-            }
-        } else {
-            PathBuf::from(format!("{}.rfs", t))
-        };
-        decoy_paths.push(path);
-    }
-
-    // 2. Kollisionsprüfung
-    for p in &decoy_paths {
-        if p.exists() && !force {
-            return Err(format!(
-                "Köderdatei '{}' existiert bereits. Verwenden Sie -f / --force zum Überschreiben.",
-                p.display()
-            ));
-        }
-    }
-
-    write_decoy_files_to_paths(
-        &decoy_paths,
-        target_size,
-        block_size,
-        telemetry_mode,
-        direct_io,
-    )?;
-
-    if telemetry_mode == TelemetryMode::Interactive {
-        let mode_desc = if token_mode {
-            "Token-Modus"
-        } else {
-            "100% ChaCha20-Zufallsrauschen"
-        };
-        eprintln!(
-            "Erfolgreich {} Köderdatei(en) (Decoys) generiert ({}):",
-            count, mode_desc
-        );
-        for (i, p) in decoy_paths.iter().enumerate() {
-            eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), target_size);
-        }
-    }
-
-    Ok(decoy_paths)
-}
-
 /// Convenience-Wrapper für Abwärtskompatibilität (2 Teile)
 #[allow(dead_code)]
 pub fn split_file(
@@ -882,62 +537,16 @@ pub fn restore_file(
 
     // 2. Bestimme Ausgabeziel
     let is_stdout = matches!(output_target, Some("-"));
-
-    let target_out_path = if is_stdout || verify_only {
-        None
-    } else if let Some(p) = output_target {
-        Some(PathBuf::from(p))
-    } else if let Some(meta_fn) = meta.filename() {
-        let parent = part_paths[0].parent().unwrap_or(Path::new(""));
-        if parent.as_os_str().is_empty() {
-            Some(PathBuf::from(meta_fn))
-        } else {
-            Some(parent.join(meta_fn))
-        }
-    } else {
-        let p_str = part_paths[0].to_str().unwrap_or("restored.bin");
-        let deduced = if let Some(idx) = p_str.rfind(".rfs") {
-            let suffix = &p_str[idx + 4..];
-            if suffix.chars().all(|c| c.is_ascii_digit()) {
-                PathBuf::from(&p_str[..idx])
-            } else if let Some(before) = p_str.strip_suffix(".rfs") {
-                if let Some(dot_idx) = before.rfind('.') {
-                    let token_candidate = &before[dot_idx + 1..];
-                    let is_hex_token = (token_candidate.len() == 4 || token_candidate.len() == 6)
-                        && token_candidate.chars().all(|c| c.is_ascii_hexdigit());
-                    let is_part_token = token_candidate.starts_with("part")
-                        || token_candidate.starts_with("rfs")
-                        || token_candidate.starts_with("decoy");
-                    if is_hex_token || is_part_token {
-                        PathBuf::from(&before[..dot_idx])
-                    } else {
-                        PathBuf::from(before)
-                    }
-                } else {
-                    PathBuf::from(before)
-                }
-            } else {
-                PathBuf::from(format!("{}.restored", p_str))
-            }
-        } else if let Some(stripped) = p_str.strip_suffix(".part1.rfs") {
-            PathBuf::from(stripped)
-        } else {
-            PathBuf::from(format!("{}.restored", p_str))
-        };
-        Some(deduced)
-    };
+    let target_out_path = deduce_restore_target(
+        part_paths,
+        output_target,
+        meta.filename(),
+        is_stdout,
+        verify_only,
+    );
 
     if let Some(ref target) = target_out_path {
-        // Schutz: Ziel darf niemals eine der Quell-Split-Dateien sein
-        for (idx, p) in part_paths.iter().enumerate() {
-            if target == p {
-                return Err(format!(
-                    "Zieldatei '{}' darf nicht identisch mit Quellteil {} sein (Gefahr des Datenverlusts).",
-                    target.display(),
-                    idx + 1
-                ));
-            }
-        }
+        check_destination_collision(target, part_paths)?;
 
         if target.exists() && !force {
             return Err(format!(

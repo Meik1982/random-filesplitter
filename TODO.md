@@ -76,6 +76,39 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ---
 
+### 🛡️ Stufe 5: Anti-Forensik & RFS4 Stealth-Format – ✅ ABGESCHLOSSEN
+- [x] **Anti-Forensik Köderdateien (Decoys & Slot-Shuffling)**
+  - Ununterscheidbare Rauschdateien mit 100 % ChaCha20-CSPRNG (`-d, --decoys` und Subcommand `rfs decoy`).
+  - Intelligente Vorlagenerkennung: Exakte 1:1 Dateigröße für RFS-Shares bzw. automatische Berechnung von RFS4 + 4 KiB-Padding für Rohdateien.
+  - ChaCha20 Fisher-Yates Slot-Shuffling: Reale Shares und Decoys werden unkorreliert auf Plätze verteilt.
+- [x] **RFS4-Format mit eingebettetem Originaldateinamen**
+  - 64-Byte RFS4-Trailer: Magic `"RFS4"`, Version `0x0400`, Originalgröße, BLKS-384 Digest und Dateinamenlänge.
+  - Der Originaldateiname wird One-Time-Pad-verschlüsselt direkt vor dem Trailer über alle $N$ Teile abgelegt.
+  - Automatische Wiederherstellung des Dateinamens direkt aus dem Footer bei `rfs restore` (ohne `-o`).
+- [x] **4 KiB Cluster-Padding & `--pad-to <GRÖSSE>`**
+  - Jede Share-Datei wird standardmäßig auf ein Vielfaches von 4.096 Bytes aufgefüllt (verhindert Bytegrößen-Korrelation auf Dateisystem-Ebene).
+  - Beliebiges künstliches Aufblähen via `--pad-to` (z. B. 100M, 20G) zur gezielten Traffic-Verschleierung.
+- [x] **Anonyme `<token6>.rfs` Dateibenennung**
+  - Alle generierten Dateien tragen neutrale, unkorrelierte 6-stellige Hex-Tokens (z. B. `a9f4c2.rfs`, `7c1b3e.rfs`).
+  - Dateisystem leakt null Informationen über Inhalt, Struktur oder Anzahl der Teile.
+
+---
+
+### 🧹 Stufe 6: Frühjahrsputz & Code-Modularisierung (In Umsetzung)
+- [x] **Phase 1: Anti-Forensik & Naming Auslagerung**
+  - `src/naming.rs`: Eindeutige Hex-Tokens, ChaCha20-Pfadshuffling, Zieldeduktion und Quell-Kollisionsschutz ausgelagert.
+  - `src/decoy.rs`: Eigenständiges Decoy-Subsystem (Größenanalyse, Rauschgenerator, Vorlagenerkennung).
+  - `src/pipeline.rs` von 1.196 auf 805 Zeilen verschlankt (-33 % Umfang).
+  - 36/36 Tests grün, 0 Clippy-Warnungen.
+- [ ] **Phase 2: Entropie-Modularisierung**
+  - `src/entropy/` in `harvester.rs` (Jitter-Seed-Pool), `stats.rs` (NIST-Tests & Mathematik) und `report.rs` (Terminal-Reports) zerlegen.
+- [ ] **Phase 3: CLI-Entflechtung**
+  - `src/cli/` Submodul mit typisiertem Argument-Parsing, Validierung und Entlastung von `main.rs` (< 80 Zeilen).
+- [ ] **Phase 4: Pipeline-Restrukturierung & Ringpuffer-Abstraktion**
+  - `src/pipeline/` Submodul mit `buffer_pool.rs`, `split.rs` und `restore.rs`. Beseitigung redundanter Thread-Verwaltung.
+
+---
+
 ## ✅ Historie: Abgeschlossene Härtungen (v2.1.0 C++17)
 
 - [x] **Compiler- & Linker-Härtung (Full-RELRO Standard)**

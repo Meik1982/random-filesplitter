@@ -5,9 +5,11 @@
 
 mod benchmark;
 mod crypto;
+mod decoy;
 mod entropy;
 mod fadvise;
 mod format;
+mod naming;
 mod pipeline;
 mod telemetry;
 mod types;
@@ -489,7 +491,7 @@ fn main() {
             }
 
             let interactive = telemetry_mode == telemetry::TelemetryMode::Interactive;
-            let (target_size, base_name) = match pipeline::determine_decoy_size(
+            let (target_size, base_name) = match decoy::determine_decoy_size(
                 decoy_template.as_deref().map(Path::new),
                 decoy_size,
                 interactive,
@@ -501,7 +503,7 @@ fn main() {
                 }
             };
 
-            if let Err(e) = pipeline::generate_decoy_files(
+            if let Err(e) = decoy::generate_decoy_files(
                 target_size,
                 decoy_count,
                 token_mode,
