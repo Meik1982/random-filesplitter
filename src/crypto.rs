@@ -155,4 +155,31 @@ mod tests {
         xor_buffers(&mut out, &s1, &s2);
         assert_eq!(out, vec![0xFFu8; 99]);
     }
+
+    #[test]
+    fn test_simd_xor_all_lengths_and_offsets() {
+        // Prüft Längen von 0 bis 512 Bytes (deckt 0, 1..31 Skalarreste, 32/64 Vektorblöcke ab)
+        for len in 0..=512 {
+            let mut dest = vec![0u8; len];
+            let src: Vec<u8> = (0..len).map(|i| (i * 17 + 5) as u8).collect();
+            let orig: Vec<u8> = (0..len).map(|i| (i * 31 + 11) as u8).collect();
+
+            dest.copy_from_slice(&orig);
+            xor_in_place(&mut dest, &src);
+
+            for i in 0..len {
+                assert_eq!(
+                    dest[i],
+                    orig[i] ^ src[i],
+                    "Fehler bei Länge {} an Index {}",
+                    len,
+                    i
+                );
+            }
+
+            // Zweites XOR muss exakt orig wiederherstellen
+            xor_in_place(&mut dest, &src);
+            assert_eq!(dest, orig, "Inversion fehlgeschlagen bei Länge {}", len);
+        }
+    }
 }
