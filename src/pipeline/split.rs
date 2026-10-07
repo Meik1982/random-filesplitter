@@ -40,6 +40,7 @@ pub fn split_stream_or_file(
     telemetry_mode: TelemetryMode,
     force: bool,
     direct_io: bool,
+    mlock: bool,
 ) -> Result<Vec<PathBuf>, String> {
     // 1. Zielpfade bestimmen (<token6>.rfs als Standard für maximale OPSEC)
     let (real_paths, decoy_paths, n_parts) = determine_split_paths(
@@ -116,8 +117,13 @@ pub fn split_stream_or_file(
 
     // 5. Kanäle für entkoppelte 3-Stufen-Pipeline & Puffer-Pools
     let (free_in_tx, free_in_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = bounded(BUFFER_POOL_SIZE);
+    let mut locked_in_count = 0;
     for _ in 0..BUFFER_POOL_SIZE {
-        free_in_tx.send(vec![0u8; block_size]).unwrap();
+        let buf = vec![0u8; block_size];
+        if mlock && crate::memlock::lock_memory(&buf) {
+            locked_in_count += 1;
+        }
+        free_in_tx.send(buf).unwrap();
     }
 
     let (data_tx, data_rx): (
@@ -127,12 +133,32 @@ pub fn split_stream_or_file(
 
     let (free_out_tx, free_out_rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) =
         bounded(BUFFER_POOL_SIZE);
+    let mut locked_out_count = 0;
     for _ in 0..BUFFER_POOL_SIZE {
         let mut slot = Vec::with_capacity(n_parts);
         for _ in 0..n_parts {
-            slot.push(vec![0u8; block_size]);
+            let buf = vec![0u8; block_size];
+            if mlock && crate::memlock::lock_memory(&buf) {
+                locked_out_count += 1;
+            }
+            slot.push(buf);
         }
         free_out_tx.send(slot).unwrap();
+    }
+
+    if mlock && telemetry_mode == TelemetryMode::Interactive {
+        let total_locked = (locked_in_count + locked_out_count) * block_size;
+        if total_locked > 0 {
+            eprintln!(
+                "[OPSEC] Memory-Locking aktiv: {} Puffer physisch gesperrt ({}) - Swap-Paging geschützt.",
+                locked_in_count + locked_out_count,
+                crate::telemetry::format_bytes(total_locked as u64)
+            );
+        } else {
+            eprintln!(
+                "[WARNUNG] mlock verweigert (ulimit -l prüfen). Fahre ohne Swap-Locking fort."
+            );
+        }
     }
 
     let (job_tx, job_rx): (
@@ -385,6 +411,7 @@ pub fn split_file(
         output_prefix,
         block_size,
         mode,
+        false,
         false,
         false,
     )?;

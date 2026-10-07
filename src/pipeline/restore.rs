@@ -27,6 +27,7 @@ use crate::types::{
 /// - Fast-Verify im RAM (`verify_only` == true)
 /// - $N$-Way SIMD-XOR Wiederherstellung ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$)
 /// - Auto-Erkennung von RFS4 (BLKS-384, eingebetteter Dateiname), RFS3 (BLKS-384) und RFS2 (SHA-256)
+#[allow(clippy::too_many_arguments)]
 pub fn restore_file(
     part_paths: &[PathBuf],
     output_target: Option<&str>,
@@ -35,6 +36,7 @@ pub fn restore_file(
     verify_only: bool,
     block_size: usize,
     direct_io: bool,
+    mlock: bool,
 ) -> Result<Option<PathBuf>, String> {
     let n_parts = part_paths.len();
     if n_parts < 2 {
@@ -196,10 +198,15 @@ pub fn restore_file(
     // 4. Entkoppelte Pipeline mit Puffer-Pools
     let (free_in_tx, free_in_rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) =
         bounded(BUFFER_POOL_SIZE);
+    let mut locked_in_count = 0;
     for _ in 0..BUFFER_POOL_SIZE {
         let mut slot = Vec::with_capacity(n_parts);
         for _ in 0..n_parts {
-            slot.push(vec![0u8; block_size]);
+            let buf = vec![0u8; block_size];
+            if mlock && crate::memlock::lock_memory(&buf) {
+                locked_in_count += 1;
+            }
+            slot.push(buf);
         }
         free_in_tx.send(slot).unwrap();
     }
@@ -211,8 +218,28 @@ pub fn restore_file(
 
     let (free_out_tx, free_out_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) =
         bounded(BUFFER_POOL_SIZE);
+    let mut locked_out_count = 0;
     for _ in 0..BUFFER_POOL_SIZE {
-        free_out_tx.send(vec![0u8; block_size]).unwrap();
+        let buf = vec![0u8; block_size];
+        if mlock && crate::memlock::lock_memory(&buf) {
+            locked_out_count += 1;
+        }
+        free_out_tx.send(buf).unwrap();
+    }
+
+    if mlock && telemetry_mode == TelemetryMode::Interactive {
+        let total_locked = (locked_in_count + locked_out_count) * block_size;
+        if total_locked > 0 {
+            eprintln!(
+                "[OPSEC] Memory-Locking aktiv: {} Puffer physisch gesperrt ({}) - Swap-Paging geschützt.",
+                locked_in_count + locked_out_count,
+                crate::telemetry::format_bytes(total_locked as u64)
+            );
+        } else {
+            eprintln!(
+                "[WARNUNG] mlock verweigert (ulimit -l prüfen). Fahre ohne Swap-Locking fort."
+            );
+        }
     }
 
     let (job_tx, job_rx): (

@@ -94,6 +94,9 @@ Output prefix for split shares or destination file path for restore (use '\-' fo
 .BR \-\-direct ", " \-\-direct\-io
 Bypasses OS page cache using POSIX fadvise flags (POSIX_FADV_SEQUENTIAL and POSIX_FADV_DONTNEED) to prevent memory bloating on multi-gigabyte files.
 .TP
+.BR \-\-mlock
+Locks cryptographic and I/O buffer pool memory in physical RAM via POSIX mlock to prevent paging sensitive plaintext or OTP streams into swap files.
+.TP
 .BR \-\-json
 Emits structured machine-readable NDJSON telemetry events (\fIprogress\fR, \fIfinished\fR, \fIerror\fR) on stderr.
 .TP

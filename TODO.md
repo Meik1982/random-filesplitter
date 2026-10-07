@@ -116,10 +116,11 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 ---
 
 ### 🚀 Stufe 7: v3.1.0 Next-Gen Härtung, Parallel-I/O & Security-Audit (Geplant)
+- [x] **Memory-Locking (`mlock`) für Swap-Resilienz**
+  - Plattformübergreifendes `src/memlock.rs` Modul mit POSIX `mlock` und Graceful Fallback bei `RLIMIT_MEMLOCK`.
+  - Flag `--mlock` in CLI integriert; sperrt Eingabe- und Ausgabe-Ringpuffer im physischen RAM gegen Swap-Paging.
+  - Integrationstests in `tests/edge_cases_and_cli_tests.rs`, Manpage und Shell-Completions nachgezogen.
 - [ ] **Paralleles Multi-Mountpoint I/O (Disk-Fanout)**
-  - Optionales paralleles Schreiben auf unabhängige Zieldatenträger (z. B. getrennte USB-Sticks / NVMe-Mounts), damit langsame Medien nicht die High-Speed-Laufwerke ausbremsen.
-- [ ] **Memory-Locking (`mlock`) für Swap-Resilienz**
-  - Optionale Absicherung von In-Flight-Puffern im physischen RAM via `libc::mlock`, um Auslagern von OTP-Schlüsselströmen in Swap-Partitionen hardwareseitig zu verhindern.
 - [ ] **Fuzzing-Suite (`cargo fuzz` / AFL++)**
   - Continuous Fuzzing für Trailer-Parsing (`decode_footer_n_way`), Dateinamen-Extrahierung und korrupte/böswillige Bytefolgen.
 - [ ] **Criterion Micro-Benchmarks**

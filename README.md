@@ -33,6 +33,8 @@ Eine Datei wird in $N$ Teile zerlegt ($N \ge 2$), von denen jeder einzelne Teil 
   * Dynamischer 24-Zeichen ANSI-Fortschrittsbalken mit Prozentanzeige, formatierter Bytezahl, Live-Geschwindigkeit (MB/s / GB/s) und ETA.
 * **Erweiterte NIST SP 800-22 Entropieanalyse:**
   * Zweiphasige Diagnose (`rfs --entropy-test`) und Datei-Audit (`rfs -a <Datei>`) mit Runs-Tests, Block-Frequenztests ($M=128$), analytischer `erfc`-Funktion und Wilson-Hilferty Chi²-Transformation.
+* **Swap-Resilienz via Memory-Locking (`--mlock`):**
+  * Sperrt kryptografische Puffer im physischen RAM via POSIX `mlock`, um Auslagerungen von sensiblen Klartextdaten und OTP-Zufallsströmen in Swap-Partitionen oder Ruhezustands-Abbilder hardwareseitig zu unterbinden.
 * **RFS4-Format mit eingebettetem Dateinamen & 4 KiB Cluster-Padding:**
   * Der Original-Dateiname wird direkt im Stealth-Footer hinterlegt und über alle $N$ Teile informationstheoretisch per One-Time-Pad verschlüsselt ($F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$).
   * Jede Share-Datei wird automatisch auf ein Vielfaches von **4 KiB (4.096 Bytes Cluster-Alignment)** mit ChaCha20-Zufall aufgefüllt – verhindert jegliche Dateigrößen-Korrelation auf Byte-Ebene.

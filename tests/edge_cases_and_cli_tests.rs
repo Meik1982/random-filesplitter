@@ -294,6 +294,54 @@ fn test_direct_io_and_quiet_mode() {
 }
 
 #[test]
+fn test_mlock_flag_split_and_restore() {
+    let temp_dir = std::env::temp_dir().join(format!(
+        "rfs_mlock_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&temp_dir).unwrap();
+    let in_file = temp_dir.join("mlock.bin");
+    let p1 = temp_dir.join("mlock.bin.rfs1");
+    let p2 = temp_dir.join("mlock.bin.rfs2");
+    let restored = temp_dir.join("mlock.restored");
+
+    let payload = vec![0x99u8; 64 * 1024]; // 64 KiB
+    fs::write(&in_file, &payload).unwrap();
+
+    // Split mit --mlock
+    let split_out = Command::new(rfs_bin())
+        .arg("split")
+        .arg(&in_file)
+        .arg(&p1)
+        .arg(&p2)
+        .arg("--mlock")
+        .arg("-f")
+        .output()
+        .expect("rfs split mit --mlock fehlgeschlagen");
+    assert!(split_out.status.success());
+
+    // Restore mit --mlock
+    let restore_out = Command::new(rfs_bin())
+        .arg("restore")
+        .arg(&p1)
+        .arg(&p2)
+        .arg("-o")
+        .arg(&restored)
+        .arg("--mlock")
+        .arg("-f")
+        .output()
+        .expect("rfs restore mit --mlock fehlgeschlagen");
+    assert!(restore_out.status.success());
+    assert_eq!(fs::read(&restored).unwrap(), payload);
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
 fn test_decoy_generation_standalone_and_during_split() {
     let temp_dir = std::env::temp_dir().join(format!(
         "rfs_decoys_{}_{}",

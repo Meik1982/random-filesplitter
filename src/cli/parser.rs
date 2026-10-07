@@ -68,6 +68,7 @@ pub fn display_help() {
     println!("  -t, --template <DATEI>                        Musterdatei für 'rfs decoy' (Rohdatei +60B Footer oder RFS 1:1)");
     println!("  -o, --output <PFAD>                           Präfix für Teile bzw. Pfad der Zieldatei (oder '-' für stdout)");
     println!("  --direct                                      Direct I/O: Kernel Page-Cache für Multi-Gigabyte-Dateien umgehen");
+    println!("  --mlock                                       Pufferspeicher im physischen RAM sperren (verhindert Auslagern in Swap)");
     println!("  --json                                        Maschinenlesbare NDJSON-Telemetrie auf stderr");
     println!(
         "  -f, --force                                   Zieldateien überschreiben falls vorhanden"
@@ -102,6 +103,7 @@ pub enum CliCommand {
         telemetry_mode: TelemetryMode,
         force: bool,
         direct_io: bool,
+        mlock: bool,
     },
     /// Rekonstruktion aus N Teilen
     Restore {
@@ -111,6 +113,7 @@ pub enum CliCommand {
         telemetry_mode: TelemetryMode,
         force: bool,
         direct_io: bool,
+        mlock: bool,
     },
     /// RAM-Integritätsprüfung aus N Teilen
     Verify {
@@ -119,6 +122,7 @@ pub enum CliCommand {
         telemetry_mode: TelemetryMode,
         force: bool,
         direct_io: bool,
+        mlock: bool,
     },
     /// Köderdateien mit ChaCha20-Zufall erzeugen
     Decoy {
@@ -203,6 +207,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     let mut silent = false;
     let mut json_output = false;
     let mut direct_io = false;
+    let mut mlock = false;
     let mut token_mode = false;
     let mut pad_to: Option<u64> = None;
     let mut num_parts: usize = 2;
@@ -227,6 +232,8 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
             json_output = true;
         } else if arg == "--direct" || arg == "--direct-io" {
             direct_io = true;
+        } else if arg == "--mlock" {
+            mlock = true;
         } else if arg == "--token" || arg == "--rnd" {
             token_mode = true;
         } else if arg == "--pad-to" {
@@ -378,6 +385,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                 telemetry_mode,
                 force,
                 direct_io,
+                mlock,
             })
         }
         "restore" => {
@@ -392,6 +400,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                 telemetry_mode,
                 force,
                 direct_io,
+                mlock,
             })
         }
         "verify" => {
@@ -407,6 +416,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                 telemetry_mode,
                 force,
                 direct_io,
+                mlock,
             })
         }
         "decoy" => {

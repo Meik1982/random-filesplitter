@@ -10,6 +10,7 @@ mod decoy;
 mod entropy;
 mod fadvise;
 mod format;
+mod memlock;
 mod naming;
 mod pipeline;
 mod telemetry;
@@ -65,6 +66,7 @@ fn main() {
             telemetry_mode,
             force,
             direct_io,
+            mlock,
         } => {
             match pipeline::split_stream_or_file(
                 &input,
@@ -77,6 +79,7 @@ fn main() {
                 telemetry_mode,
                 force,
                 direct_io,
+                mlock,
             ) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
@@ -94,6 +97,7 @@ fn main() {
             telemetry_mode,
             force,
             direct_io,
+            mlock,
         } => {
             match pipeline::restore_file(
                 &parts,
@@ -103,6 +107,7 @@ fn main() {
                 false,
                 block_size,
                 direct_io,
+                mlock,
             ) {
                 Ok(restored_path_opt) => {
                     if telemetry_mode == telemetry::TelemetryMode::Interactive {
@@ -126,6 +131,7 @@ fn main() {
             telemetry_mode,
             force,
             direct_io,
+            mlock,
         } => {
             match pipeline::restore_file(
                 &parts,
@@ -135,6 +141,7 @@ fn main() {
                 true,
                 block_size,
                 direct_io,
+                mlock,
             ) {
                 Ok(_) => process::exit(0),
                 Err(e) => {
