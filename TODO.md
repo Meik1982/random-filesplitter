@@ -94,7 +94,7 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ---
 
-### 🧹 Stufe 6: Frühjahrsputz & Code-Modularisierung (In Umsetzung)
+### 🧹 Stufe 6: Frühjahrsputz & Code-Modularisierung – ✅ ABGESCHLOSSEN
 - [x] **Phase 1: Anti-Forensik & Naming Auslagerung**
   - `src/naming.rs`: Eindeutige Hex-Tokens, ChaCha20-Pfadshuffling, Zieldeduktion und Quell-Kollisionsschutz ausgelagert.
   - `src/decoy.rs`: Eigenständiges Decoy-Subsystem (Größenanalyse, Rauschgenerator, Vorlagenerkennung).
@@ -112,6 +112,20 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - `src/pipeline/` Submodul mit getrennter `split.rs` (392 Zeilen) und `restore.rs` (420 Zeilen) Engine.
   - Vollständige Beseitigung monolithischer Strukturen: Keine Datei im Kern überschreitet mehr 500 Zeilen.
   - 36/36 Tests grün, 0 Clippy-Warnungen.
+
+---
+
+### 🚀 Stufe 7: v3.1.0 Next-Gen Härtung, Parallel-I/O & Security-Audit (Geplant)
+- [ ] **Paralleles Multi-Mountpoint I/O (Disk-Fanout)**
+  - Optionales paralleles Schreiben auf unabhängige Zieldatenträger (z. B. getrennte USB-Sticks / NVMe-Mounts), damit langsame Medien nicht die High-Speed-Laufwerke ausbremsen.
+- [ ] **Memory-Locking (`mlock`) für Swap-Resilienz**
+  - Optionale Absicherung von In-Flight-Puffern im physischen RAM via `libc::mlock`, um Auslagern von OTP-Schlüsselströmen in Swap-Partitionen hardwareseitig zu verhindern.
+- [ ] **Fuzzing-Suite (`cargo fuzz` / AFL++)**
+  - Continuous Fuzzing für Trailer-Parsing (`decode_footer_n_way`), Dateinamen-Extrahierung und korrupte/böswillige Bytefolgen.
+- [ ] **Criterion Micro-Benchmarks**
+  - Ergänzung einer `benches/`-Suite zur automatisierten Erkennung von Performance-Regressionen bei SIMD-XOR, ChaCha20 und BLKS-384 über verschiedene Puffergrößen (64 KiB bis 16 MiB).
+- [ ] **Paketierung & Release v3.0.0 / v3.1.0 im AUR**
+  - Vorbereitung und Pflege des AUR-Pakets mit Manpage, Completions und strikter Pacman-Integration.
 
 ---
 
