@@ -336,7 +336,7 @@ pub fn split_stream_or_file(
         } else {
             Some(input_source)
         };
-        let decoy_paths = generate_decoy_files(
+        let _ = generate_decoy_files(
             share_size,
             num_decoys,
             output_prefix,
@@ -346,15 +346,6 @@ pub fn split_stream_or_file(
             force,
             direct_io,
         )?;
-        if telemetry_mode == TelemetryMode::Interactive {
-            eprintln!(
-                "  Zusätzliche Köderdateien (Decoys, exakt {} Bytes):",
-                share_size
-            );
-            for (i, p) in decoy_paths.iter().enumerate() {
-                eprintln!("    Köder {}: {}", i + 1, p.display());
-            }
-        }
     }
 
     Ok(out_paths)

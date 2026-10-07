@@ -100,8 +100,9 @@ impl Telemetry {
                 );
             }
             TelemetryMode::Interactive => {
-                // Bei Interactive die Zeile sauber abschließen und neue Zeile beginnen
-                eprintln!("\x1b[K");
+                let target = self.total_bytes.unwrap_or(processed_bytes);
+                self.print_interactive_progress(target, elapsed_s, avg_speed_bps);
+                eprintln!();
                 let _ = io::stderr().flush();
             }
             TelemetryMode::Silent => {}
