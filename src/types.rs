@@ -6,10 +6,13 @@ pub const RFS2_MAGIC: [u8; 4] = *b"RFS2";
 /// Magic-Bytes für das neue Post-Quantum RFS3-Format (4 Bytes)
 pub const RFS3_MAGIC: [u8; 4] = *b"RFS3";
 
+/// Magic-Bytes für das neue Post-Quantum RFS4-Format mit Dateinamen & Block-Padding (4 Bytes)
+pub const RFS4_MAGIC: [u8; 4] = *b"RFS4";
+
 /// Größe des SHA-256 Hashes in RFS2 (32 Bytes)
 pub const SHA256_DIGEST_SIZE: usize = 32;
 
-/// Größe des BLKS-384 Hashes in RFS3 (48 Bytes)
+/// Größe des BLKS-384 Hashes in RFS3 und RFS4 (48 Bytes)
 pub const BLKS_DIGEST_SIZE: usize = 48;
 
 /// Größe des Dateigrößen-Feldes (8 Bytes Little-Endian)
@@ -20,6 +23,17 @@ pub const RFS2_FOOTER_SIZE: usize = 4 + SHA256_DIGEST_SIZE + SIZE_HEADER_SIZE;
 
 /// Gesamtgröße des RFS3 Footers (4B Magic + 48B BLKS-384 + 8B Size = 60 Bytes)
 pub const RFS3_FOOTER_SIZE: usize = 4 + BLKS_DIGEST_SIZE + SIZE_HEADER_SIZE;
+
+/// Feste Größe des RFS4 Trailers am Dateiende (64 Bytes)
+/// [0..4] Magic ("RFS4")
+/// [4..6] Version (0x04, 0x00)
+/// [6..14] Originalgröße (u64 LE, 8 Bytes)
+/// [14..62] BLKS-384 Hash (48 Bytes)
+/// [62..64] Dateinamen-Länge L (u16 LE, 2 Bytes)
+pub const RFS4_TRAILER_SIZE: usize = 4 + 2 + SIZE_HEADER_SIZE + BLKS_DIGEST_SIZE + 2;
+
+/// Standard-Ausrichtungsblockgröße für RFS4 (4 KiB = 4096 Bytes Cluster-Alignment)
+pub const RFS4_ALIGN_BLOCK_SIZE: usize = 4096;
 
 /// Standard-Puffergröße (4 MiB)
 pub const DEFAULT_BLOCK_SIZE: usize = 4 * 1024 * 1024;

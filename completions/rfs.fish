@@ -29,6 +29,7 @@ complete -c rfs -n "__fish_use_subcommand" -a analyze -d "Datei analysieren"
 # split options
 complete -c rfs -n "__fish_seen_subcommand_from split" -s n -l parts -x -a "2 3 4 5 8 16" -d "Anzahl der Teile"
 complete -c rfs -n "__fish_seen_subcommand_from split" -s d -l decoys -x -a "1 2 3 4 5 10" -d "Zusätzliche Köderdateien"
+complete -c rfs -n "__fish_seen_subcommand_from split" -l pad-to -x -a "64K 1M 10M 100M 1G 10G" -d "Auf exakte Bytegröße aufblähen"
 complete -c rfs -n "__fish_seen_subcommand_from split" -s B -l block-size -x -a "64K 256K 1M 4M 8M 16M" -d "Puffergröße"
 complete -c rfs -n "__fish_seen_subcommand_from split" -s o -l output -r -F -d "Präfix oder Ausgabepfad"
 complete -c rfs -n "__fish_seen_subcommand_from split" -F

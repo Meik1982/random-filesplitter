@@ -544,6 +544,13 @@
           Beim Transport über getrennte Kanäle kann <code>rfs</code> zusätzlich beliebige <strong>Köderdateien (Decoys)</strong> erzeugen (<code>rfs split -d &lt;ANZAHL&gt;</code> oder <code>rfs decoy</code>). Da jede Köderdatei aus echtem ChaCha20-Zufall besteht und exakt dieselbe Bytegröße wie ein echter Share besitzt, kann ein Abhörer weder erkennen, aus wie vielen Teilen das Geheimnis besteht, noch welche der übertragenen Dateien echte Shares und welche reine Attrappen sind.
         </p>
       </div>
+
+      <div class="callout success">
+        <div class="callout-title">🛡️ RFS4: Eingebetteter Dateiname & 4 KiB Cluster-Padding</div>
+        <p>
+          Im <strong>RFS4-Format</strong> wird der ursprüngliche Dateiname direkt im Stealth-Footer One-Time-Pad-verschlüsselt hinterlegt. Auf dem Datenträger tragen die Dateien ausschließlich neutrale 6-stellige Zufalls-Tokens (z. B. <code>a9f4c2.rfs</code>). Zudem wird jede Datei mit ChaCha20-Rauschen auf ein Vielfaches von <strong>4 KiB (4.096 Bytes Cluster-Alignment)</strong> aufgefüllt – oder mit <code>--pad-to</code> auf eine frei wählbare Wunschgröße vergrößert. Dadurch existiert auf Dateisystem-Ebene kein einziges Metadaten-Leck (weder über den Dateinamen noch über die Bytegröße).
+        </p>
+      </div>
     </section>
 
     <!-- SECTION 3: TECHNISCHE FUNKTIONSWEISE -->

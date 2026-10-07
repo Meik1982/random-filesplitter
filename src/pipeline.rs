@@ -6,9 +6,12 @@
 
 use crate::crypto::{xor_in_place, ChaChaRng};
 use crate::entropy::UniversalEntropyHarvester;
-use crate::format::{decode_footer_n_way, encode_rfs3_footer_n_way, RfsMetadata};
+use crate::format::{decode_footer_n_way, encode_rfs4_footer_n_way, RfsMetadata};
 use crate::telemetry::{Telemetry, TelemetryMode};
-use crate::types::{self, BLKS_DIGEST_SIZE, RFS3_FOOTER_SIZE};
+use crate::types::{
+    self, BLKS_DIGEST_SIZE, RFS2_FOOTER_SIZE, RFS3_FOOTER_SIZE, RFS4_ALIGN_BLOCK_SIZE, RFS4_MAGIC,
+    RFS4_TRAILER_SIZE,
+};
 use blks_core::{BlksHasher, Digest as BlksDigest};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use sha2::{Digest as Sha2Digest, Sha256};
@@ -27,13 +30,11 @@ struct WriteJob {
     valid_len: usize,
 }
 
-/// Führt das kryptografische Splitten einer Datei oder eines Unix-Stdin-Streams in $N$ Teile durch ($N \ge 2$).
-///
 /// Unterstützt:
 /// - Reguläre Dateien (`input_source` != `"-"`)
 /// - Unix Stdin Pipes (`input_source` == `"-"`)
 ///
-/// Generiert `count` eindeutige 4-stellige Hex-Zufallstokens (z. B. "a9f4", "7c1b")
+/// Generiert `count` eindeutige 6-stellige Hex-Zufallstokens (z. B. "a9f4c2", "7c1b3e")
 fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
     let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut rng = ChaChaRng::new(&key, &nonce);
@@ -43,9 +44,9 @@ fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
     let mut set = std::collections::HashSet::new();
     let mut tokens = Vec::with_capacity(count);
     while tokens.len() < count {
-        let mut rnd = [0u8; 2];
+        let mut rnd = [0u8; 3];
         rng.fill_bytes(&mut rnd);
-        let tok = format!("{:02x}{:02x}", rnd[0], rnd[1]);
+        let tok = format!("{:02x}{:02x}{:02x}", rnd[0], rnd[1], rnd[2]);
         if set.insert(tok.clone()) {
             tokens.push(tok);
         }
@@ -73,6 +74,7 @@ fn shuffle_paths(paths: &mut [PathBuf]) {
 
 /// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
 /// - Entkoppelte 3-Stufen Pipeline (Reader ➔ Crypto/SIMD ➔ Writer) mit Zero-Copy Puffer-Pooling
+/// - RFS4-Format mit eingebettetem Originaldateinamen, 4 KiB Cluster-Padding und optionalem `--pad-to`
 /// - Maschinenlesbare NDJSON-Telemetrie (`--json`) und interaktive ANSI-Fortschrittsbalken
 #[allow(clippy::too_many_arguments)]
 pub fn split_stream_or_file(
@@ -80,14 +82,14 @@ pub fn split_stream_or_file(
     output_parts: Option<&[PathBuf]>,
     num_parts: usize,
     num_decoys: usize,
-    token_mode: bool,
+    pad_to_target: Option<u64>,
     output_prefix: Option<&str>,
     block_size: usize,
     telemetry_mode: TelemetryMode,
     force: bool,
     direct_io: bool,
 ) -> Result<Vec<PathBuf>, String> {
-    // 1. Zielpfade bestimmen (mit Shuffle & Token-Unterstützung)
+    // 1. Zielpfade bestimmen (<token6>.rfs als Standard für maximale OPSEC)
     let (real_paths, decoy_paths, n_parts) = if let Some(parts) = output_parts {
         if parts.len() < 2 || parts.len() > 64 {
             return Err(
@@ -98,25 +100,31 @@ pub fn split_stream_or_file(
     } else {
         let count = num_parts.clamp(2, 64);
         let total_files = count + num_decoys;
-        let base = if let Some(prefix) = output_prefix {
-            prefix.to_string()
-        } else if input_source == "-" {
-            "stdin".to_string()
+        let tokens = generate_unique_hex_tokens(total_files);
+
+        let parent = if input_source != "-" {
+            Path::new(input_source).parent().unwrap_or(Path::new(""))
         } else {
-            input_source.to_string()
+            Path::new("")
         };
 
-        let mut all_paths: Vec<PathBuf> = if token_mode {
-            let tokens = generate_unique_hex_tokens(total_files);
-            tokens
-                .into_iter()
-                .map(|t| PathBuf::from(format!("{}.{}.rfs", base, t)))
-                .collect()
-        } else {
-            (1..=total_files)
-                .map(|i| PathBuf::from(format!("{}.rfs{}", base, i)))
-                .collect()
-        };
+        let mut all_paths: Vec<PathBuf> = tokens
+            .into_iter()
+            .map(|t| {
+                if let Some(prefix) = output_prefix {
+                    let p = Path::new(prefix);
+                    if p.is_dir() || prefix.ends_with('/') {
+                        p.join(format!("{}.rfs", t))
+                    } else {
+                        PathBuf::from(format!("{}.{}.rfs", prefix, t))
+                    }
+                } else if parent.as_os_str().is_empty() {
+                    PathBuf::from(format!("{}.rfs", t))
+                } else {
+                    parent.join(format!("{}.rfs", t))
+                }
+            })
+            .collect();
 
         // Wenn Decoys vorhanden sind: Slots zufällig mit ChaCha20 verwürfeln (Fisher-Yates)
         if num_decoys > 0 {
@@ -356,12 +364,28 @@ pub fn split_stream_or_file(
     let (total_processed, digest) = worker_res?;
     writer_res?;
 
-    // 6. RFS3-Stealth-Footers codieren & an alle N Dateien anhängen
+    // 6. RFS4-Stealth-Footer & Padding codieren & an alle N Dateien anhängen
+    let original_filename = if input_source == "-" {
+        output_prefix.unwrap_or("stdin.bin")
+    } else {
+        Path::new(input_source)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file.bin")
+    };
+
     let (mut post_rng_key, mut post_rng_nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut footer_rng = ChaChaRng::new(&post_rng_key, &post_rng_nonce);
     post_rng_key.zeroize();
     post_rng_nonce.zeroize();
-    let footers = encode_rfs3_footer_n_way(&digest, total_processed, n_parts, &mut footer_rng);
+    let footers = encode_rfs4_footer_n_way(
+        &digest,
+        total_processed,
+        original_filename,
+        n_parts,
+        pad_to_target,
+        &mut footer_rng,
+    )?;
 
     for (k, path) in out_paths.iter().enumerate() {
         let mut append_file = OpenOptions::new()
@@ -376,8 +400,9 @@ pub fn split_stream_or_file(
             .map_err(|e| format!("Flush {}: {}", k + 1, e))?;
     }
 
+    let share_size = total_processed + footers[0].len() as u64;
+
     if !decoy_paths.is_empty() {
-        let share_size = total_processed + RFS3_FOOTER_SIZE as u64;
         write_decoy_files_to_paths(
             &decoy_paths,
             share_size,
@@ -388,22 +413,24 @@ pub fn split_stream_or_file(
     }
 
     if telemetry_mode == TelemetryMode::Interactive {
-        eprintln!("Erfolgreich in {} Teile gesplittet (N-Way OTP):", n_parts);
+        eprintln!(
+            "Erfolgreich in {} Teile gesplittet (N-Way OTP, RFS4):",
+            n_parts
+        );
+        eprintln!("  Eingebetteter Name: {}", original_filename);
         eprintln!("  Originalgröße: {} Bytes", total_processed);
+        eprintln!(
+            "  Share-Größe (4 KiB-Cluster-Padding): {} Bytes",
+            share_size
+        );
         eprintln!("  BLKS-384: {}", BlksDigest(digest).to_base64());
 
         if !decoy_paths.is_empty() {
-            let mode_tag = if token_mode {
-                "Token-Modus (.<rnd>.rfs)"
-            } else {
-                "Zufällig verwürfelt (1..T)"
-            };
-            eprintln!("\nEchte Shares (N={}, {}):", n_parts, mode_tag);
+            eprintln!("\nEchte Shares (N={}, zufällig im Set verteilt):", n_parts);
             for (i, p) in out_paths.iter().enumerate() {
                 eprintln!("  Teil {}: {}", i + 1, p.display());
             }
 
-            let share_size = total_processed + RFS3_FOOTER_SIZE as u64;
             eprintln!(
                 "\nKöderdateien (Decoys, D={}, 100% ChaCha20-Zufallsrauschen):",
                 decoy_paths.len()
@@ -412,6 +439,7 @@ pub fn split_stream_or_file(
                 eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), share_size);
             }
         } else {
+            eprintln!("\nGenerierte Shares:");
             for (i, p) in out_paths.iter().enumerate() {
                 eprintln!("  Teil {}: {}", i + 1, p.display());
             }
@@ -461,7 +489,15 @@ pub fn determine_decoy_size(
         let (target_size, rfs_detected) = if is_rfs {
             (file_size, true)
         } else {
-            (file_size + RFS3_FOOTER_SIZE as u64, false)
+            let fn_len = file_name.len() as u64;
+            let min_size = file_size + fn_len + RFS4_TRAILER_SIZE as u64;
+            let rem = min_size % RFS4_ALIGN_BLOCK_SIZE as u64;
+            let aligned = if rem == 0 {
+                min_size + RFS4_ALIGN_BLOCK_SIZE as u64
+            } else {
+                min_size + (RFS4_ALIGN_BLOCK_SIZE as u64 - rem)
+            };
+            (aligned, false)
         };
 
         if interactive {
@@ -482,11 +518,8 @@ pub fn determine_decoy_size(
             } else {
                 eprintln!("[Decoy-Erkennung] Typ: Rohdatei (Original-Klartext).");
                 eprintln!(
-                    "[Decoy-Berechnung] +{} Bytes für RFS3-Stealth-Footer einkalkuliert: {} + {} = {} Bytes.",
-                    RFS3_FOOTER_SIZE,
-                    file_size,
-                    RFS3_FOOTER_SIZE,
-                    target_size
+                    "[Decoy-Berechnung] RFS4-Footer + 4 KiB Cluster-Padding einkalkuliert: {} Bytes -> Zielgröße: {} Bytes.",
+                    file_size, target_size
                 );
                 eprintln!(
                     "[Decoy-Begründung] Köderdateien müssen im Transportnetzwerk exakt dieselbe Bytegröße wie echte RFS-Shares besitzen."
@@ -616,7 +649,7 @@ pub fn generate_decoy_files(
     count: usize,
     token_mode: bool,
     output_prefix: Option<&str>,
-    template_base: Option<&str>,
+    _template_base: Option<&str>,
     block_size: usize,
     telemetry_mode: TelemetryMode,
     force: bool,
@@ -629,33 +662,25 @@ pub fn generate_decoy_files(
         return Err("Anzahl der Köderdateien darf höchstens 1000 betragen.".to_string());
     }
 
-    let tokens = if token_mode {
-        generate_unique_hex_tokens(count)
-    } else {
-        Vec::new()
-    };
+    let tokens = generate_unique_hex_tokens(count);
 
-    // 1. Zieldateipfade ableiten
+    // 1. Zieldateipfade ableiten (<token6>.rfs für maximale OPSEC)
     let mut decoy_paths: Vec<PathBuf> = Vec::with_capacity(count);
     for idx in 1..=count {
+        let t = &tokens[idx - 1];
         let path = if let Some(prefix) = output_prefix {
             if count == 1 && prefix.contains('.') {
                 PathBuf::from(prefix)
-            } else if token_mode {
-                PathBuf::from(format!("{}.{}.rfs", prefix, tokens[idx - 1]))
             } else {
-                PathBuf::from(format!("{}.rfs{}", prefix, idx))
+                let p = Path::new(prefix);
+                if p.is_dir() || prefix.ends_with('/') {
+                    p.join(format!("{}.rfs", t))
+                } else {
+                    PathBuf::from(format!("{}.{}.rfs", prefix, t))
+                }
             }
-        } else if let Some(base) = template_base {
-            if token_mode {
-                PathBuf::from(format!("{}.{}.rfs", base, tokens[idx - 1]))
-            } else {
-                PathBuf::from(format!("{}.rfs{}", base, idx))
-            }
-        } else if token_mode {
-            PathBuf::from(format!("decoy.{}.rfs", tokens[idx - 1]))
         } else {
-            PathBuf::from(format!("decoy_{}.rfs", idx))
+            PathBuf::from(format!("{}.rfs", t))
         };
         decoy_paths.push(path);
     }
@@ -714,7 +739,7 @@ pub fn split_file(
         None,
         2,
         0,
-        false,
+        None,
         output_prefix,
         block_size,
         mode,
@@ -774,34 +799,84 @@ pub fn restore_file(
     }
 
     let len1 = file_len.unwrap();
-    if len1 < RFS3_FOOTER_SIZE as u64 {
-        return Err("Dateigröße kleiner als RFS-Footer.".to_string());
+    let trailer_len = RFS4_TRAILER_SIZE;
+    if len1 < trailer_len as u64 {
+        return Err("Dateigröße kleiner als RFS-Trailer.".to_string());
     }
 
-    // 1. Footer lesen (letzte 60 Bytes von allen N Dateien)
-    let tail_len = RFS3_FOOTER_SIZE;
-    let mut tails: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
-
+    // 1. Letzte 64 Bytes aller N Dateien lesen
+    let mut trailers: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
     for (idx, f) in files.iter_mut().enumerate() {
-        f.seek(SeekFrom::End(-(tail_len as i64)))
+        f.seek(SeekFrom::End(-(trailer_len as i64)))
             .map_err(|e| format!("Seek Teil {}: {}", idx + 1, e))?;
-        let mut t = vec![0u8; tail_len];
+        let mut t = vec![0u8; trailer_len];
         f.read_exact(&mut t)
             .map_err(|e| format!("Read tail Teil {}: {}", idx + 1, e))?;
-        tails.push(t);
+        trailers.push(t);
     }
 
-    // N-Way Decode
-    let tail_refs: Vec<&[u8]> = tails.iter().map(|t| t.as_slice()).collect();
-    let meta = decode_footer_n_way(&tail_refs)?;
-    let footer_size = meta.footer_size();
+    // XOR der letzten 64 Bytes
+    let mut xor64 = [0u8; RFS4_TRAILER_SIZE];
+    xor64.copy_from_slice(&trailers[0]);
+    for t in &trailers[1..] {
+        for i in 0..RFS4_TRAILER_SIZE {
+            xor64[i] ^= t[i];
+        }
+    }
+
+    let meta = if xor64[0..4] == RFS4_MAGIC {
+        let size = u64::from_le_bytes(xor64[6..14].try_into().unwrap());
+        let mut blks = [0u8; BLKS_DIGEST_SIZE];
+        blks.copy_from_slice(&xor64[14..62]);
+        let fn_len = u16::from_le_bytes(xor64[62..64].try_into().unwrap()) as usize;
+
+        let filename = if fn_len > 0 {
+            if len1 < (trailer_len + fn_len) as u64 {
+                return Err("Dateigröße zu klein für RFS4-Dateinamen.".to_string());
+            }
+            let mut fn_tails: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
+            for (idx, f) in files.iter_mut().enumerate() {
+                f.seek(SeekFrom::End(-((trailer_len + fn_len) as i64)))
+                    .map_err(|e| format!("Seek Filename Teil {}: {}", idx + 1, e))?;
+                let mut fn_buf = vec![0u8; fn_len];
+                f.read_exact(&mut fn_buf)
+                    .map_err(|e| format!("Read Filename Teil {}: {}", idx + 1, e))?;
+                fn_tails.push(fn_buf);
+            }
+            let mut xor_fn = fn_tails[0].clone();
+            for t in &fn_tails[1..] {
+                for i in 0..fn_len {
+                    xor_fn[i] ^= t[i];
+                }
+            }
+            String::from_utf8(xor_fn).unwrap_or_else(|_| "restored.bin".to_string())
+        } else {
+            "restored.bin".to_string()
+        };
+
+        xor64.zeroize();
+        RfsMetadata::Rfs4 {
+            expected_blks: blks,
+            original_size: size,
+            filename,
+            filename_len: fn_len as u16,
+        }
+    } else {
+        xor64.zeroize();
+        let tail_refs: Vec<&[u8]> = trailers.iter().map(|t| t.as_slice()).collect();
+        decode_footer_n_way(&tail_refs)?
+    };
+
     let original_size = meta.original_size();
+    let min_needed_len = match meta {
+        RfsMetadata::Rfs4 { filename_len, .. } => {
+            original_size + filename_len as u64 + RFS4_TRAILER_SIZE as u64
+        }
+        RfsMetadata::Rfs3 { .. } => original_size + RFS3_FOOTER_SIZE as u64,
+        RfsMetadata::Rfs2 { .. } => original_size + RFS2_FOOTER_SIZE as u64,
+    };
 
-    let data_len = len1
-        .checked_sub(footer_size as u64)
-        .ok_or_else(|| "Ungültige Dateilänge".to_string())?;
-
-    if original_size > data_len {
+    if len1 < min_needed_len {
         return Err("Rekonstruierte Dateigröße unplausibel. Dateien sind beschädigt.".to_string());
     }
 
@@ -812,6 +887,13 @@ pub fn restore_file(
         None
     } else if let Some(p) = output_target {
         Some(PathBuf::from(p))
+    } else if let Some(meta_fn) = meta.filename() {
+        let parent = part_paths[0].parent().unwrap_or(Path::new(""));
+        if parent.as_os_str().is_empty() {
+            Some(PathBuf::from(meta_fn))
+        } else {
+            Some(parent.join(meta_fn))
+        }
     } else {
         let p_str = part_paths[0].to_str().unwrap_or("restored.bin");
         let deduced = if let Some(idx) = p_str.rfind(".rfs") {
@@ -959,7 +1041,7 @@ pub fn restore_file(
     let mut telemetry = Telemetry::new(telemetry_mode, action_name, Some(original_size));
     let worker_handle = thread::spawn(move || -> Result<(), String> {
         let mut blks_hasher = match meta_clone {
-            RfsMetadata::Rfs3 { .. } => Some(BlksHasher::new()),
+            RfsMetadata::Rfs3 { .. } | RfsMetadata::Rfs4 { .. } => Some(BlksHasher::new()),
             _ => None,
         };
         let mut sha256_hasher = match meta_clone {
@@ -1009,7 +1091,7 @@ pub fn restore_file(
 
         // Integritätsprüfung
         match meta_clone {
-            RfsMetadata::Rfs3 { expected_blks, .. } => {
+            RfsMetadata::Rfs3 { expected_blks, .. } | RfsMetadata::Rfs4 { expected_blks, .. } => {
                 let actual_bytes = blks_hasher.unwrap().finalize();
                 let actual = BlksDigest(actual_bytes);
                 let expected_digest = BlksDigest(expected_blks);

@@ -1,10 +1,10 @@
 //! RFS Format Specification, Footer Encoding, and Auto-Detecting Metadata Parsing.
 //! Supports 2-Way as well as N-Way One-Time-Pad stealth footers.
 
-use crate::crypto::ChaChaRng;
+use crate::crypto::{xor_in_place, ChaChaRng};
 use crate::types::{
     BLKS_DIGEST_SIZE, RFS2_FOOTER_SIZE, RFS2_MAGIC, RFS3_FOOTER_SIZE, RFS3_MAGIC,
-    SHA256_DIGEST_SIZE, SIZE_HEADER_SIZE,
+    RFS4_ALIGN_BLOCK_SIZE, RFS4_MAGIC, RFS4_TRAILER_SIZE, SHA256_DIGEST_SIZE, SIZE_HEADER_SIZE,
 };
 use zeroize::Zeroize;
 
@@ -16,19 +16,28 @@ pub enum RfsMetadata {
         expected_sha256: [u8; SHA256_DIGEST_SIZE],
         original_size: u64,
     },
-    /// Neues Post-Quantum RFS3-Format (BLKS-384)
+    /// Post-Quantum RFS3-Format (BLKS-384)
     Rfs3 {
         expected_blks: [u8; BLKS_DIGEST_SIZE],
         original_size: u64,
+    },
+    /// Post-Quantum RFS4-Format mit eingebettetem Dateinamen & Block-Padding
+    Rfs4 {
+        expected_blks: [u8; BLKS_DIGEST_SIZE],
+        original_size: u64,
+        filename: String,
+        filename_len: u16,
     },
 }
 
 impl RfsMetadata {
     /// Liefert die Roh-Größe des Footers in Bytes.
+    #[allow(dead_code)]
     pub fn footer_size(&self) -> usize {
         match self {
             RfsMetadata::Rfs2 { .. } => RFS2_FOOTER_SIZE,
             RfsMetadata::Rfs3 { .. } => RFS3_FOOTER_SIZE,
+            RfsMetadata::Rfs4 { filename_len, .. } => RFS4_TRAILER_SIZE + *filename_len as usize,
         }
     }
 
@@ -37,8 +46,99 @@ impl RfsMetadata {
         match *self {
             RfsMetadata::Rfs2 { original_size, .. } => original_size,
             RfsMetadata::Rfs3 { original_size, .. } => original_size,
+            RfsMetadata::Rfs4 { original_size, .. } => original_size,
         }
     }
+
+    /// Liefert den eingebetteten Dateinamen (nur bei RFS4).
+    pub fn filename(&self) -> Option<&str> {
+        match self {
+            RfsMetadata::Rfs4 { filename, .. } => Some(filename.as_str()),
+            _ => None,
+        }
+    }
+}
+
+/// Berechnet das nötige Padding und codiert den RFS4-Trailer + Dateinamen für N Teile ($N \ge 2$).
+/// Liefert für jeden Teil die anzuhängenden Bytes (Zufalls-Padding + UTF8-Dateiname + 64B Trailer).
+pub fn encode_rfs4_footer_n_way(
+    blks_digest: &[u8; BLKS_DIGEST_SIZE],
+    original_size: u64,
+    filename: &str,
+    num_parts: usize,
+    pad_to_target: Option<u64>,
+    rng: &mut ChaChaRng,
+) -> Result<Vec<Vec<u8>>, String> {
+    assert!(num_parts >= 2, "Mindestens 2 Teile erforderlich");
+
+    let filename_bytes = filename.as_bytes();
+    if filename_bytes.len() > 65535 {
+        return Err("Dateiname ist zu lang für RFS4-Footer (maximal 65535 Bytes).".to_string());
+    }
+    let filename_len = filename_bytes.len();
+
+    // 1. Fester 64-Byte Trailer
+    let mut plain_trailer = [0u8; RFS4_TRAILER_SIZE];
+    plain_trailer[0..4].copy_from_slice(&RFS4_MAGIC);
+    plain_trailer[4..6].copy_from_slice(&[0x04, 0x00]);
+    plain_trailer[6..14].copy_from_slice(&original_size.to_le_bytes());
+    plain_trailer[14..62].copy_from_slice(blks_digest);
+    plain_trailer[62..64].copy_from_slice(&(filename_len as u16).to_le_bytes());
+
+    // 2. Mindestgröße für den gesamten Share: Originalgröße + Dateiname + 64B Trailer
+    let min_share_size = original_size
+        .checked_add((filename_len + RFS4_TRAILER_SIZE) as u64)
+        .ok_or_else(|| "Dateigrößen-Überlauf bei Footer-Berechnung".to_string())?;
+
+    // 3. Ziel-Share-Größe berechnen
+    let total_share_size = if let Some(target) = pad_to_target {
+        if target < min_share_size {
+            return Err(format!(
+                "Gewünschte Zielgröße ({} Bytes) ist kleiner als die Mindestgröße für RFS4 ({} Bytes).",
+                target, min_share_size
+            ));
+        }
+        target
+    } else {
+        // Standard: Auf volle 4 KiB (4096 Bytes) aufrunden
+        let rem = min_share_size % RFS4_ALIGN_BLOCK_SIZE as u64;
+        if rem == 0 {
+            // Wenn exakt aligned, einen vollen 4 KiB Block Padding ergänzen, damit immer Rauschen vor dem Namen liegt
+            min_share_size + RFS4_ALIGN_BLOCK_SIZE as u64
+        } else {
+            min_share_size + (RFS4_ALIGN_BLOCK_SIZE as u64 - rem)
+        }
+    };
+
+    let tail_len = (total_share_size - original_size) as usize;
+    let padding_len = tail_len - filename_len - RFS4_TRAILER_SIZE;
+
+    // 4. Zusammensetzen des unverschlüsselten Endbereichs (Padding + Dateiname + Trailer)
+    let mut plain_tail = vec![0u8; tail_len];
+    for b in &mut plain_tail[0..padding_len] {
+        *b = rng.next_u8();
+    }
+    plain_tail[padding_len..padding_len + filename_len].copy_from_slice(filename_bytes);
+    plain_tail[padding_len + filename_len..tail_len].copy_from_slice(&plain_trailer);
+
+    // 5. N-Way One-Time-Pad Verteilung
+    let mut footers: Vec<Vec<u8>> = Vec::with_capacity(num_parts);
+    let mut part1 = plain_tail.clone();
+
+    for _ in 1..num_parts {
+        let mut part_k = vec![0u8; tail_len];
+        for b in part_k.iter_mut() {
+            *b = rng.next_u8();
+        }
+        xor_in_place(&mut part1, &part_k);
+        footers.push(part_k);
+    }
+
+    footers.insert(0, part1);
+    plain_tail.zeroize();
+    plain_trailer.zeroize();
+
+    Ok(footers)
 }
 
 /// Codiert den RFS3-Metadaten-Footer für beliebig viele $N$ Teile ($N \ge 2$).
@@ -140,7 +240,50 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
         }
     }
 
-    // 1. Prüfe RFS3 (60 Bytes)
+    // 1. Prüfe RFS4 (64 Bytes Trailer + variabler Dateiname)
+    if first_len >= RFS4_TRAILER_SIZE {
+        let offset = first_len - RFS4_TRAILER_SIZE;
+        let mut xor64 = [0u8; RFS4_TRAILER_SIZE];
+        xor64.copy_from_slice(&tails[0][offset..offset + RFS4_TRAILER_SIZE]);
+
+        for tail in &tails[1..] {
+            for i in 0..RFS4_TRAILER_SIZE {
+                xor64[i] ^= tail[offset + i];
+            }
+        }
+
+        if xor64[0..4] == RFS4_MAGIC {
+            let size = u64::from_le_bytes(xor64[6..14].try_into().unwrap());
+            let mut blks = [0u8; BLKS_DIGEST_SIZE];
+            blks.copy_from_slice(&xor64[14..62]);
+            let fn_len = u16::from_le_bytes(xor64[62..64].try_into().unwrap()) as usize;
+
+            let filename = if fn_len > 0 && offset >= fn_len {
+                let fn_offset = offset - fn_len;
+                let mut xor_fn = vec![0u8; fn_len];
+                xor_fn.copy_from_slice(&tails[0][fn_offset..fn_offset + fn_len]);
+                for tail in &tails[1..] {
+                    for i in 0..fn_len {
+                        xor_fn[i] ^= tail[fn_offset + i];
+                    }
+                }
+                String::from_utf8(xor_fn).unwrap_or_else(|_| "restored.bin".to_string())
+            } else {
+                "restored.bin".to_string()
+            };
+
+            xor64.zeroize();
+            return Ok(RfsMetadata::Rfs4 {
+                expected_blks: blks,
+                original_size: size,
+                filename,
+                filename_len: fn_len as u16,
+            });
+        }
+        xor64.zeroize();
+    }
+
+    // 2. Prüfe RFS3 (60 Bytes)
     if first_len >= RFS3_FOOTER_SIZE {
         let offset = first_len - RFS3_FOOTER_SIZE;
         let mut xor60 = [0u8; RFS3_FOOTER_SIZE];
@@ -311,6 +454,56 @@ mod tests {
             }
             _ => panic!("Erwartete RFS2 Metadata"),
         }
+    }
+
+    #[test]
+    fn test_rfs4_n_way_roundtrip() {
+        let key = [0x77u8; 32];
+        let nonce = [0x88u8; 12];
+        let mut rng = ChaChaRng::new(&key, &nonce);
+
+        let dummy_digest = [0xCCu8; BLKS_DIGEST_SIZE];
+        let original_size = 5000;
+        let filename = "geheimes_dokument_äöü.pdf";
+
+        let footers =
+            encode_rfs4_footer_n_way(&dummy_digest, original_size, filename, 3, None, &mut rng)
+                .expect("Encoding RFS4 fehlgeschlagen");
+        assert_eq!(footers.len(), 3);
+
+        // Prüfe 4 KiB Ausrichtung: original_size + tail_len muss Vielfaches von 4096 sein
+        let tail_len = footers[0].len();
+        assert_eq!((original_size + tail_len as u64) % 4096, 0);
+
+        let tails: Vec<&[u8]> = footers.iter().map(|f| f.as_slice()).collect();
+        let meta = decode_footer_n_way(&tails).expect("Decoding RFS4 fehlgeschlagen");
+        match meta {
+            RfsMetadata::Rfs4 {
+                expected_blks,
+                original_size: size,
+                filename: fn_res,
+                filename_len,
+            } => {
+                assert_eq!(expected_blks, dummy_digest);
+                assert_eq!(size, original_size);
+                assert_eq!(fn_res, filename);
+                assert_eq!(filename_len as usize, filename.len());
+            }
+            _ => panic!("Erwartete RFS4 Metadata"),
+        }
+
+        // Test mit explizitem Zielpadding
+        let target_pad = 65536; // 64 KiB
+        let padded_footers = encode_rfs4_footer_n_way(
+            &dummy_digest,
+            original_size,
+            filename,
+            3,
+            Some(target_pad),
+            &mut rng,
+        )
+        .unwrap();
+        assert_eq!(original_size + padded_footers[0].len() as u64, target_pad);
     }
 
     #[test]

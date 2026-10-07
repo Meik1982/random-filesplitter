@@ -33,8 +33,17 @@ Eine Datei wird in $N$ Teile zerlegt ($N \ge 2$), von denen jeder einzelne Teil 
   * Dynamischer 24-Zeichen ANSI-Fortschrittsbalken mit Prozentanzeige, formatierter Bytezahl, Live-Geschwindigkeit (MB/s / GB/s) und ETA.
 * **Erweiterte NIST SP 800-22 Entropieanalyse:**
   * Zweiphasige Diagnose (`rfs --entropy-test`) und Datei-Audit (`rfs -a <Datei>`) mit Runs-Tests, Block-Frequenztests ($M=128$), analytischer `erfc`-Funktion und Wilson-Hilferty Chi²-Transformation.
+* **RFS4-Format mit eingebettetem Dateinamen & 4 KiB Cluster-Padding:**
+  * Der Original-Dateiname wird direkt im Stealth-Footer hinterlegt und über alle $N$ Teile informationstheoretisch per One-Time-Pad verschlüsselt ($F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$).
+  * Jede Share-Datei wird automatisch auf ein Vielfaches von **4 KiB (4.096 Bytes Cluster-Alignment)** mit ChaCha20-Zufall aufgefüllt – verhindert jegliche Dateigrößen-Korrelation auf Byte-Ebene.
+  * Mit `--pad-to <GRÖSSE>` können Shares auf eine exakte Bytegröße (z. B. `100M`, `20G`) aufgebläht werden.
+* **Neutrales Anti-Forensik Namensschema (`<token6>.rfs`):**
+  * Shares und Decoys erhalten standardmäßig unkorrelierte 6-stellige Zufalls-Tokens (z. B. `a9f4c2.rfs`, `7c1b3e.rfs`).
+  * Das Dateisystem verrät weder den ursprünglichen Dateinamen, noch die Anzahl der Teile, noch welche Dateien echte Shares und welche Köder sind.
+* **Automatische Wiederherstellung:**
+  * `rfs restore a9f4c2.rfs 7c1b3e.rfs` liest den echten Originaldateinamen bitgenau aus dem Footer und legt die Datei automatisch unter ihrem ursprünglichen Namen ab.
 * **100 % Abwärtskompatibilität:**
-  * Rekonstruiert historische RFS2-Archive (44-Byte Footer, SHA-256) aus v2.x automatisch und bitgenau.
+  * Rekonstruiert historische RFS3- und RFS2-Archive (60B / 44B Footer, SHA-256 / BLKS-384) aus Vorversionen automatisch und bitgenau.
 * **Anti-Forensik Köderdateien (Decoys & Traffic-Obfuscation):**
   * Erzeugung beliebiger ununterscheidbarer Köderdateien mit 100 % ChaCha20-Zufallsrauschen (`-d, --decoys` beim Splitten oder Subcommand `rfs decoy`).
   * Intelligente Mustererkennung: Berechnet bei Rohdateien automatisch die künftige Share-Größe (`Originalgröße + 60 Bytes Stealth-Footer`) und übernimmt bei RFS-Shares die Dateigröße exakt 1:1.
@@ -44,28 +53,31 @@ Eine Datei wird in $N$ Teile zerlegt ($N \ge 2$), von denen jeder einzelne Teil 
 
 ## 💻 Verwendung
 
-### 1. Dateien splitten (N-Way One-Time-Pad)
+### 1. Dateien splitten (RFS4 N-Way One-Time-Pad)
 ```bash
-# In 2 Teile aufteilen (Standard: datei.iso.rfs1, datei.iso.rfs2)
+# In 2 neutrale Teile aufteilen (erzeugt z. B. a9f4c2.rfs, 7c1b3e.rfs mit 4 KiB Cluster-Padding)
 rfs split datei.iso
 
-# In 3 Teile aufteilen (.rfs1, .rfs2, .rfs3)
-rfs split -n 3 datei.iso
+# In 3 Teile aufteilen und auf exakt 50 MB aufblähen
+rfs split -n 3 datei.iso --pad-to 50M
 
-# Explizite Pfade und Blockgröße definieren (z. B. 16 MB Puffer)
+# Mit 3 Köderdateien verwürfeln (insg. 6 ununterscheidbare Dateien mit Zufalls-Tokens)
+rfs split -n 3 datei.iso -d 3
+
+# Explizite Pfade und Blockgröße definieren
 rfs split -n 3 -B 16M datei.iso /media/usb1/partA.rfs /media/usb2/partB.rfs /media/usb3/partC.rfs
 ```
 
 ### 2. Dateien wiederherstellen & verifizieren
 ```bash
-# Aus allen Teilen bitgenau wiederherstellen
-rfs restore datei.iso.rfs1 datei.iso.rfs2 datei.iso.rfs3
+# Stellt den Original-Dateinamen automatisch aus dem RFS4-Footer wieder her:
+rfs restore a9f4c2.rfs 7c1b3e.rfs
 
-# In spezifische Zieldatei wiederherstellen
-rfs restore partA.rfs partB.rfs partC.rfs -o wiederhergestellt.iso
+# In spezifische Zieldatei wiederherstellen (oder '-' für stdout)
+rfs restore a9f4c2.rfs 7c1b3e.rfs -o wunschname.iso
 
 # Integrität im RAM prüfen ohne Disk-Schreibzugriff
-rfs verify partA.rfs partB.rfs partC.rfs
+rfs verify a9f4c2.rfs 7c1b3e.rfs
 ```
 
 ### 3. Unix Streaming-Pipes

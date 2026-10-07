@@ -234,6 +234,8 @@ fn test_restore_source_collision_protection() {
     let split_res = Command::new(rfs_bin())
         .arg("split")
         .arg(&in_file)
+        .arg(&p1)
+        .arg(&p2)
         .arg("-f")
         .status()
         .unwrap();
@@ -291,6 +293,8 @@ fn test_restore_reversed_arguments_strips_suffix_properly() {
     let split_res = Command::new(rfs_bin())
         .arg("split")
         .arg(&in_file)
+        .arg(&p1)
+        .arg(&p2)
         .arg("-f")
         .status()
         .unwrap();

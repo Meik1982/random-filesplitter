@@ -6,7 +6,7 @@ _rfs_completions() {
 
     local subcommands="split restore verify decoy benchmark entropy analyze"
     local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct --token --rnd"
-    local split_opts="-n --parts -d --decoys -B --block-size -o --output"
+    local split_opts="-n --parts -d --decoys --pad-to -B --block-size -o --output"
     local restore_opts="-o --output -B --block-size"
     local decoy_opts="-c --count -s --size -t --template -o --output -B --block-size"
 
@@ -26,7 +26,7 @@ _rfs_completions() {
             COMPREPLY=( $(compgen -W "1 2 3 4 5 8 16" -- "$cur") )
             return 0
             ;;
-        -B|--block-size|-s|--size)
+        -B|--block-size|-s|--size|--pad-to)
             COMPREPLY=( $(compgen -W "64K 256K 1M 4M 8M 16M 100M 1G" -- "$cur") )
             return 0
             ;;

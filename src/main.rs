@@ -70,6 +70,7 @@ fn display_help() {
     println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
     println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
     println!("  -d, --decoys <ANZAHL>                         Zusätzliche Köderdateien (Decoys) beim Splitten erzeugen");
+    println!("  --pad-to <GRÖSSE>                             Share-Dateien auf eine exakte Bytegröße aufblähen (z. B. 100M, 20G)");
     println!("  --token, --rnd                                Anti-Forensik: Zufällige Hex-Tokens (.<rnd>.rfs) statt Nummern");
     println!("  -c, --count <ANZAHL>                          Anzahl der Köderdateien für 'rfs decoy' (Standard: 1)");
     println!("  -s, --size <GRÖSSE>                           Explizite Bytegröße für 'rfs decoy' (z. B. 64K, 10M, 1G)");
@@ -209,6 +210,7 @@ fn main() {
     let mut json_output = false;
     let mut direct_io = false;
     let mut token_mode = false;
+    let mut pad_to: Option<u64> = None;
     let mut num_parts: usize = 2;
     let mut num_decoys: usize = 0;
     let mut decoy_count: usize = 1;
@@ -233,6 +235,19 @@ fn main() {
             direct_io = true;
         } else if arg == "--token" || arg == "--rnd" {
             token_mode = true;
+        } else if arg == "--pad-to" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Fehler: Option {} erfordert eine Größenangabe.", arg);
+                process::exit(1);
+            }
+            match types::parse_file_size(&args[i]) {
+                Ok(sz) => pad_to = Some(sz),
+                Err(e) => {
+                    eprintln!("Fehler: {}", e);
+                    process::exit(1);
+                }
+            }
         } else if arg == "-n" || arg == "--parts" {
             i += 1;
             if i >= args.len() {
@@ -387,7 +402,7 @@ fn main() {
                 output_parts.as_deref(),
                 num_parts,
                 num_decoys,
-                token_mode,
+                pad_to,
                 output_path.as_deref(),
                 block_size,
                 telemetry_mode,

@@ -47,6 +47,7 @@ _rfs() {
                         $common_opts \
                         '(-n --parts)'{-n,--parts}'[Anzahl der Teile (2..64)]:Anzahl:(2 3 4 5 8 16)' \
                         '(-d --decoys)'{-d,--decoys}'[Anzahl zusätzlicher Köderdateien]:Anzahl:(1 2 3 4 5)' \
+                        '--pad-to[Auf exakte Bytegröße aufblähen]:Größe:(64K 1M 10M 100M 1G 10G)' \
                         '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
                         '(-o --output)'{-o,--output}'[Präfix oder Pfad]:Datei:_files' \
                         '*:Eingabe- und Ausgabedateien:_files'
