@@ -32,6 +32,45 @@ struct WriteJob {
 /// Unterstützt:
 /// - Reguläre Dateien (`input_source` != `"-"`)
 /// - Unix Stdin Pipes (`input_source` == `"-"`)
+///
+/// Generiert `count` eindeutige 4-stellige Hex-Zufallstokens (z. B. "a9f4", "7c1b")
+fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
+    let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
+    let mut rng = ChaChaRng::new(&key, &nonce);
+    key.zeroize();
+    nonce.zeroize();
+
+    let mut set = std::collections::HashSet::new();
+    let mut tokens = Vec::with_capacity(count);
+    while tokens.len() < count {
+        let mut rnd = [0u8; 2];
+        rng.fill_bytes(&mut rnd);
+        let tok = format!("{:02x}{:02x}", rnd[0], rnd[1]);
+        if set.insert(tok.clone()) {
+            tokens.push(tok);
+        }
+    }
+    tokens
+}
+
+/// Verwürfelt Pfade in-place via ChaCha20 Fisher-Yates Shuffle
+fn shuffle_paths(paths: &mut [PathBuf]) {
+    if paths.len() <= 1 {
+        return;
+    }
+    let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
+    let mut rng = ChaChaRng::new(&key, &nonce);
+    key.zeroize();
+    nonce.zeroize();
+
+    for i in (1..paths.len()).rev() {
+        let mut rnd_u32 = [0u8; 4];
+        rng.fill_bytes(&mut rnd_u32);
+        let j = (u32::from_le_bytes(rnd_u32) as usize) % (i + 1);
+        paths.swap(i, j);
+    }
+}
+
 /// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
 /// - Entkoppelte 3-Stufen Pipeline (Reader ➔ Crypto/SIMD ➔ Writer) mit Zero-Copy Puffer-Pooling
 /// - Maschinenlesbare NDJSON-Telemetrie (`--json`) und interaktive ANSI-Fortschrittsbalken
@@ -41,38 +80,58 @@ pub fn split_stream_or_file(
     output_parts: Option<&[PathBuf]>,
     num_parts: usize,
     num_decoys: usize,
+    token_mode: bool,
     output_prefix: Option<&str>,
     block_size: usize,
     telemetry_mode: TelemetryMode,
     force: bool,
     direct_io: bool,
 ) -> Result<Vec<PathBuf>, String> {
-    // 1. Zielpfade bestimmen
-    let (out_paths, n_parts) = if let Some(parts) = output_parts {
+    // 1. Zielpfade bestimmen (mit Shuffle & Token-Unterstützung)
+    let (real_paths, decoy_paths, n_parts) = if let Some(parts) = output_parts {
         if parts.len() < 2 || parts.len() > 64 {
             return Err(
                 "Anzahl der expliziten Ausgabeteile muss zwischen 2 und 64 liegen.".to_string(),
             );
         }
-        (parts.to_vec(), parts.len())
+        (parts.to_vec(), Vec::new(), parts.len())
     } else {
         let count = num_parts.clamp(2, 64);
-        let paths: Vec<PathBuf> = (1..=count)
-            .map(|i| {
-                if let Some(prefix) = output_prefix {
-                    PathBuf::from(format!("{}.rfs{}", prefix, i))
-                } else if input_source == "-" {
-                    PathBuf::from(format!("stdin.rfs{}", i))
-                } else {
-                    PathBuf::from(format!("{}.rfs{}", input_source, i))
-                }
-            })
-            .collect();
-        (paths, count)
+        let total_files = count + num_decoys;
+        let base = if let Some(prefix) = output_prefix {
+            prefix.to_string()
+        } else if input_source == "-" {
+            "stdin".to_string()
+        } else {
+            input_source.to_string()
+        };
+
+        let mut all_paths: Vec<PathBuf> = if token_mode {
+            let tokens = generate_unique_hex_tokens(total_files);
+            tokens
+                .into_iter()
+                .map(|t| PathBuf::from(format!("{}.{}.rfs", base, t)))
+                .collect()
+        } else {
+            (1..=total_files)
+                .map(|i| PathBuf::from(format!("{}.rfs{}", base, i)))
+                .collect()
+        };
+
+        // Wenn Decoys vorhanden sind: Slots zufällig mit ChaCha20 verwürfeln (Fisher-Yates)
+        if num_decoys > 0 {
+            shuffle_paths(&mut all_paths);
+        }
+
+        let real = all_paths[0..count].to_vec();
+        let decoys = all_paths[count..total_files].to_vec();
+        (real, decoys, count)
     };
 
+    let out_paths = real_paths.clone();
+
     if !force {
-        for path in &out_paths {
+        for path in real_paths.iter().chain(decoy_paths.iter()) {
             if path.exists() {
                 return Err(format!(
                     "Ausgabedatei '{}' existiert bereits. Nutzen Sie --force zum Überschreiben.",
@@ -317,35 +376,46 @@ pub fn split_stream_or_file(
             .map_err(|e| format!("Flush {}: {}", k + 1, e))?;
     }
 
-    if telemetry_mode == TelemetryMode::Interactive {
-        eprintln!("Erfolgreich in {} Teile gesplittet (N-Way OTP):", n_parts);
-        for (i, p) in out_paths.iter().enumerate() {
-            eprintln!("  Teil {}: {}", i + 1, p.display());
-        }
-        eprintln!(
-            "  Originalgröße: {} Bytes\n  BLKS-384: {}",
-            total_processed,
-            BlksDigest(digest).to_base64()
-        );
-    }
-
-    if num_decoys > 0 {
+    if !decoy_paths.is_empty() {
         let share_size = total_processed + RFS3_FOOTER_SIZE as u64;
-        let base_name = if input_source == "-" {
-            Some("stdin")
-        } else {
-            Some(input_source)
-        };
-        let _ = generate_decoy_files(
+        write_decoy_files_to_paths(
+            &decoy_paths,
             share_size,
-            num_decoys,
-            output_prefix,
-            base_name,
             block_size,
             telemetry_mode,
-            force,
             direct_io,
         )?;
+    }
+
+    if telemetry_mode == TelemetryMode::Interactive {
+        eprintln!("Erfolgreich in {} Teile gesplittet (N-Way OTP):", n_parts);
+        eprintln!("  Originalgröße: {} Bytes", total_processed);
+        eprintln!("  BLKS-384: {}", BlksDigest(digest).to_base64());
+
+        if !decoy_paths.is_empty() {
+            let mode_tag = if token_mode {
+                "Token-Modus (.<rnd>.rfs)"
+            } else {
+                "Zufällig verwürfelt (1..T)"
+            };
+            eprintln!("\nEchte Shares (N={}, {}):", n_parts, mode_tag);
+            for (i, p) in out_paths.iter().enumerate() {
+                eprintln!("  Teil {}: {}", i + 1, p.display());
+            }
+
+            let share_size = total_processed + RFS3_FOOTER_SIZE as u64;
+            eprintln!(
+                "\nKöderdateien (Decoys, D={}, 100% ChaCha20-Zufallsrauschen):",
+                decoy_paths.len()
+            );
+            for (i, p) in decoy_paths.iter().enumerate() {
+                eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), share_size);
+            }
+        } else {
+            for (i, p) in out_paths.iter().enumerate() {
+                eprintln!("  Teil {}: {}", i + 1, p.display());
+            }
+        }
     }
 
     Ok(out_paths)
@@ -429,6 +499,21 @@ pub fn determine_decoy_size(
                 let suffix = &file_name[idx + 4..];
                 if suffix.chars().all(|c| c.is_ascii_digit()) {
                     file_name[..idx].to_string()
+                } else if let Some(before) = file_name.strip_suffix(".rfs") {
+                    if let Some(dot_idx) = before.rfind('.') {
+                        let tok = &before[dot_idx + 1..];
+                        if (tok.len() == 4 || tok.len() == 6)
+                            && tok.chars().all(|c| c.is_ascii_hexdigit())
+                            || tok.starts_with("part")
+                            || tok.starts_with("decoy")
+                        {
+                            before[..dot_idx].to_string()
+                        } else {
+                            before.to_string()
+                        }
+                    } else {
+                        before.to_string()
+                    }
                 } else {
                     file_name.to_string()
                 }
@@ -445,53 +530,19 @@ pub fn determine_decoy_size(
     Err("Bitte geben Sie entweder eine Musterdatei (-t <DATEI>) oder eine explizite Größe (-s <GRÖSSE>) an.".to_string())
 }
 
-/// Erzeugt eine beliebige Anzahl von Köderdateien (Decoys) gefüllt mit ChaCha20-CSPRNG-Zufallsrauschen.
-#[allow(clippy::too_many_arguments)]
-pub fn generate_decoy_files(
+/// Schreibt reines ChaCha20-Zufallsrauschen in die angegebenen Zieldateipfade.
+pub fn write_decoy_files_to_paths(
+    decoy_paths: &[PathBuf],
     target_size: u64,
-    count: usize,
-    output_prefix: Option<&str>,
-    template_base: Option<&str>,
     block_size: usize,
     telemetry_mode: TelemetryMode,
-    force: bool,
     direct_io: bool,
-) -> Result<Vec<PathBuf>, String> {
-    if count == 0 {
-        return Ok(Vec::new());
+) -> Result<(), String> {
+    if decoy_paths.is_empty() {
+        return Ok(());
     }
-    if count > 1000 {
-        return Err("Anzahl der Köderdateien darf höchstens 1000 betragen.".to_string());
-    }
+    let count = decoy_paths.len();
 
-    // 1. Zieldateipfade ableiten
-    let mut decoy_paths: Vec<PathBuf> = Vec::with_capacity(count);
-    for idx in 1..=count {
-        let path = if let Some(prefix) = output_prefix {
-            if count == 1 && prefix.contains('.') {
-                PathBuf::from(prefix)
-            } else {
-                PathBuf::from(format!("{}.decoy{}.rfs", prefix, idx))
-            }
-        } else if let Some(base) = template_base {
-            PathBuf::from(format!("{}.decoy{}.rfs", base, idx))
-        } else {
-            PathBuf::from(format!("decoy_{}.rfs", idx))
-        };
-        decoy_paths.push(path);
-    }
-
-    // 2. Kollisionsprüfung
-    for p in &decoy_paths {
-        if p.exists() && !force {
-            return Err(format!(
-                "Köderdatei '{}' existiert bereits. Verwenden Sie -f / --force zum Überschreiben.",
-                p.display()
-            ));
-        }
-    }
-
-    // 3. Entropie & CSPRNG Initialisierung
     let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut rng = ChaChaRng::new(&key, &nonce);
     key.zeroize();
@@ -504,7 +555,7 @@ pub fn generate_decoy_files(
     let mut telemetry = Telemetry::new(telemetry_mode, "Decoy", Some(total_all_decoys));
     let mut processed_total: u64 = 0;
 
-    for path in &decoy_paths {
+    for path in decoy_paths {
         let f = OpenOptions::new()
             .write(true)
             .create(true)
@@ -555,11 +606,87 @@ pub fn generate_decoy_files(
 
     buffer.as_mut_slice().zeroize();
     telemetry.finish(processed_total, count, None);
+    Ok(())
+}
+
+/// Erzeugt eine beliebige Anzahl von Köderdateien (Decoys) gefüllt mit ChaCha20-CSPRNG-Zufallsrauschen.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_decoy_files(
+    target_size: u64,
+    count: usize,
+    token_mode: bool,
+    output_prefix: Option<&str>,
+    template_base: Option<&str>,
+    block_size: usize,
+    telemetry_mode: TelemetryMode,
+    force: bool,
+    direct_io: bool,
+) -> Result<Vec<PathBuf>, String> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if count > 1000 {
+        return Err("Anzahl der Köderdateien darf höchstens 1000 betragen.".to_string());
+    }
+
+    let tokens = if token_mode {
+        generate_unique_hex_tokens(count)
+    } else {
+        Vec::new()
+    };
+
+    // 1. Zieldateipfade ableiten
+    let mut decoy_paths: Vec<PathBuf> = Vec::with_capacity(count);
+    for idx in 1..=count {
+        let path = if let Some(prefix) = output_prefix {
+            if count == 1 && prefix.contains('.') {
+                PathBuf::from(prefix)
+            } else if token_mode {
+                PathBuf::from(format!("{}.{}.rfs", prefix, tokens[idx - 1]))
+            } else {
+                PathBuf::from(format!("{}.rfs{}", prefix, idx))
+            }
+        } else if let Some(base) = template_base {
+            if token_mode {
+                PathBuf::from(format!("{}.{}.rfs", base, tokens[idx - 1]))
+            } else {
+                PathBuf::from(format!("{}.rfs{}", base, idx))
+            }
+        } else if token_mode {
+            PathBuf::from(format!("decoy.{}.rfs", tokens[idx - 1]))
+        } else {
+            PathBuf::from(format!("decoy_{}.rfs", idx))
+        };
+        decoy_paths.push(path);
+    }
+
+    // 2. Kollisionsprüfung
+    for p in &decoy_paths {
+        if p.exists() && !force {
+            return Err(format!(
+                "Köderdatei '{}' existiert bereits. Verwenden Sie -f / --force zum Überschreiben.",
+                p.display()
+            ));
+        }
+    }
+
+    write_decoy_files_to_paths(
+        &decoy_paths,
+        target_size,
+        block_size,
+        telemetry_mode,
+        direct_io,
+    )?;
 
     if telemetry_mode == TelemetryMode::Interactive {
+        let mode_desc = if token_mode {
+            "Token-Modus"
+        } else {
+            "100% ChaCha20-Zufallsrauschen"
+        };
         eprintln!(
-            "Erfolgreich {} Köderdatei(en) (Decoys) generiert (100% ChaCha20-Zufallsrauschen):",
-            count
+            "Erfolgreich {} Köderdatei(en) (Decoys) generiert ({}):",
+            count, mode_desc
         );
         for (i, p) in decoy_paths.iter().enumerate() {
             eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), target_size);
@@ -587,6 +714,7 @@ pub fn split_file(
         None,
         2,
         0,
+        false,
         output_prefix,
         block_size,
         mode,
@@ -690,6 +818,22 @@ pub fn restore_file(
             let suffix = &p_str[idx + 4..];
             if suffix.chars().all(|c| c.is_ascii_digit()) {
                 PathBuf::from(&p_str[..idx])
+            } else if let Some(before) = p_str.strip_suffix(".rfs") {
+                if let Some(dot_idx) = before.rfind('.') {
+                    let token_candidate = &before[dot_idx + 1..];
+                    let is_hex_token = (token_candidate.len() == 4 || token_candidate.len() == 6)
+                        && token_candidate.chars().all(|c| c.is_ascii_hexdigit());
+                    let is_part_token = token_candidate.starts_with("part")
+                        || token_candidate.starts_with("rfs")
+                        || token_candidate.starts_with("decoy");
+                    if is_hex_token || is_part_token {
+                        PathBuf::from(&before[..dot_idx])
+                    } else {
+                        PathBuf::from(before)
+                    }
+                } else {
+                    PathBuf::from(before)
+                }
             } else {
                 PathBuf::from(format!("{}.restored", p_str))
             }

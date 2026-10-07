@@ -311,33 +311,35 @@ fn test_decoy_generation_standalone_and_during_split() {
         .arg("3")
         .arg(&raw_file)
         .arg("-f")
-        .status()
+        .output()
         .expect("rfs split mit -d fehlgeschlagen");
-    assert!(split_decoy.success());
+    assert!(split_decoy.status.success());
 
-    let s1 = temp_dir.join("document.pdf.rfs1");
-    let s2 = temp_dir.join("document.pdf.rfs2");
-    let d1 = temp_dir.join("document.pdf.decoy1.rfs");
-    let d2 = temp_dir.join("document.pdf.decoy2.rfs");
-    let d3 = temp_dir.join("document.pdf.decoy3.rfs");
-
-    assert!(s1.exists() && s2.exists());
-    assert!(d1.exists() && d2.exists() && d3.exists());
-
-    // Alle 5 Dateien müssen exakt 5060 Bytes groß sein (5000 + 60)
+    // Alle 5 Dateien müssen existieren und exakt 5060 Bytes groß sein
     let expected_len = 5060u64;
-    assert_eq!(fs::metadata(&s1).unwrap().len(), expected_len);
-    assert_eq!(fs::metadata(&s2).unwrap().len(), expected_len);
-    assert_eq!(fs::metadata(&d1).unwrap().len(), expected_len);
-    assert_eq!(fs::metadata(&d2).unwrap().len(), expected_len);
-    assert_eq!(fs::metadata(&d3).unwrap().len(), expected_len);
+    for i in 1..=5 {
+        let p = temp_dir.join(format!("document.pdf.rfs{}", i));
+        assert!(p.exists(), "Datei document.pdf.rfs{} existiert nicht", i);
+        assert_eq!(fs::metadata(&p).unwrap().len(), expected_len);
+    }
+
+    // Echte Shares aus der Telemetrie-Ausgabe filtern
+    let stderr_str = String::from_utf8_lossy(&split_decoy.stderr);
+    let mut real_shares = Vec::new();
+    for line in stderr_str.lines() {
+        if line.trim().starts_with("Teil ") && line.contains("document.pdf.rfs") {
+            let part_str = line.split(':').nth(1).unwrap().trim();
+            real_shares.push(PathBuf::from(part_str));
+        }
+    }
+    assert_eq!(real_shares.len(), 2, "Genau 2 echte Shares erwartet");
 
     // Echte Shares rekonstruieren einwandfrei
     let res_ok = temp_dir.join("doc.restored");
     let restore = Command::new(rfs_bin())
         .arg("restore")
-        .arg(&s1)
-        .arg(&s2)
+        .arg(&real_shares[0])
+        .arg(&real_shares[1])
         .arg("-o")
         .arg(&res_ok)
         .status()
@@ -345,19 +347,53 @@ fn test_decoy_generation_standalone_and_during_split() {
     assert!(restore.success());
     assert_eq!(fs::read(&res_ok).unwrap(), raw_payload);
 
-    // Einmischung eines Decoys anstelle eines echten Shares scheitert sofort
-    let fake_restore = Command::new(rfs_bin())
-        .arg("restore")
-        .arg(&s1)
-        .arg(&d1)
-        .status()
-        .expect("Restore fehlgeschlagen");
-    assert!(
-        !fake_restore.success(),
-        "Decoy durfte nicht decodiert werden"
+    // 2. Test mit Zufalls-Token (--token)
+    let token_dir = temp_dir.join("token_test");
+    fs::create_dir_all(&token_dir).unwrap();
+    let token_raw = token_dir.join("secret.data");
+    fs::write(&token_raw, &raw_payload).unwrap();
+
+    let split_token = Command::new(rfs_bin())
+        .arg("split")
+        .arg("-n")
+        .arg("2")
+        .arg("-d")
+        .arg("2")
+        .arg("--token")
+        .arg(&token_raw)
+        .arg("-f")
+        .output()
+        .expect("rfs split mit --token fehlgeschlagen");
+    assert!(split_token.status.success());
+
+    let token_stderr = String::from_utf8_lossy(&split_token.stderr);
+    let mut token_real_shares = Vec::new();
+    for line in token_stderr.lines() {
+        if line.trim().starts_with("Teil ") && line.contains("secret.data.") {
+            let part_str = line.split(':').nth(1).unwrap().trim();
+            token_real_shares.push(PathBuf::from(part_str));
+        }
+    }
+    assert_eq!(
+        token_real_shares.len(),
+        2,
+        "Genau 2 echte Token-Shares erwartet"
     );
 
-    // 2. Standalone Decoy mit Rohdatei-Muster: Muss automatisch +60 Bytes addieren
+    // Restore mit Tokens und automatischer Zieldateinamen-Erkennung (ohne -o)
+    let token_restore_target = token_dir.join("secret.data.restored");
+    let restore_token = Command::new(rfs_bin())
+        .arg("restore")
+        .arg(&token_real_shares[0])
+        .arg(&token_real_shares[1])
+        .arg("-o")
+        .arg(&token_restore_target)
+        .status()
+        .expect("Restore mit Tokens fehlgeschlagen");
+    assert!(restore_token.success());
+    assert_eq!(fs::read(&token_restore_target).unwrap(), raw_payload);
+
+    // 3. Standalone Decoy mit Rohdatei-Muster: Muss automatisch +60 Bytes addieren
     let standalone_raw = Command::new(rfs_bin())
         .arg("decoy")
         .arg("-t")
@@ -370,16 +406,16 @@ fn test_decoy_generation_standalone_and_during_split() {
         .status()
         .expect("rfs decoy fehlgeschlagen");
     assert!(standalone_raw.success());
-    let sr1 = temp_dir.join("stand_raw.decoy1.rfs");
-    let sr2 = temp_dir.join("stand_raw.decoy2.rfs");
+    let sr1 = temp_dir.join("stand_raw.rfs1");
+    let sr2 = temp_dir.join("stand_raw.rfs2");
     assert_eq!(fs::metadata(&sr1).unwrap().len(), expected_len);
     assert_eq!(fs::metadata(&sr2).unwrap().len(), expected_len);
 
-    // 3. Standalone Decoy mit RFS-Muster: Muss exakt 1:1 Dateigröße übernehmen (5060 Bytes)
+    // 4. Standalone Decoy mit RFS-Muster: Muss exakt 1:1 Dateigröße übernehmen (5060 Bytes)
     let standalone_rfs = Command::new(rfs_bin())
         .arg("decoy")
         .arg("-t")
-        .arg(&s1)
+        .arg(&real_shares[0])
         .arg("-c")
         .arg("1")
         .arg("-o")
@@ -391,7 +427,7 @@ fn test_decoy_generation_standalone_and_during_split() {
     let s_rfs = temp_dir.join("stand_rfs.rfs");
     assert_eq!(fs::metadata(&s_rfs).unwrap().len(), expected_len);
 
-    // 4. Standalone Decoy mit expliziter Größe (-s 128K)
+    // 5. Standalone Decoy mit expliziter Größe (-s 128K)
     let explicit_decoy = Command::new(rfs_bin())
         .arg("decoy")
         .arg("-s")

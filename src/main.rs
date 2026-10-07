@@ -70,6 +70,7 @@ fn display_help() {
     println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
     println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
     println!("  -d, --decoys <ANZAHL>                         Zusätzliche Köderdateien (Decoys) beim Splitten erzeugen");
+    println!("  --token, --rnd                                Anti-Forensik: Zufällige Hex-Tokens (.<rnd>.rfs) statt Nummern");
     println!("  -c, --count <ANZAHL>                          Anzahl der Köderdateien für 'rfs decoy' (Standard: 1)");
     println!("  -s, --size <GRÖSSE>                           Explizite Bytegröße für 'rfs decoy' (z. B. 64K, 10M, 1G)");
     println!("  -t, --template <DATEI>                        Musterdatei für 'rfs decoy' (Rohdatei +60B Footer oder RFS 1:1)");
@@ -207,6 +208,7 @@ fn main() {
     let mut silent = false;
     let mut json_output = false;
     let mut direct_io = false;
+    let mut token_mode = false;
     let mut num_parts: usize = 2;
     let mut num_decoys: usize = 0;
     let mut decoy_count: usize = 1;
@@ -229,6 +231,8 @@ fn main() {
             json_output = true;
         } else if arg == "--direct" || arg == "--direct-io" {
             direct_io = true;
+        } else if arg == "--token" || arg == "--rnd" {
+            token_mode = true;
         } else if arg == "-n" || arg == "--parts" {
             i += 1;
             if i >= args.len() {
@@ -383,6 +387,7 @@ fn main() {
                 output_parts.as_deref(),
                 num_parts,
                 num_decoys,
+                token_mode,
                 output_path.as_deref(),
                 block_size,
                 telemetry_mode,
@@ -484,6 +489,7 @@ fn main() {
             if let Err(e) = pipeline::generate_decoy_files(
                 target_size,
                 decoy_count,
+                token_mode,
                 output_path.as_deref(),
                 base_name.as_deref(),
                 block_size,

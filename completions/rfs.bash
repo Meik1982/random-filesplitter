@@ -5,7 +5,7 @@ _rfs_completions() {
     _init_completion || return
 
     local subcommands="split restore verify decoy benchmark entropy analyze"
-    local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct"
+    local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct --token --rnd"
     local split_opts="-n --parts -d --decoys -B --block-size -o --output"
     local restore_opts="-o --output -B --block-size"
     local decoy_opts="-c --count -s --size -t --template -o --output -B --block-size"

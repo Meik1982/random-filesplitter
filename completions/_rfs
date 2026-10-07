@@ -14,6 +14,7 @@ _rfs() {
         '(-q --quiet --silent)'{-q,--quiet,--silent}'[Stummschalten (nur Fehler)]'
         '--json[Maschinenlesbare NDJSON-Telemetrie auf stderr]'
         '--direct[Direct I/O: Kernel Page-Cache umgehen]'
+        '(--token --rnd)'{--token,--rnd}'[Anti-Forensik: Hex-Tokens (.<rnd>.rfs) statt Nummern]'
     )
 
     _arguments -C \

@@ -79,6 +79,9 @@ Explicit target byte size for decoy generation (e.g., 64K, 10M, 1G).
 .BR \-t ", " \-\-template " \fIFILE\fR"
 Template file for decoy generation (automatically calculates +60B stealth footer for raw files or copies 1:1 size for RFS shares).
 .TP
+.BR \-\-token ", " \-\-rnd
+Anti-forensic random hexadecimal token mode. Generates unsequenced filename suffixes (.<rnd>.rfs) instead of numbers (.rfs1, .rfs2).
+.TP
 .BR \-B ", " \-\-block\-size " \fISIZE\fR"
 Buffer and I/O block size (e.g., 64K, 256K, 1M, 4M, 16M; default: 4M).
 .TP

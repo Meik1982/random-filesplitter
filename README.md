@@ -77,13 +77,18 @@ tar -czf - /var/data | rfs split -n 4 - -o backup
 rfs restore backup.rfs1 backup.rfs2 backup.rfs3 backup.rfs4 -o - | tar -xzf -
 ```
 
-### 4. Köderdateien (Decoys) zur Traffic-Verschleierung
+### 4. Köderdateien (Decoys) & Anti-Forensik
 ```bash
-# Beim Splitten sofort 4 identisch große Köderdateien mitgenerieren (insg. 7 Dateien)
+# Beim Splitten sofort 4 Köder mitgenerieren (insg. 7 Dateien: .rfs1 bis .rfs7)
+# RFS verwürfelt per ChaCha20, welche Nummern echte Shares und welche Köder sind!
 rfs split -n 3 geheim.iso -d 4
 
+# Anti-Forensik Token-Modus: Statt Nummern unkorrelierte Hex-Tokens (.<rnd>.rfs) nutzen
+rfs split -n 3 geheim.iso -d 4 --token
+# Erzeugt z. B.: geheim.iso.a9f4.rfs, geheim.iso.7c1b.rfs, geheim.iso.3e82.rfs ...
+
 # Nachträglich Köder basierend auf einer Rohdatei erstellen (+60 Bytes Footer auto-berechnet)
-rfs decoy -t vertrag.pdf -c 5
+rfs decoy -t vertrag.pdf -c 5 --token
 
 # Nachträglich Köder basierend auf einem RFS-Share erstellen (1:1 Bytegröße)
 rfs decoy -t vertrag.pdf.rfs1 -c 3
