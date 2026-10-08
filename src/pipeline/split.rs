@@ -254,38 +254,97 @@ pub fn split_stream_or_file(
         Ok((total_processed, digest))
     });
 
-    // Stufe 3: Writer Thread (Schreibt alle N Dateien)
+    // Stufe 3: Paralleler N-Way Writer Thread Pool (Parallel Disk Fanout)
     let writer_handle = thread::spawn(move || -> Result<(), String> {
-        let mut writers: Vec<BufWriter<File>> = files
-            .into_iter()
-            .map(|f| BufWriter::with_capacity(block_size, f))
-            .collect();
+        let mut part_txs = Vec::with_capacity(n_parts);
+        let (done_tx, done_rx) =
+            bounded::<(usize, Result<Vec<u8>, String>)>(n_parts * BUFFER_POOL_SIZE);
+        let mut worker_handles = Vec::with_capacity(n_parts);
+
+        for (k, file) in files.into_iter().enumerate() {
+            let (tx, rx): (
+                Sender<Option<(Vec<u8>, usize, u64)>>,
+                Receiver<Option<(Vec<u8>, usize, u64)>>,
+            ) = bounded(2);
+            part_txs.push(tx);
+            let done_tx_clone = done_tx.clone();
+
+            let handle = thread::spawn(move || -> Result<(), String> {
+                let mut writer = BufWriter::with_capacity(block_size, file);
+                while let Ok(Some((buf, valid_len, offset))) = rx.recv() {
+                    if let Err(e) = writer.write_all(&buf[..valid_len]) {
+                        let err_msg = format!("Schreibfehler auf Teil {}: {}", k + 1, e);
+                        let _ = done_tx_clone.send((k, Err(err_msg.clone())));
+                        return Err(err_msg);
+                    }
+                    if direct_io {
+                        crate::fadvise::advise_drop_cache(
+                            writer.get_ref(),
+                            offset as i64,
+                            valid_len as i64,
+                        );
+                    }
+                    let _ = done_tx_clone.send((k, Ok(buf)));
+                }
+                writer
+                    .flush()
+                    .map_err(|e| format!("Flush-Fehler auf Teil {}: {}", k + 1, e))?;
+                Ok(())
+            });
+            worker_handles.push(handle);
+        }
+        drop(done_tx);
+
         let mut total_written: u64 = 0;
 
         while let Ok(job_res) = job_rx.recv() {
             let WriteJob { bufs, valid_len } = job_res?;
 
-            for k in 0..n_parts {
-                writers[k]
-                    .write_all(&bufs[k][..valid_len])
-                    .map_err(|e| format!("Schreibfehler auf Teil {}: {}", k + 1, e))?;
-                if direct_io {
-                    crate::fadvise::advise_drop_cache(
-                        writers[k].get_ref(),
-                        total_written as i64,
-                        valid_len as i64,
-                    );
+            // 1. Chunks parallel an alle N Worker verteilen
+            for (k, buf) in bufs.into_iter().enumerate() {
+                if part_txs[k]
+                    .send(Some((buf, valid_len, total_written)))
+                    .is_err()
+                {
+                    return Err(format!(
+                        "Worker-Thread für Teil {} vorzeitig beendet",
+                        k + 1
+                    ));
+                }
+            }
+
+            // 2. Auf Fertigstellung aller N Worker für diesen Block warten
+            let mut collected_bufs = vec![Vec::new(); n_parts];
+            for _ in 0..n_parts {
+                match done_rx.recv() {
+                    Ok((k, Ok(buf))) => {
+                        collected_bufs[k] = buf;
+                    }
+                    Ok((_k, Err(e))) => {
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        return Err("Unerwarteter Verbindungsabbruch beim Disk-Fanout".to_string());
+                    }
                 }
             }
 
             total_written += valid_len as u64;
-            let _ = free_out_tx.send(bufs);
+            let _ = free_out_tx.send(collected_bufs);
         }
 
-        for (k, w) in writers.iter_mut().enumerate() {
-            w.flush()
-                .map_err(|e| format!("Flush-Fehler auf Teil {}: {}", k + 1, e))?;
+        // Signal EOF an alle Worker
+        for tx in part_txs {
+            let _ = tx.send(None);
         }
+
+        // Auf sauberen Abschluss aller Worker warten
+        for (k, handle) in worker_handles.into_iter().enumerate() {
+            handle
+                .join()
+                .map_err(|_| format!("Writer-Worker für Teil {} abgestürzt", k + 1))??;
+        }
+
         Ok(())
     });
 

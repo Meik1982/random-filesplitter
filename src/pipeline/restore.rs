@@ -247,41 +247,105 @@ pub fn restore_file(
         Receiver<Result<(Vec<u8>, usize), String>>,
     ) = bounded(2);
 
-    // Stufe 1: N-Way Reader Thread
+    // Stufe 1: Paralleler N-Way Reader Thread Pool (Parallel Disk Fanin)
     let reader_handle = thread::spawn(move || -> Result<(), String> {
-        let mut readers: Vec<BufReader<File>> = files
-            .into_iter()
-            .map(|f| BufReader::with_capacity(block_size, f))
-            .collect();
+        let mut part_txs = Vec::with_capacity(n_parts);
+        let (done_tx, done_rx) =
+            bounded::<(usize, Result<Vec<u8>, String>)>(n_parts * BUFFER_POOL_SIZE);
+        let mut worker_handles = Vec::with_capacity(n_parts);
+
+        for (k, file) in files.into_iter().enumerate() {
+            let (tx, rx): (
+                Sender<Option<(Vec<u8>, usize, u64)>>,
+                Receiver<Option<(Vec<u8>, usize, u64)>>,
+            ) = bounded(2);
+            part_txs.push(tx);
+            let done_tx_clone = done_tx.clone();
+
+            let handle = thread::spawn(move || -> Result<(), String> {
+                let mut reader = BufReader::with_capacity(block_size, file);
+                while let Ok(Some((mut buf, to_read, offset))) = rx.recv() {
+                    if let Err(e) = reader.read_exact(&mut buf[..to_read]) {
+                        let err_msg = format!("Lesefehler Teil {}: {}", k + 1, e);
+                        let _ = done_tx_clone.send((k, Err(err_msg.clone())));
+                        return Err(err_msg);
+                    }
+                    if direct_io {
+                        crate::fadvise::advise_drop_cache(
+                            reader.get_ref(),
+                            offset as i64,
+                            to_read as i64,
+                        );
+                    }
+                    let _ = done_tx_clone.send((k, Ok(buf)));
+                }
+                Ok(())
+            });
+            worker_handles.push(handle);
+        }
+        drop(done_tx);
+
         let mut remaining = original_size;
 
         while remaining > 0 {
             let to_read = (block_size as u64).min(remaining) as usize;
-            let mut in_bufs = match free_in_rx.recv() {
+            let in_bufs = match free_in_rx.recv() {
                 Ok(slot) => slot,
                 Err(_) => break,
             };
 
-            for (k, r) in readers.iter_mut().enumerate() {
-                if let Err(e) = r.read_exact(&mut in_bufs[k][..to_read]) {
-                    let _ = data_tx.send(Err(format!("Lesefehler Teil {}: {}", k + 1, e)));
-                    return Err(format!("Lesefehler Teil {}: {}", k + 1, e));
+            let current_offset = original_size - remaining;
+
+            // 1. Leseaufträge parallel an alle N Reader-Worker verteilen
+            for (k, buf) in in_bufs.into_iter().enumerate() {
+                if part_txs[k]
+                    .send(Some((buf, to_read, current_offset)))
+                    .is_err()
+                {
+                    let err = format!("Reader-Worker für Teil {} vorzeitig beendet", k + 1);
+                    let _ = data_tx.send(Err(err.clone()));
+                    return Err(err);
                 }
-                if direct_io {
-                    crate::fadvise::advise_drop_cache(
-                        r.get_ref(),
-                        (original_size - remaining) as i64,
-                        to_read as i64,
-                    );
+            }
+
+            // 2. Auf Fertigstellung aller N Reader-Worker für diesen Block warten
+            let mut collected_bufs = vec![Vec::new(); n_parts];
+            for _ in 0..n_parts {
+                match done_rx.recv() {
+                    Ok((k, Ok(buf))) => {
+                        collected_bufs[k] = buf;
+                    }
+                    Ok((_k, Err(e))) => {
+                        let _ = data_tx.send(Err(e.clone()));
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        let err = "Unerwarteter Verbindungsabbruch beim Disk-Fanin".to_string();
+                        let _ = data_tx.send(Err(err.clone()));
+                        return Err(err);
+                    }
                 }
             }
 
             remaining -= to_read as u64;
-            if data_tx.send(Ok((in_bufs, to_read))).is_err() {
+            if data_tx.send(Ok((collected_bufs, to_read))).is_err() {
                 break;
             }
         }
         drop(data_tx);
+
+        // Signal EOF an alle Worker
+        for tx in part_txs {
+            let _ = tx.send(None);
+        }
+
+        // Auf sauberen Abschluss aller Worker warten
+        for (k, handle) in worker_handles.into_iter().enumerate() {
+            handle
+                .join()
+                .map_err(|_| format!("Reader-Worker für Teil {} abgestürzt", k + 1))??;
+        }
+
         Ok(())
     });
 

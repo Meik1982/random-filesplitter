@@ -317,3 +317,88 @@ fn test_restore_reversed_arguments_strips_suffix_properly() {
     let _ = fs::remove_file(&expected_restored);
     let _ = fs::remove_dir(&temp_dir);
 }
+
+#[test]
+fn test_parallel_disk_fanout_across_separate_directories() {
+    let base_dir = std::env::temp_dir().join(format!(
+        "rfs_fanout_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let dir_a = base_dir.join("mount_a");
+    let dir_b = base_dir.join("mount_b");
+    let dir_c = base_dir.join("mount_c");
+    let dir_d = base_dir.join("mount_d");
+
+    fs::create_dir_all(&dir_a).unwrap();
+    fs::create_dir_all(&dir_b).unwrap();
+    fs::create_dir_all(&dir_c).unwrap();
+    fs::create_dir_all(&dir_d).unwrap();
+
+    let in_file = base_dir.join("big_payload.bin");
+    let p_a = dir_a.join("share_a.rfs");
+    let p_b = dir_b.join("share_b.rfs");
+    let p_c = dir_c.join("share_c.rfs");
+    let p_d = dir_d.join("share_d.rfs");
+    let restored_file = base_dir.join("restored_payload.bin");
+
+    // 256 KiB Multi-Chunk Payload
+    let payload = vec![0x77u8; 256 * 1024];
+    fs::write(&in_file, &payload).unwrap();
+
+    // 1. Parallel Split (Fanout über 4 Verzeichnisse / Mountpoints)
+    let status = Command::new(rfs_bin())
+        .arg("split")
+        .arg("-n")
+        .arg("4")
+        .arg("-B")
+        .arg("64K")
+        .arg(&in_file)
+        .arg(&p_a)
+        .arg(&p_b)
+        .arg(&p_c)
+        .arg(&p_d)
+        .status()
+        .expect("rfs split parallel fanout fehlgeschlagen");
+    assert!(status.success());
+    assert!(p_a.exists());
+    assert!(p_b.exists());
+    assert!(p_c.exists());
+    assert!(p_d.exists());
+
+    // 2. Parallel Verify (Fanin)
+    let verify_status = Command::new(rfs_bin())
+        .arg("verify")
+        .arg("-B")
+        .arg("64K")
+        .arg(&p_a)
+        .arg(&p_b)
+        .arg(&p_c)
+        .arg(&p_d)
+        .status()
+        .expect("rfs verify parallel fanin fehlgeschlagen");
+    assert!(verify_status.success());
+
+    // 3. Parallel Restore (Fanin)
+    let restore_status = Command::new(rfs_bin())
+        .arg("restore")
+        .arg("-B")
+        .arg("64K")
+        .arg(&p_a)
+        .arg(&p_b)
+        .arg(&p_c)
+        .arg(&p_d)
+        .arg("-o")
+        .arg(&restored_file)
+        .status()
+        .expect("rfs restore parallel fanin fehlgeschlagen");
+    assert!(restore_status.success());
+
+    let restored_data = fs::read(&restored_file).unwrap();
+    assert_eq!(restored_data, payload);
+
+    let _ = fs::remove_dir_all(&base_dir);
+}

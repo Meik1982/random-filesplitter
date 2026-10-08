@@ -120,7 +120,10 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Plattformübergreifendes `src/memlock.rs` Modul mit POSIX `mlock` und Graceful Fallback bei `RLIMIT_MEMLOCK`.
   - Flag `--mlock` in CLI integriert; sperrt Eingabe- und Ausgabe-Ringpuffer im physischen RAM gegen Swap-Paging.
   - Integrationstests in `tests/edge_cases_and_cli_tests.rs`, Manpage und Shell-Completions nachgezogen.
-- [ ] **Paralleles Multi-Mountpoint I/O (Disk-Fanout)**
+- [x] **Paralleles Multi-Mountpoint I/O (Disk-Fanout & Disk-Fanin)**
+  - Entkoppelte Worker-Thread-Pools in `src/pipeline/split.rs` (Parallel Disk Fanout) und `src/pipeline/restore.rs` (Parallel Disk Fanin).
+  - Volle I/O-Parallelität über unabhängige Datenträger/Mountpoints; langsamere Medien blockieren schnellere Shares nicht mehr sequentiell.
+  - Zero-Allocation Chunk-Recycling und dedizierter Multi-Mountpoint Integrationstest in `tests/n_way_tests.rs`.
 - [ ] **Fuzzing-Suite (`cargo fuzz` / AFL++)**
   - Continuous Fuzzing für Trailer-Parsing (`decode_footer_n_way`), Dateinamen-Extrahierung und korrupte/böswillige Bytefolgen.
 - [ ] **Criterion Micro-Benchmarks**
