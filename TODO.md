@@ -124,6 +124,11 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Entkoppelte Worker-Thread-Pools in `src/pipeline/split.rs` (Parallel Disk Fanout) und `src/pipeline/restore.rs` (Parallel Disk Fanin).
   - Volle I/O-Parallelität über unabhängige Datenträger/Mountpoints; langsamere Medien blockieren schnellere Shares nicht mehr sequentiell.
   - Zero-Allocation Chunk-Recycling und dedizierter Multi-Mountpoint Integrationstest in `tests/n_way_tests.rs`.
+- [ ] **Glaubhafte Abstreitbarkeit & Köder-Rekonstruktion (Deniable Decoy Forge / Rubber-Hose-Resilienz)**
+  - Mathematische Ausnutzung der informationstheoretischen Sicherheit des One-Time-Pads: Gegeben $K$ beschlagnahmte Shares $C_1 \dots C_K$ und ein harmloser Köder-Klartext $P_{\text{decoy}}$ (z. B. Familienfotos, Dummy-PDF).
+  - Synthese einer maßgeschneiderten Fake-Share $C_{\text{fake}} = C_1 \oplus \dots \oplus C_K \oplus P_{\text{decoy}}$ (mit RFS4-Padding und passendem RFS4-Footer inklusive BLKS-384 Hash von $P_{\text{decoy}}$).
+  - `rfs restore` und `rfs verify` mit $C_1 \dots C_K + C_{\text{fake}}$ melden 100 % Integrität und stellen die Köderdatei bitgenau wieder her.
+  - Ermöglicht das glaubhafte Vortäuschen einer Entschlüsselung unter Zwang/Erpressung (Rubber-Hose-Angriff), ohne dass ein Angreifer mathematisch beweisen kann, dass ein anderes Original existiert.
 - [ ] **Fuzzing-Suite (`cargo fuzz` / AFL++)**
   - Continuous Fuzzing für Trailer-Parsing (`decode_footer_n_way`), Dateinamen-Extrahierung und korrupte/böswillige Bytefolgen.
 - [ ] **Criterion Micro-Benchmarks**
