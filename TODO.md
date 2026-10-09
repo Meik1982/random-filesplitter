@@ -138,6 +138,26 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ---
 
+### 🖥️ Stufe 7.5: Schlanke Cross-Platform Desktop-GUI (Drag & Drop für jedermann)
+- [ ] **Architektur & Framework-Entscheidung**
+  - Schlankes natives Rust-UI (z. B. Slint oder iced / Tauri v2 mit Rust-Backend) statt ressourcenhungriger Web-Browser-Wrappers (kein Electron-Bloat).
+  - Minimaler Memory-Footprint (< 20 MB RAM) und blitzschneller Start.
+  - Direkte Einbindung der bestehenden Streaming-Engine (`rfs-core` / `src/pipeline/`).
+- [ ] **Intuitive Benutzeroberfläche (UX für den Alltagseinsatz)**
+  - **Tab „Aufteilen (Split)“:**
+    - Drag & Drop Ablagezone für beliebige Dateien oder Ordner-Archive.
+    - Visueller Schieberegler für Anzahl der Shares ($2 \le N \le 16$).
+    - Einfache Checkbox: *„Köder-Dateien (Decoys) erzeugen“* zur Verkehrsverschleierung.
+    - Zielauswahl: Automatischer Fanout auf verschiedene erkannte USB-Sticks oder Verzeichnisse.
+  - **Tab „Wiederherstellen (Restore)“:**
+    - Drag & Drop Zone: Alle empfangenen `.rfs`-Dateien einfach zusammen reinziehen.
+    - Automatisches Erkennen passender Shares und Filtern von Decoys.
+    - Visuelle Bestätigung der BLKS-384 Post-Quantum Integrität mit grünem Status-Badge.
+  - **Fortschritt & Transparenz:**
+    - Echtzeit-Durchsatzanzeige (MB/s) und Restzeitanzeige (ETA).
+
+---
+
 ### 🌌 Stufe 8: RFS-Matrix – General Access Linear Secret Sharing & Multi-Payload Decoys (GF(2))
 - [ ] **Mathematische Spezifikation & Informationstheoretischer Formalbeweis (`docs/lsss-matrix-konzept.md`)**
   - Modellierung beliebiger überlappender Zugriffskontrollstrukturen (*Access Structures*) über dem Körper $\mathbb{F}_2$.
