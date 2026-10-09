@@ -9,7 +9,7 @@ pub mod split;
 
 pub use restore::restore_file;
 #[allow(unused_imports)]
-pub use split::{split_file, split_stream_or_file};
+pub use split::{split_file, split_stream_or_file, SplitResult};
 
 #[allow(unused_imports)]
 pub use crate::decoy::{determine_decoy_size, generate_decoy_files};

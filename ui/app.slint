@@ -1,11 +1,11 @@
-import { Button, Slider, CheckBox, LineEdit, ProgressIndicator, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { Button, Slider, CheckBox, LineEdit, TextEdit, ProgressIndicator, HorizontalBox, VerticalBox } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
-    title: "RFS - Random File Splitter (v3.0.0)";
-    preferred-width: 720px;
-    preferred-height: 560px;
-    min-width: 640px;
-    min-height: 480px;
+    title: "RFS - Random File Splitter (v3.0.0 Desktop)";
+    preferred-width: 820px;
+    preferred-height: 690px;
+    min-width: 700px;
+    min-height: 580px;
     background: #14161b;
     default-font-family: "sans-serif";
 
@@ -13,32 +13,37 @@ export component MainWindow inherits Window {
 
     // Split properties
     in-out property <string> split_file_path: "";
-    in-out property <string> split_file_info: "Keine Datei ausgewählt. Bitte Datei hineinziehen oder Pfad eingeben.";
+    in-out property <string> split_file_info: "Keine Datei ausgewählt. Bitte Quelldatei wählen.";
+    in-out property <string> split_target_dir: "";
     in-out property <int> split_num_parts: 3;
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
     in-out property <string> split_status: "Bereit zum Aufteilen";
     in-out property <float> split_progress: 0.0;
     in-out property <bool> split_in_progress: false;
+    in-out property <string> split_results_log: "";
 
     // Restore properties
     in-out property <string> restore_shares_input: "";
-    in-out property <string> restore_detected_info: "Ziehen Sie mindestens 2 .rfs-Dateien hierher.";
+    in-out property <string> restore_detected_info: "Wählen Sie mindestens 2 .rfs-Dateien aus.";
+    in-out property <string> restore_target_dir: "";
     in-out property <string> restore_status: "Bereit zur Wiederherstellung";
     in-out property <float> restore_progress: 0.0;
     in-out property <bool> restore_in_progress: false;
     in-out property <string> restore_integrity_badge: "Ausstehend";
+    in-out property <string> restore_results_log: "";
 
     // Callbacks to Rust
     callback request_select_file();
+    callback request_select_split_target_dir();
     callback request_split();
     callback request_select_shares();
+    callback request_select_restore_target_dir();
     callback request_restore();
-    callback request_run_benchmark();
 
     VerticalBox {
-        padding: 18px;
-        spacing: 14px;
+        padding: 16px;
+        spacing: 12px;
 
         // Header
         HorizontalLayout {
@@ -51,7 +56,7 @@ export component MainWindow inherits Window {
                 vertical-alignment: center;
             }
             Text {
-                text: "Random File Splitter (Information-Theoretic Security)";
+                text: "Random File Splitter (Information-Theoretic Security & Anti-Forensics)";
                 font-size: 14px;
                 color: #8b949e;
                 vertical-alignment: center;
@@ -68,11 +73,9 @@ export component MainWindow inherits Window {
                 border-radius: 6px;
                 border-width: 1px;
                 border-color: root.active_tab == 0 ? #58a6ff : #30363d;
-                TouchArea {
-                    clicked => { root.active_tab = 0; }
-                }
+                TouchArea { clicked => { root.active_tab = 0; } }
                 Text {
-                    text: " Aufteilen (Split) ";
+                    text: " 📦 Aufteilen (Split) ";
                     color: root.active_tab == 0 ? #ffffff : #8b949e;
                     font-weight: root.active_tab == 0 ? 700 : 400;
                     vertical-alignment: center;
@@ -85,11 +88,9 @@ export component MainWindow inherits Window {
                 border-radius: 6px;
                 border-width: 1px;
                 border-color: root.active_tab == 1 ? #58a6ff : #30363d;
-                TouchArea {
-                    clicked => { root.active_tab = 1; }
-                }
+                TouchArea { clicked => { root.active_tab = 1; } }
                 Text {
-                    text: " Wiederherstellen (Restore) ";
+                    text: " 🔓 Wiederherstellen (Restore) ";
                     color: root.active_tab == 1 ? #ffffff : #8b949e;
                     font-weight: root.active_tab == 1 ? 700 : 400;
                     vertical-alignment: center;
@@ -107,41 +108,61 @@ export component MainWindow inherits Window {
 
             // TAB 0: SPLIT
             if root.active_tab == 0: VerticalBox {
-                padding: 16px;
-                spacing: 12px;
+                padding: 14px;
+                spacing: 10px;
 
+                // 1. Quelldatei
                 Text {
-                    text: "Quelldatei für N-Way One-Time-Pad:";
+                    text: "1. Quelldatei für One-Time-Pad:";
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
                 }
-
                 HorizontalLayout {
                     spacing: 8px;
                     LineEdit {
                         text: root.split_file_path;
-                        placeholder-text: "Pfad zur Quelldatei...";
+                        placeholder-text: "Quelldatei auswählen...";
                         edited(val) => { root.split_file_path = val; }
                     }
                     Button {
-                        text: "Durchsuchen...";
+                        text: "Datei wählen...";
                         clicked => { root.request_select_file(); }
                     }
                 }
-
                 Text {
                     text: root.split_file_info;
                     color: #8b949e;
                     font-size: 12px;
                 }
 
+                // 2. Zielordner
+                Text {
+                    text: "2. Ausgabe-Zielordner (z. B. USB-Stick oder Verzeichnis):";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.split_target_dir;
+                        placeholder-text: "Standard: Gleiches Verzeichnis wie Quelldatei";
+                        edited(val) => { root.split_target_dir = val; }
+                    }
+                    Button {
+                        text: "Ordner wählen...";
+                        clicked => { root.request_select_split_target_dir(); }
+                    }
+                }
+
                 Rectangle { height: 1px; background: #30363d; }
 
+                // 3. Konfiguration: Shares & Köder
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Anzahl Shares (N = " + root.split_num_parts + "):";
+                        text: "Echte Shares (N = " + root.split_num_parts + "):";
                         color: #c9d1d9;
                         vertical-alignment: center;
                         min-width: 160px;
@@ -161,50 +182,78 @@ export component MainWindow inherits Window {
                         checked: root.split_enable_decoys;
                         toggled => { root.split_enable_decoys = !root.split_enable_decoys; }
                     }
-                    if root.split_enable_decoys: Text {
-                        text: "(+3 ChaCha20 Rauschdateien zur Verkehrsverschleierung)";
-                        color: #7ee787;
-                        font-size: 12px;
-                        vertical-alignment: center;
+                    if root.split_enable_decoys: HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Anzahl Köder (D = " + root.split_num_decoys + "):";
+                            color: #7ee787;
+                            vertical-alignment: center;
+                        }
+                        Slider {
+                            minimum: 1;
+                            maximum: 16;
+                            value: root.split_num_decoys;
+                            changed(val) => { root.split_num_decoys = Math.round(val); }
+                        }
                     }
                 }
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                ProgressIndicator {
-                    progress: root.split_progress;
-                }
-
-                Text {
-                    text: root.split_status;
-                    color: #58a6ff;
-                    font-size: 12px;
+                // Fortschritt & Action Button
+                HorizontalLayout {
+                    spacing: 12px;
+                    ProgressIndicator {
+                        progress: root.split_progress;
+                    }
+                    Text {
+                        text: root.split_status;
+                        color: #58a6ff;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
                 }
 
                 Button {
-                    text: root.split_in_progress ? "Wird verarbeitet..." : "🚀 Datei sicher aufteilen";
+                    text: root.split_in_progress ? "Teilung läuft..." : "🚀 Datei sicher aufteilen";
                     enabled: !root.split_in_progress && root.split_file_path != "";
                     clicked => { root.request_split(); }
+                }
+
+                // 4. Ausgabe-Protokoll (Echte Shares vs. Köder)
+                if root.split_results_log != "": VerticalBox {
+                    spacing: 4px;
+                    Text {
+                        text: "📋 Share-Zuordnung & Ergebnis-Protokoll (Wichtig für Rekonstruktion):";
+                        color: #7ee787;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                    TextEdit {
+                        text: root.split_results_log;
+                        read-only: true;
+                        height: 120px;
+                    }
                 }
             }
 
             // TAB 1: RESTORE
             if root.active_tab == 1: VerticalBox {
-                padding: 16px;
-                spacing: 12px;
+                padding: 14px;
+                spacing: 10px;
 
+                // 1. Shares Auswahl
                 Text {
-                    text: "Eingabe der RFS-Shares (mindestens 2 Teile):";
+                    text: "1. Eingabe der RFS-Shares (mindestens 2 Teile):";
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
                 }
-
                 HorizontalLayout {
                     spacing: 8px;
                     LineEdit {
                         text: root.restore_shares_input;
-                        placeholder-text: "Pfade durch Komma getrennt oder Datei auswählen...";
+                        placeholder-text: "Dateien auswählen oder Pfade komma-separiert eingeben...";
                         edited(val) => { root.restore_shares_input = val; }
                     }
                     Button {
@@ -212,19 +261,39 @@ export component MainWindow inherits Window {
                         clicked => { root.request_select_shares(); }
                     }
                 }
-
                 Text {
                     text: root.restore_detected_info;
                     color: #8b949e;
                     font-size: 12px;
                 }
 
+                // 2. Zielordner für Wiederherstellung
+                Text {
+                    text: "2. Ausgabe-Zielverzeichnis (optional):";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.restore_target_dir;
+                        placeholder-text: "Standard: Originalpfad aus RFS4-Footer";
+                        edited(val) => { root.restore_target_dir = val; }
+                    }
+                    Button {
+                        text: "Zielordner...";
+                        clicked => { root.request_select_restore_target_dir(); }
+                    }
+                }
+
                 Rectangle { height: 1px; background: #30363d; }
 
+                // Integritäts-Status
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Integritäts-Status:";
+                        text: "Integritäts-Prüfung:";
                         color: #c9d1d9;
                         vertical-alignment: center;
                     }
@@ -238,20 +307,40 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                ProgressIndicator {
-                    progress: root.restore_progress;
-                }
-
-                Text {
-                    text: root.restore_status;
-                    color: #58a6ff;
-                    font-size: 12px;
+                // Fortschritt & Action Button
+                HorizontalLayout {
+                    spacing: 12px;
+                    ProgressIndicator {
+                        progress: root.restore_progress;
+                    }
+                    Text {
+                        text: root.restore_status;
+                        color: #58a6ff;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
                 }
 
                 Button {
-                    text: root.restore_in_progress ? "Wird wiederhergestellt..." : "🔓 Originaldatei rekonstruieren";
+                    text: root.restore_in_progress ? "Wiederherstellung läuft..." : "🔓 Originaldatei rekonstruieren";
                     enabled: !root.restore_in_progress && root.restore_shares_input != "";
                     clicked => { root.request_restore(); }
+                }
+
+                // 3. Ergebnis-Protokoll
+                if root.restore_results_log != "": VerticalBox {
+                    spacing: 4px;
+                    Text {
+                        text: "📋 Wiederherstellungs-Bericht:";
+                        color: #7ee787;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                    TextEdit {
+                        text: root.restore_results_log;
+                        read-only: true;
+                        height: 100px;
+                    }
                 }
             }
         }

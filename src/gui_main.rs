@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
 
-    // Callback: Split File Dialog
+    // 1. Callback: Quelldatei-Auswahldialog
     let window_handle = main_window.as_weak();
     main_window.on_request_select_file(move || {
         if let Some(file) = rfd::FileDialog::new()
@@ -31,19 +31,41 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // 2. Callback: Zielordner für Split auswählen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_select_split_target_dir(move || {
+        if let Some(dir) = rfd::FileDialog::new()
+            .set_title("Zielverzeichnis für RFS-Shares auswählen (z. B. USB-Stick)")
+            .pick_folder()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_split_target_dir(dir.to_string_lossy().to_string().into());
+            }
+        }
+    });
+
+    // 3. Callback: Split ausführen
     let window_handle = main_window.as_weak();
     main_window.on_request_split(move || {
         if let Some(window) = window_handle.upgrade() {
             let path_str = window.get_split_file_path().to_string();
+            let target_dir_str = window.get_split_target_dir().to_string();
+            let target_prefix = if target_dir_str.trim().is_empty() {
+                None
+            } else {
+                Some(target_dir_str.trim().to_string())
+            };
+
             let parts = window.get_split_num_parts() as usize;
             let decoys = if window.get_split_enable_decoys() {
-                3
+                (window.get_split_num_decoys() as usize).max(1)
             } else {
                 0
             };
 
             window.set_split_in_progress(true);
             window.set_split_status("Teile Datei via ChaCha20 & SIMD-XOR...".into());
+            window.set_split_results_log("".into());
 
             let window_bg = window.as_weak();
             std::thread::spawn(move || {
@@ -53,7 +75,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     parts,
                     decoys,
                     None,
-                    None,
+                    target_prefix.as_deref(),
                     rfs_core::types::DEFAULT_BLOCK_SIZE,
                     rfs_core::telemetry::TelemetryMode::Silent,
                     false,
@@ -65,12 +87,34 @@ fn main() -> Result<(), slint::PlatformError> {
                     if let Some(w) = window_bg.upgrade() {
                         w.set_split_in_progress(false);
                         match res {
-                            Ok(_) => {
+                            Ok(split_res) => {
                                 w.set_split_progress(1.0);
-                                w.set_split_status("Erfolgreich aufgeteilt!".into());
+                                w.set_split_status("✅ Erfolgreich aufgeteilt!".into());
+
+                                let mut log = String::new();
+                                log.push_str(&format!(
+                                    "=== RFS4 AUFTEILUNG ERFOLGREICH (N={}, D={}) ===\n\n",
+                                    split_res.real_shares.len(),
+                                    split_res.decoy_shares.len()
+                                ));
+                                log.push_str("🔐 ECHTE SHARES (ZU 100% FÜR DIE WIEDERHERSTELLUNG NÖTIG):\n");
+                                for (i, p) in split_res.real_shares.iter().enumerate() {
+                                    log.push_str(&format!("  [Teil {}] {}\n", i + 1, p.display()));
+                                }
+
+                                if !split_res.decoy_shares.is_empty() {
+                                    log.push_str("\n🎭 KÖDERDATEIEN (DECOYS - REINES CHA-CHA20 RAUSCHEN ZUR TÄUSCHUNG):\n");
+                                    for (i, p) in split_res.decoy_shares.iter().enumerate() {
+                                        log.push_str(&format!("  [Köder {}] {}\n", i + 1, p.display()));
+                                    }
+                                }
+
+                                log.push_str("\nHINWEIS: Alle Dateien besitzen identische Cluster-Größen und neutrale Namen.");
+                                w.set_split_results_log(log.into());
                             }
                             Err(e) => {
                                 w.set_split_status(format!("Fehler: {}", e).into());
+                                w.set_split_results_log(format!("FEHLER BEIM SPLITTEN:\n{}", e).into());
                             }
                         }
                     }
@@ -79,7 +123,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    // Callback: Restore Shares Dialog
+    // 4. Callback: Restore Shares Dialog (Mehrfachauswahl)
     let window_handle = main_window.as_weak();
     main_window.on_request_select_shares(move || {
         if let Some(files) = rfd::FileDialog::new()
@@ -105,10 +149,31 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // 5. Callback: Zielordner für Wiederherstellung
+    let window_handle = main_window.as_weak();
+    main_window.on_request_select_restore_target_dir(move || {
+        if let Some(dir) = rfd::FileDialog::new()
+            .set_title("Zielverzeichnis für wiederhergestellte Datei auswählen")
+            .pick_folder()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_restore_target_dir(dir.to_string_lossy().to_string().into());
+            }
+        }
+    });
+
+    // 6. Callback: Restore ausführen
     let window_handle = main_window.as_weak();
     main_window.on_request_restore(move || {
         if let Some(window) = window_handle.upgrade() {
             let input_str = window.get_restore_shares_input().to_string();
+            let target_dir_str = window.get_restore_target_dir().to_string();
+            let output_target = if target_dir_str.trim().is_empty() {
+                None
+            } else {
+                Some(target_dir_str.trim().to_string())
+            };
+
             let part_paths: Vec<PathBuf> = input_str
                 .split(',')
                 .map(|s| PathBuf::from(s.trim()))
@@ -122,12 +187,13 @@ fn main() -> Result<(), slint::PlatformError> {
 
             window.set_restore_in_progress(true);
             window.set_restore_status("Rekonstruiere und prüfe BLKS-384 Integrität...".into());
+            window.set_restore_results_log("".into());
 
             let window_bg = window.as_weak();
             std::thread::spawn(move || {
                 let res = rfs_core::pipeline::restore_file(
                     &part_paths,
-                    None,
+                    output_target.as_deref(),
                     false,
                     rfs_core::telemetry::TelemetryMode::Silent,
                     false,
@@ -147,16 +213,31 @@ fn main() -> Result<(), slint::PlatformError> {
                                     format!("Erfolgreich wiederhergestellt: {}", path.display())
                                         .into(),
                                 );
+                                let mut log = String::new();
+                                log.push_str("=== WIEDERHERSTELLUNG ERFOLGREICH ===\n\n");
+                                log.push_str(&format!(
+                                    "📁 Rekonstruierte Datei: {}\n",
+                                    path.display()
+                                ));
+                                log.push_str("🛡️ BLKS-384 Integritätsprüfung: BESTANDEN [OK]\n");
+                                log.push_str("Status: Bitgenaue Übereinstimmung mit dem Original.");
+                                w.set_restore_results_log(log.into());
                             }
                             Ok(None) => {
                                 w.set_restore_progress(1.0);
                                 w.set_restore_integrity_badge("Gültig [OK]".into());
                                 w.set_restore_status("Verifikation erfolgreich [OK]".into());
+                                w.set_restore_results_log(
+                                    "Verifikation ohne Fehler abgeschlossen.".into(),
+                                );
                             }
                             Err(e) => {
                                 w.set_restore_integrity_badge("Fehler [Mismatch]".into());
                                 w.set_restore_status(
                                     format!("Wiederherstellungsfehler: {}", e).into(),
+                                );
+                                w.set_restore_results_log(
+                                    format!("FEHLER BEI DER WIEDERHERSTELLUNG:\n{}", e).into(),
                                 );
                             }
                         }

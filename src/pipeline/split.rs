@@ -18,6 +18,15 @@ use crate::naming::determine_split_paths;
 use crate::telemetry::{Telemetry, TelemetryMode};
 use crate::types::BLKS_DIGEST_SIZE;
 
+/// Result of a split operation, detailing genuine shares and decoy chaff files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitResult {
+    /// Generated genuine OTP shares required for file restoration
+    pub real_shares: Vec<PathBuf>,
+    /// Generated decoy files filled with pure ChaCha20 random noise
+    pub decoy_shares: Vec<PathBuf>,
+}
+
 /// Job for the asynchronous I/O writer in split mode
 pub(crate) struct WriteJob {
     pub(crate) bufs: Vec<Vec<u8>>,
@@ -43,7 +52,7 @@ pub fn split_stream_or_file(
     force: bool,
     direct_io: bool,
     mlock: bool,
-) -> Result<Vec<PathBuf>, String> {
+) -> Result<SplitResult, String> {
     // 1. Determine destination paths (<token6>.rfs default for maximum OPSEC)
     let (real_paths, decoy_paths, n_parts) = determine_split_paths(
         input_source,
@@ -441,7 +450,10 @@ pub fn split_stream_or_file(
         }
     }
 
-    Ok(out_paths)
+    Ok(SplitResult {
+        real_shares: out_paths,
+        decoy_shares: decoy_paths,
+    })
 }
 
 /// Convenience wrapper for backward compatibility (2 shares).
@@ -457,7 +469,7 @@ pub fn split_file(
     } else {
         TelemetryMode::Interactive
     };
-    let parts = split_stream_or_file(
+    let res = split_stream_or_file(
         input_path.to_str().unwrap_or("-"),
         None,
         2,
@@ -470,5 +482,5 @@ pub fn split_file(
         false,
         false,
     )?;
-    Ok((parts[0].clone(), parts[1].clone()))
+    Ok((res.real_shares[0].clone(), res.real_shares[1].clone()))
 }
