@@ -9,7 +9,7 @@ use crate::naming::generate_unique_hex_tokens;
 use crate::telemetry::{Telemetry, TelemetryMode};
 use crate::types::{self, RFS4_ALIGN_BLOCK_SIZE, RFS4_TRAILER_SIZE};
 
-/// Analysiert eine Musterdatei oder Größenangabe und berechnet transparent die Zielgröße für Decoys.
+/// Analyzes a template file or explicit size specification to compute target decoy file size.
 pub fn determine_decoy_size(
     template_path: Option<&Path>,
     explicit_size: Option<u64>,
@@ -18,7 +18,7 @@ pub fn determine_decoy_size(
     if let Some(target) = explicit_size {
         if interactive {
             eprintln!(
-                "[Decoy-Analyse] Explizite Zielgröße vorgegeben: {} Bytes ({}).",
+                "[Decoy Analysis] Explicit target size specified: {} bytes ({}).",
                 target,
                 crate::telemetry::format_bytes(target)
             );
@@ -28,10 +28,13 @@ pub fn determine_decoy_size(
 
     if let Some(path) = template_path {
         if !path.exists() {
-            return Err(format!("Musterdatei '{}' existiert nicht.", path.display()));
+            return Err(format!(
+                "Template file '{}' does not exist.",
+                path.display()
+            ));
         }
         let meta = fs::metadata(path)
-            .map_err(|e| format!("Kann Metadaten von '{}' nicht lesen: {}", path.display(), e))?;
+            .map_err(|e| format!("Cannot read metadata of '{}': {}", path.display(), e))?;
         let file_size = meta.len();
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
@@ -62,27 +65,25 @@ pub fn determine_decoy_size(
 
         if interactive {
             eprintln!(
-                "[Decoy-Analyse] Musterdatei: '{}' ({} Bytes / {})",
+                "[Decoy Analysis] Template file: '{}' ({} bytes / {})",
                 path.display(),
                 file_size,
                 crate::telemetry::format_bytes(file_size)
             );
             if rfs_detected {
+                eprintln!("[Decoy Detection] Type: Existing RFS share (.rfs extension detected).");
                 eprintln!(
-                    "[Decoy-Erkennung] Typ: Bestehende RFS-Split-Datei (.rfs-Dateiendung erkannt)."
-                );
-                eprintln!(
-                    "[Decoy-Berechnung] Exakte 1:1 Übernahme der Share-Größe: {} Bytes.",
+                    "[Decoy Computation] Exact 1:1 match of share size: {} bytes.",
                     target_size
                 );
             } else {
-                eprintln!("[Decoy-Erkennung] Typ: Rohdatei (Original-Klartext).");
+                eprintln!("[Decoy Detection] Type: Raw file (original plaintext).");
                 eprintln!(
-                    "[Decoy-Berechnung] RFS4-Footer + 4 KiB Cluster-Padding einkalkuliert: {} Bytes -> Zielgröße: {} Bytes.",
+                    "[Decoy Computation] Factoring in RFS4 footer + 4 KiB cluster padding: {} bytes -> Target size: {} bytes.",
                     file_size, target_size
                 );
                 eprintln!(
-                    "[Decoy-Begründung] Köderdateien müssen im Transportnetzwerk exakt dieselbe Bytegröße wie echte RFS-Shares besitzen."
+                    "[Decoy Rationale] Decoy chaff files must have the exact same byte size as genuine RFS shares across transport networks."
                 );
             }
         }
@@ -120,10 +121,13 @@ pub fn determine_decoy_size(
         return Ok((target_size, Some(base_name)));
     }
 
-    Err("Bitte geben Sie entweder eine Musterdatei (-t <DATEI>) oder eine explizite Größe (-s <GRÖSSE>) an.".to_string())
+    Err(
+        "Please provide either a template file (-t <FILE>) or an explicit size (-s <SIZE>)."
+            .to_string(),
+    )
 }
 
-/// Schreibt reines ChaCha20-Zufallsrauschen in die angegebenen Zieldateipfade.
+/// Writes pure ChaCha20 random noise to the specified destination file paths.
 pub fn write_decoy_files_to_paths(
     decoy_paths: &[PathBuf],
     target_size: u64,
@@ -154,13 +158,7 @@ pub fn write_decoy_files_to_paths(
             .create(true)
             .truncate(true)
             .open(path)
-            .map_err(|e| {
-                format!(
-                    "Kann Köderdatei '{}' nicht erstellen: {}",
-                    path.display(),
-                    e
-                )
-            })?;
+            .map_err(|e| format!("Cannot create decoy file '{}': {}", path.display(), e))?;
 
         if direct_io {
             crate::fadvise::advise_sequential(&f);
@@ -176,7 +174,7 @@ pub fn write_decoy_files_to_paths(
 
             writer
                 .write_all(&buffer[..to_write])
-                .map_err(|e| format!("Schreibfehler auf Köderdatei '{}': {}", path.display(), e))?;
+                .map_err(|e| format!("Write error on decoy file '{}': {}", path.display(), e))?;
 
             if direct_io {
                 crate::fadvise::advise_drop_cache(
@@ -194,7 +192,7 @@ pub fn write_decoy_files_to_paths(
 
         writer
             .flush()
-            .map_err(|e| format!("Flush-Fehler auf Köderdatei '{}': {}", path.display(), e))?;
+            .map_err(|e| format!("Flush error on decoy file '{}': {}", path.display(), e))?;
     }
 
     buffer.as_mut_slice().zeroize();
@@ -202,7 +200,7 @@ pub fn write_decoy_files_to_paths(
     Ok(())
 }
 
-/// Erzeugt eine beliebige Anzahl von Köderdateien (Decoys) gefüllt mit ChaCha20-CSPRNG-Zufallsrauschen.
+/// Generates an arbitrary number of decoy files filled with ChaCha20-CSPRNG random noise.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_decoy_files(
     target_size: u64,
@@ -219,12 +217,12 @@ pub fn generate_decoy_files(
         return Ok(Vec::new());
     }
     if count > 1000 {
-        return Err("Anzahl der Köderdateien darf höchstens 1000 betragen.".to_string());
+        return Err("Number of decoy files must not exceed 1000.".to_string());
     }
 
     let tokens = generate_unique_hex_tokens(count);
 
-    // 1. Zieldateipfade ableiten (<token6>.rfs für maximale OPSEC)
+    // 1. Derive destination paths (<token6>.rfs for maximum OPSEC)
     let mut decoy_paths: Vec<PathBuf> = Vec::with_capacity(count);
     for idx in 1..=count {
         let t = &tokens[idx - 1];
@@ -245,11 +243,11 @@ pub fn generate_decoy_files(
         decoy_paths.push(path);
     }
 
-    // 2. Kollisionsprüfung
+    // 2. Collision detection
     for p in &decoy_paths {
         if p.exists() && !force {
             return Err(format!(
-                "Köderdatei '{}' existiert bereits. Verwenden Sie -f / --force zum Überschreiben.",
+                "Decoy file '{}' already exists. Use -f / --force to overwrite.",
                 p.display()
             ));
         }
@@ -265,16 +263,16 @@ pub fn generate_decoy_files(
 
     if telemetry_mode == TelemetryMode::Interactive {
         let mode_desc = if token_mode {
-            "Token-Modus"
+            "Token Mode"
         } else {
-            "100% ChaCha20-Zufallsrauschen"
+            "100% ChaCha20 random noise"
         };
         eprintln!(
-            "Erfolgreich {} Köderdatei(en) (Decoys) generiert ({}):",
+            "Successfully generated {} decoy file(s) ({}):",
             count, mode_desc
         );
         for (i, p) in decoy_paths.iter().enumerate() {
-            eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), target_size);
+            eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), target_size);
         }
     }
 

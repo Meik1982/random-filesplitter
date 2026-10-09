@@ -393,7 +393,9 @@ fn test_decoy_generation_standalone_and_during_split() {
     let stderr_str = String::from_utf8_lossy(&split_decoy.stderr);
     let mut real_shares = Vec::new();
     for line in stderr_str.lines() {
-        if line.trim().starts_with("Teil ") && line.contains(".rfs") {
+        let trimmed = line.trim();
+        if (trimmed.starts_with("Share ") || trimmed.starts_with("Teil ")) && line.contains(".rfs")
+        {
             let part_str = line.split(':').nth(1).unwrap().trim();
             real_shares.push(PathBuf::from(part_str));
         }

@@ -50,7 +50,7 @@ fn main() {
         }
         CliCommand::Analyze { file, json_mode } => {
             if let Err(e) = entropy::analyze_file_entropy(&file, json_mode) {
-                eprintln!("Fehler: {}", e);
+                eprintln!("Error: {}", e);
                 process::exit(1);
             }
             process::exit(0);
@@ -84,7 +84,7 @@ fn main() {
                 Ok(_) => process::exit(0),
                 Err(e) => {
                     if telemetry_mode != telemetry::TelemetryMode::Json {
-                        eprintln!("Fehler beim Splitten: {}", e);
+                        eprintln!("Error during split: {}", e);
                     }
                     process::exit(1);
                 }
@@ -112,14 +112,14 @@ fn main() {
                 Ok(restored_path_opt) => {
                     if telemetry_mode == telemetry::TelemetryMode::Interactive {
                         if let Some(restored) = restored_path_opt {
-                            println!("Erfolgreich wiederhergestellt: {}", restored.display());
+                            println!("Successfully restored: {}", restored.display());
                         }
                     }
                     process::exit(0);
                 }
                 Err(e) => {
                     if telemetry_mode != telemetry::TelemetryMode::Json {
-                        eprintln!("Fehler bei der Wiederherstellung: {}", e);
+                        eprintln!("Error during restoration: {}", e);
                     }
                     process::exit(1);
                 }
@@ -146,7 +146,7 @@ fn main() {
                 Ok(_) => process::exit(0),
                 Err(e) => {
                     if telemetry_mode != telemetry::TelemetryMode::Json {
-                        eprintln!("Fehler bei der Verifikation: {}", e);
+                        eprintln!("Error during verification: {}", e);
                     }
                     process::exit(1);
                 }
@@ -168,7 +168,7 @@ fn main() {
                 match decoy::determine_decoy_size(template.as_deref(), size, interactive) {
                     Ok(res) => res,
                     Err(e) => {
-                        eprintln!("Fehler: {}", e);
+                        eprintln!("Error: {}", e);
                         process::exit(1);
                     }
                 };
@@ -185,7 +185,7 @@ fn main() {
                 direct_io,
             ) {
                 if telemetry_mode != telemetry::TelemetryMode::Json {
-                    eprintln!("Fehler bei der Köder-Erzeugung: {}", e);
+                    eprintln!("Error generating decoys: {}", e);
                 }
                 process::exit(1);
             }

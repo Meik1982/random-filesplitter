@@ -1,7 +1,7 @@
-//! Statistische Mathematik & NIST SP 800-22 Verteilungsfunktionen.
+//! Statistical mathematics & NIST SP 800-22 distribution functions.
 
-/// Komplementäre Fehlerfunktion erfc(x) mit hoher Präzision (Abramowitz & Stegun 7.1.26).
-/// Maximaler Fehler: < 1.5e-7 über den gesamten Definitionsbereich.
+/// High-precision complementary error function erfc(x) (Abramowitz & Stegun 7.1.26).
+/// Maximum error: < 1.5e-7 across full domain.
 pub fn erfc(x: f64) -> f64 {
     if x < 0.0 {
         return 2.0 - erfc(-x);
@@ -14,7 +14,7 @@ pub fn erfc(x: f64) -> f64 {
     poly * (-x * x).exp()
 }
 
-/// Berechnet den P-Wert für Chi-Quadrat mit $k$ Freiheitsgraden via Wilson-Hilferty Transformation.
+/// Calculates p-value for Chi-Square distribution with k degrees of freedom via Wilson-Hilferty transformation.
 pub fn chi_square_p_value(chi_square: f64, k: f64) -> f64 {
     if k <= 0.0 || chi_square < 0.0 {
         return 0.0;
@@ -24,9 +24,9 @@ pub fn chi_square_p_value(chi_square: f64, k: f64) -> f64 {
     (0.5 * erfc(z / std::f64::consts::SQRT_2)).clamp(0.0, 1.0)
 }
 
-/// Berechnet den NIST SP 800-22 Runs Test P-Wert (Bit-Dynamik).
+/// Calculates NIST SP 800-22 Runs Test p-value (bit transitions).
 ///
-/// Liefert `(p_value, passed)`.
+/// Returns `(p_value, passed)`.
 pub fn calculate_runs_test(pi_ones: f64, transitions: u64, total_bits: f64) -> (f64, bool) {
     if total_bits <= 0.0 {
         return (0.0, false);
@@ -47,9 +47,9 @@ pub fn calculate_runs_test(pi_ones: f64, transitions: u64, total_bits: f64) -> (
     (p_value, p_value >= 0.01)
 }
 
-/// Berechnet den NIST SP 800-22 Block-Frequenztest P-Wert ($M=128$).
+/// Calculates NIST SP 800-22 Block Frequency Test p-value ($M=128$).
 ///
-/// Liefert `(p_value, passed)`.
+/// Returns `(p_value, passed)`.
 pub fn calculate_block_frequency_test(block_chi_sum: f64, num_blocks: u64) -> (f64, bool) {
     if num_blocks == 0 {
         return (1.0, true);

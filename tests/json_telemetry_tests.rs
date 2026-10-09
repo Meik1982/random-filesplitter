@@ -164,7 +164,11 @@ fn test_json_telemetry_error_event() {
     for line in stderr_str.lines() {
         if line.contains("\"event\":\"error\"") {
             found_error_event = true;
-            assert!(line.contains("\"Integritätsfehler"));
+            assert!(
+                line.contains("\"Integritätsfehler") || line.contains("Integrity"),
+                "Unerwartete Fehlermeldung im Event: {}",
+                line
+            );
         }
     }
     assert!(

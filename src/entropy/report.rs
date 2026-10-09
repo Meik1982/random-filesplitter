@@ -1,4 +1,4 @@
-//! Interaktive und maschinenlesbare Entropie-Diagnose und Kryptoanalyse-Reports.
+//! Interactive and machine-readable entropy diagnostics and cryptanalytic reports.
 
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -11,13 +11,13 @@ use super::harvester::{
 };
 use super::stats::{calculate_block_frequency_test, calculate_runs_test};
 
-/// Anzahl der Jitter-Stichproben für Phase 1
+/// Number of jitter samples for Phase 1
 const JITTER_SAMPLES: usize = 2048;
 
-/// Größe des Teststroms für Phase 2 (1 MiB)
+/// Size of test keystream for Phase 2 (1 MiB)
 const PHASE2_STREAM_SIZE: usize = 1024 * 1024;
 
-/// Führt die zweiphasige Entropiediagnose der lokalen Systemumgebung aus.
+/// Runs the two-phase system entropy diagnostics.
 #[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn run_entropy_diagnostics() -> i32 {
     println!("============================================================");
@@ -269,8 +269,8 @@ pub fn run_entropy_diagnostics() -> i32 {
     }
 }
 
-/// Führt eine kryptoanalytische Datei-Entropieanalyse für eine gegebene Datei durch.
-/// Unterstützt sowohl interaktiven Klartext als auch maschinenlesbares JSON.
+/// Performs cryptanalytic file entropy analysis on a given file.
+/// Supports both human-readable terminal output and machine-readable JSON.
 pub fn analyze_file_entropy(path: &Path, json_mode: bool) -> Result<(), String> {
     let file = File::open(path).map_err(|e| format!("Fehler beim Öffnen der Datei: {}", e))?;
     let mut reader = BufReader::new(file);

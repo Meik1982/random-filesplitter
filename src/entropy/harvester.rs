@@ -1,9 +1,9 @@
-//! Hardware-nahes Entropie-Harvesting mit 2 MB Sattolo Cache-Line Permutationspool.
+//! Hardware-level entropy harvesting with a 2 MB Sattolo cache-line permutation pool.
 
 use std::time::Instant;
 
-/// 32K Elemente * 64 Bytes (1 Cache-Line) = 2 MB Puffer
-/// Sprengt L1 und L2 Caches zur Erzeugung von echter Hardware- und Bus-Latenz
+/// 32K elements * 64 bytes (1 cache line) = 2 MB buffer
+/// Exceeds L1 and L2 caches to generate genuine hardware and bus latency
 pub(crate) const POOL_NODES: usize = 32768;
 
 #[repr(C, align(64))]
@@ -25,20 +25,20 @@ pub(crate) fn init_permutation_pool(pool: &mut [CacheLineNode], seed_val: u64) {
     }
 }
 
-/// Universeller Entropie-Harvester: Erntet hochwertige 256-Bit Schlüssel und 96-Bit Nonce.
+/// Universal entropy harvester: Gathers high-grade 256-bit keys and 96-bit nonces.
 pub struct UniversalEntropyHarvester;
 
 impl UniversalEntropyHarvester {
-    /// Erntet kryptografisch sichere 32-Byte Key und 12-Byte Nonce mit automatischer RAII-Nullung
+    /// Harvests cryptographically secure 32-byte key and 12-byte nonce with automatic RAII zeroization
     pub fn harvest_seed() -> (zeroize::Zeroizing<[u8; 32]>, zeroize::Zeroizing<[u8; 12]>) {
         let mut key = zeroize::Zeroizing::new([0u8; 32]);
         let mut nonce = zeroize::Zeroizing::new([0u8; 12]);
 
-        // 1. Primärquelle: OS-Kernel CSPRNG (getrandom)
-        getrandom::getrandom(key.as_mut_slice()).expect("OS CSPRNG Fehler bei Key");
-        getrandom::getrandom(nonce.as_mut_slice()).expect("OS CSPRNG Fehler bei Nonce");
+        // 1. Primary source: OS kernel CSPRNG (getrandom)
+        getrandom::getrandom(key.as_mut_slice()).expect("OS CSPRNG error for key");
+        getrandom::getrandom(nonce.as_mut_slice()).expect("OS CSPRNG error for nonce");
 
-        // 2. Defence-in-Depth: CPU-Jitter und High-Res Clock einmischen
+        // 2. Defense-in-depth: Mix in CPU jitter and high-resolution timer
         let now = Instant::now();
         let nanos = now.elapsed().as_nanos();
         let jitter = Self::sample_cpu_jitter();
@@ -53,7 +53,7 @@ impl UniversalEntropyHarvester {
         (key, nonce)
     }
 
-    /// Schneller CPU-Jitter-Sampler für Entropie-Mischung
+    /// Fast CPU jitter sampler for entropy mixing
     fn sample_cpu_jitter() -> [u8; 16] {
         let mut out = [0u8; 16];
         let mut prev = Instant::now();

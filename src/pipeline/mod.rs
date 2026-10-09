@@ -16,5 +16,5 @@ pub use crate::decoy::{determine_decoy_size, generate_decoy_files};
 #[allow(unused_imports)]
 pub use crate::naming::{generate_unique_hex_tokens, shuffle_paths};
 
-/// Puffer-Poolgröße für Triple-Buffering (3 Puffer-Slots in-flight)
+/// Buffer pool size for zero-allocation triple-buffering (3 slots in-flight)
 pub const BUFFER_POOL_SIZE: usize = 3;

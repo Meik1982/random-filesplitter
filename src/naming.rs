@@ -5,7 +5,7 @@ use zeroize::Zeroize;
 use crate::crypto::ChaChaRng;
 use crate::entropy::UniversalEntropyHarvester;
 
-/// Generiert `count` kryptografisch unkorrelierte, eindeutige 6-stellige Hex-Tokens (z. B. "a9f4c2").
+/// Generates `count` cryptographically uncorrelated, unique 6-character hex tokens (e.g., "a9f4c2").
 pub fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
     let (mut key, mut nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut rng = ChaChaRng::new(&key, &nonce);
@@ -25,7 +25,7 @@ pub fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
     tokens
 }
 
-/// Verwürfelt Pfade in-place via ChaCha20 Fisher-Yates Shuffle.
+/// Shuffles paths in-place via ChaCha20 Fisher-Yates shuffle.
 pub fn shuffle_paths(paths: &mut [PathBuf]) {
     if paths.len() <= 1 {
         return;
@@ -43,9 +43,9 @@ pub fn shuffle_paths(paths: &mut [PathBuf]) {
     }
 }
 
-/// Bestimmt alle Ausgabepfade für Shares und Köderdateien (Decoys).
+/// Determines all output paths for shares and decoy files.
 ///
-/// Liefert ein Tupel `(real_paths, decoy_paths, n_parts)`.
+/// Returns a tuple `(real_paths, decoy_paths, n_parts)`.
 pub fn determine_split_paths(
     input_source: &str,
     output_parts: Option<&[PathBuf]>,
@@ -55,9 +55,7 @@ pub fn determine_split_paths(
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>, usize), String> {
     if let Some(parts) = output_parts {
         if parts.len() < 2 || parts.len() > 64 {
-            return Err(
-                "Anzahl der expliziten Ausgabeteile muss zwischen 2 und 64 liegen.".to_string(),
-            );
+            return Err("Number of explicit output shares must be between 2 and 64.".to_string());
         }
         Ok((parts.to_vec(), Vec::new(), parts.len()))
     } else {
@@ -99,7 +97,7 @@ pub fn determine_split_paths(
     }
 }
 
-/// Ermittelt den Zielpfad für die Wiederherstellung (`restore`).
+/// Deduces target output path for restoration (`restore`).
 pub fn deduce_restore_target(
     part_paths: &[PathBuf],
     output_target: Option<&str>,
@@ -152,12 +150,12 @@ pub fn deduce_restore_target(
     }
 }
 
-/// Prüft, ob der Zielpfad mit einer der Quelldateien kollidiert.
+/// Checks whether destination target path collides with any input share file.
 pub fn check_destination_collision(target: &Path, part_paths: &[PathBuf]) -> Result<(), String> {
     for (idx, p) in part_paths.iter().enumerate() {
         if target == p {
             return Err(format!(
-                "Zieldatei '{}' darf nicht identisch mit Quellteil {} sein (Gefahr des Datenverlusts).",
+                "Target file '{}' must not be identical to source share {} (risk of data loss).",
                 target.display(),
                 idx + 1
             ));
@@ -190,7 +188,7 @@ mod tests {
         let original = paths.clone();
         shuffle_paths(&mut paths);
         assert_eq!(paths.len(), original.len());
-        // Wahrscheinlichkeit für identische Permutation bei 20 Elementen ist ~ 1 / 20!
+        // Probability of identical permutation with 20 elements is ~ 1 / 20!
         assert_ne!(paths, original);
     }
 

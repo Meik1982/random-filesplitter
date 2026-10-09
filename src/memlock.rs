@@ -1,11 +1,10 @@
-//! Plattformübergreifendes Memory-Locking (`mlock` / `munlock`) zur Verhinderung
-//! von Auslagerungen kryptografischer Daten und OTP-Puffer in Swap-Dateien.
+//! Cross-platform memory locking (`mlock` / `munlock`) to prevent paging
+//! cryptographic key material and OTP buffers to disk swap partitions or hibernation files.
 
-/// Sperrt einen Byte-Puffer im physischen RAM via `libc::mlock`.
+/// Locks a byte slice in physical RAM via `libc::mlock`.
 ///
-/// Liefert `true`, wenn die Seiten erfolgreich gesperrt wurden,
-/// oder `false`, falls das Betriebssystem oder Ressourcenlimits (`RLIMIT_MEMLOCK`)
-/// dies verweigern.
+/// Returns `true` if pages were successfully locked,
+/// or `false` if OS policies or resource limits (`RLIMIT_MEMLOCK`) denied the request.
 pub fn lock_memory(slice: &[u8]) -> bool {
     #[cfg(unix)]
     {
@@ -22,7 +21,7 @@ pub fn lock_memory(slice: &[u8]) -> bool {
     }
 }
 
-/// Hebt die physische RAM-Sperrung für einen Byte-Puffer via `libc::munlock` auf.
+/// Unlocks a previously locked byte slice via `libc::munlock`.
 #[allow(dead_code)]
 pub fn unlock_memory(slice: &[u8]) {
     #[cfg(unix)]
@@ -46,7 +45,7 @@ mod tests {
     #[test]
     fn test_lock_and_unlock_memory() {
         let buf = vec![0x42u8; 4096];
-        // Test darf niemals panicken, selbst wenn ulimit -l mlock einschränkt
+        // Must never panic even when ulimit -l restricts mlock
         let _ = lock_memory(&buf);
         unlock_memory(&buf);
     }

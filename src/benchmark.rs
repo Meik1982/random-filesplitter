@@ -7,27 +7,30 @@ use sha2::{Digest, Sha256};
 use std::time::Instant;
 use zeroize::Zeroize;
 
-/// Führt den vollständigen Hardware- und Krypto-Benchmark durch.
+/// Runs full hardware and cryptographic benchmark.
 pub fn run_benchmark() -> i32 {
     println!("============================================================");
-    println!(" RFS v3.0.0 Hardware-Benchmark (Rust & BLKS-384 Durchsatz)");
+    println!(" RFS v3.0.0 Hardware Benchmark (Rust & BLKS-384 Throughput)");
     println!("============================================================\n");
 
-    const BENCH_BUF_SIZE: usize = 4 * 1024 * 1024; // 4 MB Block
-    const TOTAL_BENCH_BYTES: usize = 256 * 1024 * 1024; // 256 MB Gesamtlast
+    const BENCH_BUF_SIZE: usize = 4 * 1024 * 1024; // 4 MB block
+    const TOTAL_BENCH_BYTES: usize = 256 * 1024 * 1024; // 256 MB total payload
 
     let mut buf_a = vec![0x55u8; BENCH_BUF_SIZE];
     let mut buf_b = vec![0xAAu8; BENCH_BUF_SIZE];
     let mut buf_out = vec![0u8; BENCH_BUF_SIZE];
 
-    // [1/4] Entropie-Harvesting
+    // [1/4] Entropy harvesting
     let t_start_entropy = Instant::now();
     let (key, nonce) = UniversalEntropyHarvester::harvest_seed();
     let entropy_dur = t_start_entropy.elapsed();
 
-    println!(" [1/4] Entropie-Harvesting (CPU-Jitter + ASLR + OS CSPRNG):");
-    println!("       Dauer: {:.2} ms", entropy_dur.as_secs_f64() * 1000.0);
-    println!("       Status: 256-Bit Key & 96-Bit Nonce erfolgreich extrahiert.\n");
+    println!(" [1/4] Entropy Harvesting (CPU Jitter + ASLR + OS CSPRNG):");
+    println!(
+        "       Duration: {:.2} ms",
+        entropy_dur.as_secs_f64() * 1000.0
+    );
+    println!("       Status:   256-bit key & 96-bit nonce extracted successfully.\n");
 
     // [2/4] ChaCha20 CSPRNG
     let mut rng = ChaChaRng::new(&key, &nonce);
@@ -42,12 +45,12 @@ pub fn run_benchmark() -> i32 {
     let chacha_speed_mb = (TOTAL_BENCH_BYTES as f64 / (1024.0 * 1024.0)) / chacha_secs;
 
     println!(
-        " [2/4] ChaCha20 CSPRNG Durchsatz [SIMD Streaming]:\n       Geschwindigkeit: {:.2} MB/s ({:.2} GB/s)\n",
+        " [2/4] ChaCha20 CSPRNG Throughput [SIMD Streaming]:\n       Throughput: {:.2} MB/s ({:.2} GB/s)\n",
         chacha_speed_mb,
         chacha_speed_mb / 1024.0
     );
 
-    // [3/4] RAM-zu-RAM SIMD XOR
+    // [3/4] RAM-to-RAM SIMD XOR
     let t_start_xor = Instant::now();
     let mut xor_processed = 0usize;
 
@@ -59,7 +62,7 @@ pub fn run_benchmark() -> i32 {
     let xor_speed_mb = (TOTAL_BENCH_BYTES as f64 / (1024.0 * 1024.0)) / xor_secs;
 
     println!(
-        " [3/4] Vektorisiertes SIMD-XOR Durchsatz (RAM-zu-RAM):\n       Geschwindigkeit: {:.2} MB/s ({:.2} GB/s)\n",
+        " [3/4] Vectorized SIMD-XOR Throughput (RAM-to-RAM):\n       Throughput: {:.2} MB/s ({:.2} GB/s)\n",
         xor_speed_mb,
         xor_speed_mb / 1024.0
     );
@@ -90,7 +93,7 @@ pub fn run_benchmark() -> i32 {
     let sha_speed_mb = (TOTAL_BENCH_BYTES as f64 / (1024.0 * 1024.0)) / sha_secs;
 
     println!(
-        " [4/4] Krypto-Hash-Vergleich:\n       BLKS-384 (Post-Quantum Merkle-Tree): {:.2} MB/s ({:.2} GB/s) 🚀\n       SHA-256  (Standard-Referenz):        {:.2} MB/s ({:.2} GB/s)\n       Speedup durch BLKS:                  {:.1}x schneller!\n",
+        " [4/4] Cryptographic Hash Comparison:\n       BLKS-384 (Post-Quantum Merkle-Tree): {:.2} MB/s ({:.2} GB/s) 🚀\n       SHA-256  (Standard Reference):       {:.2} MB/s ({:.2} GB/s)\n       Speedup with BLKS:                   {:.1}x faster!\n",
         blks_speed_mb,
         blks_speed_mb / 1024.0,
         sha_speed_mb,
@@ -99,10 +102,10 @@ pub fn run_benchmark() -> i32 {
     );
 
     println!(
-        "Fazit: Mit BLKS-384 ({:.1} GB/s) ist der frühere SHA-256 Flaschenhals vollständig beseitigt.",
+        "Conclusion: With BLKS-384 ({:.1} GB/s), the former SHA-256 bottleneck is completely eliminated.",
         blks_speed_mb / 1024.0
     );
-    println!("RFS v3.0.0 erreicht maximale Pipeline- und NVMe-Effizienz.\n");
+    println!("RFS v3.0.0 achieves maximum pipeline and NVMe saturation.\n");
 
     buf_a.zeroize();
     buf_b.zeroize();

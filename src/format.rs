@@ -8,20 +8,20 @@ use crate::types::{
 };
 use zeroize::Zeroize;
 
-/// Unterstützte RFS-Metadatenformate
+/// Supported RFS metadata formats
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RfsMetadata {
-    /// Historisches RFS2-Format (SHA-256)
+    /// Legacy RFS2 format (SHA-256)
     Rfs2 {
         expected_sha256: [u8; SHA256_DIGEST_SIZE],
         original_size: u64,
     },
-    /// Post-Quantum RFS3-Format (BLKS-384)
+    /// Post-Quantum RFS3 format (BLKS-384)
     Rfs3 {
         expected_blks: [u8; BLKS_DIGEST_SIZE],
         original_size: u64,
     },
-    /// Post-Quantum RFS4-Format mit eingebettetem Dateinamen & Block-Padding
+    /// Post-Quantum RFS4 format with embedded filename & block padding
     Rfs4 {
         expected_blks: [u8; BLKS_DIGEST_SIZE],
         original_size: u64,
@@ -31,7 +31,7 @@ pub enum RfsMetadata {
 }
 
 impl RfsMetadata {
-    /// Liefert die Roh-Größe des Footers in Bytes.
+    /// Returns raw footer size in bytes.
     #[allow(dead_code)]
     pub fn footer_size(&self) -> usize {
         match self {
@@ -41,7 +41,7 @@ impl RfsMetadata {
         }
     }
 
-    /// Liefert die erwartete Originalgröße der Datei.
+    /// Returns expected original file size.
     pub fn original_size(&self) -> u64 {
         match *self {
             RfsMetadata::Rfs2 { original_size, .. } => original_size,
@@ -50,7 +50,7 @@ impl RfsMetadata {
         }
     }
 
-    /// Liefert den eingebetteten Dateinamen (nur bei RFS4).
+    /// Returns embedded original filename (RFS4 only).
     pub fn filename(&self) -> Option<&str> {
         match self {
             RfsMetadata::Rfs4 { filename, .. } => Some(filename.as_str()),
@@ -59,8 +59,8 @@ impl RfsMetadata {
     }
 }
 
-/// Berechnet das nötige Padding und codiert den RFS4-Trailer + Dateinamen für N Teile ($N \ge 2$).
-/// Liefert für jeden Teil die anzuhängenden Bytes (Zufalls-Padding + UTF8-Dateiname + 64B Trailer).
+/// Calculates required padding and encodes RFS4 trailer + filename for N shares ($N \ge 2$).
+/// Returns the byte sequence to append to each share (random padding + UTF-8 filename + 64B trailer).
 pub fn encode_rfs4_footer_n_way(
     blks_digest: &[u8; BLKS_DIGEST_SIZE],
     original_size: u64,
@@ -69,15 +69,15 @@ pub fn encode_rfs4_footer_n_way(
     pad_to_target: Option<u64>,
     rng: &mut ChaChaRng,
 ) -> Result<Vec<Vec<u8>>, String> {
-    assert!(num_parts >= 2, "Mindestens 2 Teile erforderlich");
+    assert!(num_parts >= 2, "At least 2 shares required");
 
     let filename_bytes = filename.as_bytes();
     if filename_bytes.len() > 65535 {
-        return Err("Dateiname ist zu lang für RFS4-Footer (maximal 65535 Bytes).".to_string());
+        return Err("Filename is too long for RFS4 footer (maximum 65535 bytes).".to_string());
     }
     let filename_len = filename_bytes.len();
 
-    // 1. Fester 64-Byte Trailer
+    // 1. Fixed 64-byte trailer
     let mut plain_trailer = [0u8; RFS4_TRAILER_SIZE];
     plain_trailer[0..4].copy_from_slice(&RFS4_MAGIC);
     plain_trailer[4..6].copy_from_slice(&[0x04, 0x00]);
@@ -85,25 +85,25 @@ pub fn encode_rfs4_footer_n_way(
     plain_trailer[14..62].copy_from_slice(blks_digest);
     plain_trailer[62..64].copy_from_slice(&(filename_len as u16).to_le_bytes());
 
-    // 2. Mindestgröße für den gesamten Share: Originalgröße + Dateiname + 64B Trailer
+    // 2. Minimum share size: original size + filename + 64B trailer
     let min_share_size = original_size
         .checked_add((filename_len + RFS4_TRAILER_SIZE) as u64)
-        .ok_or_else(|| "Dateigrößen-Überlauf bei Footer-Berechnung".to_string())?;
+        .ok_or_else(|| "File size overflow during footer calculation".to_string())?;
 
-    // 3. Ziel-Share-Größe berechnen
+    // 3. Calculate target share size
     let total_share_size = if let Some(target) = pad_to_target {
         if target < min_share_size {
             return Err(format!(
-                "Gewünschte Zielgröße ({} Bytes) ist kleiner als die Mindestgröße für RFS4 ({} Bytes).",
+                "Requested target size ({} bytes) is smaller than minimum required size for RFS4 ({} bytes).",
                 target, min_share_size
             ));
         }
         target
     } else {
-        // Standard: Auf volle 4 KiB (4096 Bytes) aufrunden
+        // Default: Align to full 4 KiB (4096 bytes)
         let rem = min_share_size % RFS4_ALIGN_BLOCK_SIZE as u64;
         if rem == 0 {
-            // Wenn exakt aligned, einen vollen 4 KiB Block Padding ergänzen, damit immer Rauschen vor dem Namen liegt
+            // If exact match, pad one full 4 KiB block to ensure noise precedes filename
             min_share_size + RFS4_ALIGN_BLOCK_SIZE as u64
         } else {
             min_share_size + (RFS4_ALIGN_BLOCK_SIZE as u64 - rem)
@@ -113,7 +113,7 @@ pub fn encode_rfs4_footer_n_way(
     let tail_len = (total_share_size - original_size) as usize;
     let padding_len = tail_len - filename_len - RFS4_TRAILER_SIZE;
 
-    // 4. Zusammensetzen des unverschlüsselten Endbereichs (Padding + Dateiname + Trailer)
+    // 4. Assemble plaintext tail area (padding + filename + trailer)
     let mut plain_tail = vec![0u8; tail_len];
     for b in &mut plain_tail[0..padding_len] {
         *b = rng.next_u8();
@@ -121,7 +121,7 @@ pub fn encode_rfs4_footer_n_way(
     plain_tail[padding_len..padding_len + filename_len].copy_from_slice(filename_bytes);
     plain_tail[padding_len + filename_len..tail_len].copy_from_slice(&plain_trailer);
 
-    // 5. N-Way One-Time-Pad Verteilung
+    // 5. N-Way One-Time-Pad distribution
     let mut footers: Vec<Vec<u8>> = Vec::with_capacity(num_parts);
     let mut part1 = plain_tail.clone();
 
@@ -141,20 +141,14 @@ pub fn encode_rfs4_footer_n_way(
     Ok(footers)
 }
 
-/// Codiert den RFS3-Metadaten-Footer für beliebig viele $N$ Teile ($N \ge 2$).
-///
-/// Jeder Teil $k \in 2..=N$ erhält 60 Bytes kryptografisches Rauschen.
-/// Teil 1 schließt die One-Time-Pad-Kette:
-///   Footer_1 = Plain_Footer ^ Footer_2 ^ ... ^ Footer_N.
-///
-/// Dadurch ist JEDER Teil isoliert zu 100 % ununterscheidbar von weißem Rauschen.
+/// Encodes RFS3 metadata footer for arbitrary $N$ shares ($N \ge 2$).
 pub fn encode_rfs3_footer_n_way(
     blks_digest: &[u8; BLKS_DIGEST_SIZE],
     original_size: u64,
     num_parts: usize,
     rng: &mut ChaChaRng,
 ) -> Vec<[u8; RFS3_FOOTER_SIZE]> {
-    assert!(num_parts >= 2, "Mindestens 2 Teile erforderlich");
+    assert!(num_parts >= 2, "At least 2 shares required");
 
     let mut plain_footer = [0u8; RFS3_FOOTER_SIZE];
     plain_footer[0..4].copy_from_slice(&RFS3_MAGIC);
@@ -165,7 +159,7 @@ pub fn encode_rfs3_footer_n_way(
     let mut footers: Vec<[u8; RFS3_FOOTER_SIZE]> = Vec::with_capacity(num_parts);
     let mut part1 = plain_footer;
 
-    // Erzeuge Zufalls-Footer für Teile 2..N
+    // Generate random footers for shares 2..N
     for _ in 1..num_parts {
         let mut part_k = [0u8; RFS3_FOOTER_SIZE];
         for b in part_k.iter_mut() {
@@ -177,13 +171,12 @@ pub fn encode_rfs3_footer_n_way(
         footers.push(part_k);
     }
 
-    // Teil 1 als erstes Element einfügen
     footers.insert(0, part1);
     plain_footer.zeroize();
     footers
 }
 
-/// Codiert den RFS3-Metadaten-Footer für 2 Teile (Standard-Fall).
+/// Encodes RFS3 metadata footer for 2 shares (standard case).
 #[allow(dead_code)]
 pub fn encode_rfs3_footer(
     blks_digest: &[u8; BLKS_DIGEST_SIZE],
@@ -196,7 +189,7 @@ pub fn encode_rfs3_footer(
     (f1, f2)
 }
 
-/// Codiert den RFS2-Metadaten-Footer (Legacy-Format) für Rückwärtskompatibilität.
+/// Encodes legacy RFS2 metadata footer for backward compatibility.
 #[allow(dead_code)]
 pub fn encode_rfs2_footer(
     sha256_digest: &[u8; SHA256_DIGEST_SIZE],
@@ -222,21 +215,20 @@ pub fn encode_rfs2_footer(
     (part1, part2)
 }
 
-/// Liest und analysiert den Footer aus den End-Bytes von $N$ Split-Dateien ($N \ge 2$).
-/// Erkennt automatisch RFS3 (60B BLKS-384) und RFS2 (44B SHA-256).
+/// Decodes and validates footer from trailing bytes of N shares ($N \ge 2$).
 pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
     if tails.len() < 2 {
-        return Err("Mindestens 2 Teile für die Footer-Dekodierung erforderlich".to_string());
+        return Err("At least 2 shares required for footer decoding".to_string());
     }
 
     let first_len = tails[0].len();
     if first_len < RFS2_FOOTER_SIZE {
-        return Err("Dateiende ist zu kurz für einen gültigen RFS-Footer".to_string());
+        return Err("File tail is too short for a valid RFS footer".to_string());
     }
 
     for tail in tails {
         if tail.len() != first_len {
-            return Err("Footer-Pufferlängen der Teile stimmen nicht überein".to_string());
+            return Err("Footer buffer lengths of shares do not match".to_string());
         }
     }
 
@@ -339,10 +331,10 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
     }
 
     xor44.zeroize();
-    Err("Ungültige oder nicht zusammengehörige RFS-Dateien (Magic-Tag Mismatch)!".to_string())
+    Err("Invalid or mismatched RFS files (Magic tag mismatch)!".to_string())
 }
 
-/// Liest und analysiert den Footer zweier Split-Dateien (2-Way Convenience).
+/// Decodes and parses footer of two share files (2-way convenience).
 #[allow(dead_code)]
 pub fn decode_footer(part1_tail: &[u8], part2_tail: &[u8]) -> Result<RfsMetadata, String> {
     decode_footer_n_way(&[part1_tail, part2_tail])

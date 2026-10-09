@@ -1,4 +1,4 @@
-//! 3-Stufen Restore- & Verify-Streaming-Pipeline mit Triple-Buffering und SIMD-XOR.
+//! 3-stage streaming restore & verify pipeline with triple-buffering and SIMD-XOR.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -19,14 +19,14 @@ use crate::types::{
     BLKS_DIGEST_SIZE, RFS2_FOOTER_SIZE, RFS3_FOOTER_SIZE, RFS4_MAGIC, RFS4_TRAILER_SIZE,
 };
 
-/// Führt die kryptografische Wiederherstellung oder Verifikation von $N$ Split-Dateien durch.
+/// Performs cryptographic reconstruction or integrity verification of N share files.
 ///
-/// Unterstützt:
-/// - Reguläre Wiederherstellung in Zieldatei
-/// - Unix-Piping nach `stdout` (`output_target` == `"-"`)
-/// - Fast-Verify im RAM (`verify_only` == true)
-/// - $N$-Way SIMD-XOR Wiederherstellung ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$)
-/// - Auto-Erkennung von RFS4 (BLKS-384, eingebetteter Dateiname), RFS3 (BLKS-384) und RFS2 (SHA-256)
+/// Supports:
+/// - Standard file restoration to destination path
+/// - Unix streaming pipe to stdout (`output_target` == `"-"`)
+/// - In-memory fast verification (`verify_only` == true)
+/// - $N$-Way SIMD-XOR reconstruction ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$)
+/// - Auto-detection of RFS4 (BLKS-384, embedded filename), RFS3 (BLKS-384), and legacy RFS2 (SHA-256)
 #[allow(clippy::too_many_arguments)]
 pub fn restore_file(
     part_paths: &[PathBuf],
@@ -40,26 +40,20 @@ pub fn restore_file(
 ) -> Result<Option<PathBuf>, String> {
     let n_parts = part_paths.len();
     if n_parts < 2 {
-        return Err("Mindestens 2 Teile für die Wiederherstellung erforderlich.".to_string());
+        return Err("At least 2 shares required for restoration.".to_string());
     }
 
     let mut files: Vec<File> = Vec::with_capacity(n_parts);
     let mut file_len: Option<u64> = None;
 
     for (idx, p) in part_paths.iter().enumerate() {
-        let f = File::open(p).map_err(|e| {
-            format!(
-                "Kann Teil {} ('{}') nicht öffnen: {}",
-                idx + 1,
-                p.display(),
-                e
-            )
-        })?;
+        let f = File::open(p)
+            .map_err(|e| format!("Cannot open share {} ('{}'): {}", idx + 1, p.display(), e))?;
         let len = f.metadata().map_err(|e| e.to_string())?.len();
         if let Some(fl) = file_len {
             if fl != len {
                 return Err(format!(
-                    "Dateigrößen stimmen nicht überein (Teil {} weicht von Teil 1 ab).",
+                    "File sizes do not match (share {} differs from share 1).",
                     idx + 1
                 ));
             }
@@ -73,21 +67,21 @@ pub fn restore_file(
     let len1 = file_len.unwrap();
     let trailer_len = RFS4_TRAILER_SIZE;
     if len1 < trailer_len as u64 {
-        return Err("Dateigröße kleiner als RFS-Trailer.".to_string());
+        return Err("File size smaller than RFS trailer.".to_string());
     }
 
-    // 1. Letzte 64 Bytes aller N Dateien lesen
+    // 1. Read last 64 bytes of all N files
     let mut trailers: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
     for (idx, f) in files.iter_mut().enumerate() {
         f.seek(SeekFrom::End(-(trailer_len as i64)))
-            .map_err(|e| format!("Seek Teil {}: {}", idx + 1, e))?;
+            .map_err(|e| format!("Seek share {}: {}", idx + 1, e))?;
         let mut t = vec![0u8; trailer_len];
         f.read_exact(&mut t)
-            .map_err(|e| format!("Read tail Teil {}: {}", idx + 1, e))?;
+            .map_err(|e| format!("Read tail share {}: {}", idx + 1, e))?;
         trailers.push(t);
     }
 
-    // XOR der letzten 64 Bytes
+    // XOR the last 64 bytes
     let mut xor64 = [0u8; RFS4_TRAILER_SIZE];
     xor64.copy_from_slice(&trailers[0]);
     for t in &trailers[1..] {
@@ -104,15 +98,15 @@ pub fn restore_file(
 
         let filename = if fn_len > 0 {
             if len1 < (trailer_len + fn_len) as u64 {
-                return Err("Dateigröße zu klein für RFS4-Dateinamen.".to_string());
+                return Err("File size too small for embedded RFS4 filename.".to_string());
             }
             let mut fn_tails: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
             for (idx, f) in files.iter_mut().enumerate() {
                 f.seek(SeekFrom::End(-((trailer_len + fn_len) as i64)))
-                    .map_err(|e| format!("Seek Filename Teil {}: {}", idx + 1, e))?;
+                    .map_err(|e| format!("Seek filename share {}: {}", idx + 1, e))?;
                 let mut fn_buf = vec![0u8; fn_len];
                 f.read_exact(&mut fn_buf)
-                    .map_err(|e| format!("Read Filename Teil {}: {}", idx + 1, e))?;
+                    .map_err(|e| format!("Read filename share {}: {}", idx + 1, e))?;
                 fn_tails.push(fn_buf);
             }
             let mut xor_fn = fn_tails[0].clone();
@@ -149,10 +143,10 @@ pub fn restore_file(
     };
 
     if len1 < min_needed_len {
-        return Err("Rekonstruierte Dateigröße unplausibel. Dateien sind beschädigt.".to_string());
+        return Err("Reconstructed file size implausible. Shares are corrupted.".to_string());
     }
 
-    // 2. Bestimme Ausgabeziel
+    // 2. Deduce target output destination
     let is_stdout = matches!(output_target, Some("-"));
     let target_out_path = deduce_restore_target(
         part_paths,
@@ -167,19 +161,19 @@ pub fn restore_file(
 
         if target.exists() && !force {
             return Err(format!(
-                "Zieldatei '{}' existiert bereits. Verwenden Sie --force zum Überschreiben.",
+                "Target file '{}' already exists. Use --force to overwrite.",
                 target.display()
             ));
         }
     }
 
-    // Zurück an Dateianfang springen
+    // Seek back to start of all files
     for (idx, f) in files.iter_mut().enumerate() {
         f.seek(SeekFrom::Start(0))
-            .map_err(|e| format!("Seek 0 Teil {}: {}", idx + 1, e))?;
+            .map_err(|e| format!("Seek 0 share {}: {}", idx + 1, e))?;
     }
 
-    // 3. Ausgabeschreiber initialisieren
+    // 3. Initialize output writer
     let out_writer: Option<Box<dyn Write + Send>> = if verify_only {
         None
     } else if is_stdout {
@@ -191,11 +185,11 @@ pub fn restore_file(
             .create(true)
             .truncate(true)
             .open(target)
-            .map_err(|e| format!("Kann Zieldatei nicht erstellen: {}", e))?;
+            .map_err(|e| format!("Cannot create target file: {}", e))?;
         Some(Box::new(BufWriter::with_capacity(block_size, file)))
     };
 
-    // 4. Entkoppelte Pipeline mit Puffer-Pools
+    // 4. Decoupled pipeline with buffer pools
     let (free_in_tx, free_in_rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) =
         bounded(BUFFER_POOL_SIZE);
     let mut locked_in_count = 0;
@@ -231,14 +225,12 @@ pub fn restore_file(
         let total_locked = (locked_in_count + locked_out_count) * block_size;
         if total_locked > 0 {
             eprintln!(
-                "[OPSEC] Memory-Locking aktiv: {} Puffer physisch gesperrt ({}) - Swap-Paging geschützt.",
+                "[OPSEC] Memory locking active: {} buffers locked in RAM ({}) - swap paging protected.",
                 locked_in_count + locked_out_count,
                 crate::telemetry::format_bytes(total_locked as u64)
             );
         } else {
-            eprintln!(
-                "[WARNUNG] mlock verweigert (ulimit -l prüfen). Fahre ohne Swap-Locking fort."
-            );
+            eprintln!("[WARNING] mlock denied (check ulimit -l). Continuing without swap locking.");
         }
     }
 
@@ -247,7 +239,7 @@ pub fn restore_file(
         Receiver<Result<(Vec<u8>, usize), String>>,
     ) = bounded(2);
 
-    // Stufe 1: Paralleler N-Way Reader Thread Pool (Parallel Disk Fanin)
+    // Stage 1: Parallel N-Way reader worker pool (Parallel Disk Fanin)
     let reader_handle = thread::spawn(move || -> Result<(), String> {
         let mut part_txs = Vec::with_capacity(n_parts);
         let (done_tx, done_rx) =
@@ -266,7 +258,7 @@ pub fn restore_file(
                 let mut reader = BufReader::with_capacity(block_size, file);
                 while let Ok(Some((mut buf, to_read, offset))) = rx.recv() {
                     if let Err(e) = reader.read_exact(&mut buf[..to_read]) {
-                        let err_msg = format!("Lesefehler Teil {}: {}", k + 1, e);
+                        let err_msg = format!("Read error on share {}: {}", k + 1, e);
                         let _ = done_tx_clone.send((k, Err(err_msg.clone())));
                         return Err(err_msg);
                     }
@@ -296,19 +288,19 @@ pub fn restore_file(
 
             let current_offset = original_size - remaining;
 
-            // 1. Leseaufträge parallel an alle N Reader-Worker verteilen
+            // 1. Distribute read jobs concurrently to all N reader workers
             for (k, buf) in in_bufs.into_iter().enumerate() {
                 if part_txs[k]
                     .send(Some((buf, to_read, current_offset)))
                     .is_err()
                 {
-                    let err = format!("Reader-Worker für Teil {} vorzeitig beendet", k + 1);
+                    let err = format!("Reader worker for share {} terminated prematurely", k + 1);
                     let _ = data_tx.send(Err(err.clone()));
                     return Err(err);
                 }
             }
 
-            // 2. Auf Fertigstellung aller N Reader-Worker für diesen Block warten
+            // 2. Await completion of all N reader workers for this block
             let mut collected_bufs = vec![Vec::new(); n_parts];
             for _ in 0..n_parts {
                 match done_rx.recv() {
@@ -320,7 +312,7 @@ pub fn restore_file(
                         return Err(e);
                     }
                     Err(_) => {
-                        let err = "Unerwarteter Verbindungsabbruch beim Disk-Fanin".to_string();
+                        let err = "Unexpected channel disconnect during disk fanin".to_string();
                         let _ = data_tx.send(Err(err.clone()));
                         return Err(err);
                     }
@@ -334,22 +326,22 @@ pub fn restore_file(
         }
         drop(data_tx);
 
-        // Signal EOF an alle Worker
+        // Signal EOF to all workers
         for tx in part_txs {
             let _ = tx.send(None);
         }
 
-        // Auf sauberen Abschluss aller Worker warten
+        // Await clean exit of all worker threads
         for (k, handle) in worker_handles.into_iter().enumerate() {
             handle
                 .join()
-                .map_err(|_| format!("Reader-Worker für Teil {} abgestürzt", k + 1))??;
+                .map_err(|_| format!("Reader worker for share {} panicked", k + 1))??;
         }
 
         Ok(())
     });
 
-    // Stufe 2: Compute Worker (N-Way SIMD XOR & Hashing)
+    // Stage 2: Compute worker (N-Way SIMD XOR & Hashing)
     let meta_clone = meta.clone();
     let worker_free_out_tx = free_out_tx.clone();
     let action_name = if verify_only { "Verify" } else { "Restore" };
@@ -370,15 +362,15 @@ pub fn restore_file(
             let (in_bufs, len) = msg?;
             let mut b_out = free_out_rx
                 .recv()
-                .map_err(|_| "Writer vorzeitig beendet".to_string())?;
+                .map_err(|_| "Writer terminated prematurely".to_string())?;
 
-            // SIMD XOR über alle N Teile: b_out = in_bufs[0] ^ in_bufs[1] ^ ... ^ in_bufs[N-1]
+            // SIMD XOR across all N shares: b_out = in_bufs[0] ^ in_bufs[1] ^ ... ^ in_bufs[N-1]
             b_out[..len].copy_from_slice(&in_bufs[0][..len]);
             for in_buf in in_bufs.iter().take(n_parts).skip(1) {
                 xor_in_place(&mut b_out[..len], &in_buf[..len]);
             }
 
-            // In-flight Hashing
+            // In-flight hashing
             if let Some(ref mut h) = blks_hasher {
                 h.update(&b_out[..len]);
             }
@@ -386,14 +378,14 @@ pub fn restore_file(
                 h.update(&b_out[..len]);
             }
 
-            // Puffer-Slot zurück an Reader
+            // Recycle buffer slot to reader pool
             let _ = free_in_tx.send(in_bufs);
 
             total_processed += len as u64;
 
             if !verify_only {
                 if job_tx.send(Ok((b_out, len))).is_err() {
-                    return Err("Writer vorzeitig beendet".to_string());
+                    return Err("Writer terminated prematurely".to_string());
                 }
             } else {
                 b_out.as_mut_slice().zeroize();
@@ -404,7 +396,7 @@ pub fn restore_file(
 
         drop(job_tx);
 
-        // Integritätsprüfung
+        // Integrity verification
         match meta_clone {
             RfsMetadata::Rfs3 { expected_blks, .. } | RfsMetadata::Rfs4 { expected_blks, .. } => {
                 let actual_bytes = blks_hasher.unwrap().finalize();
@@ -414,22 +406,17 @@ pub fn restore_file(
                     let dig_str = actual.to_base64();
                     telemetry.finish(total_processed, n_parts, Some(("blks-384", &dig_str)));
                     if telemetry_mode == TelemetryMode::Interactive {
-                        eprintln!("Integritätsprüfung [OK] (BLKS-384: {})", dig_str);
+                        eprintln!("Integrity check [OK] (BLKS-384: {})", dig_str);
                     }
                     Ok(())
                 } else {
-                    telemetry.error("Integritätsfehler! BLKS-384 Prüfsumme stimmt nicht überein.");
+                    telemetry.error("Integrity error! BLKS-384 checksum does not match.");
                     if telemetry_mode == TelemetryMode::Interactive {
-                        eprintln!(
-                            "\nWARNUNG: Integritätsfehler! BLKS-384 Prüfsumme stimmt nicht überein."
-                        );
-                        eprintln!("  Erwartet:  {}", expected_digest.to_base64());
-                        eprintln!("  Berechnet: {}", actual.to_base64());
+                        eprintln!("\nWARNING: Integrity error! BLKS-384 checksum does not match.");
+                        eprintln!("  Expected:   {}", expected_digest.to_base64());
+                        eprintln!("  Calculated: {}", actual.to_base64());
                     }
-                    Err(
-                        "Integritätsfehler! Die Datei ist möglicherweise beschädigt oder manipuliert."
-                            .to_string(),
-                    )
+                    Err("Integrity error! File may be corrupted or tampered with.".to_string())
                 }
             }
             RfsMetadata::Rfs2 {
@@ -447,54 +434,48 @@ pub fn restore_file(
                         .collect::<String>();
                     telemetry.finish(total_processed, n_parts, Some(("sha256", &hex_str)));
                     if telemetry_mode == TelemetryMode::Interactive {
-                        eprintln!("Integritätsprüfung [OK] (Legacy RFS2 SHA-256 verifiziert)");
+                        eprintln!("Integrity check [OK] (Legacy RFS2 SHA-256 verified)");
                     }
                     Ok(())
                 } else {
-                    telemetry.error("Integritätsfehler! SHA-256 Prüfsumme stimmt nicht überein.");
+                    telemetry.error("Integrity error! SHA-256 checksum does not match.");
                     if telemetry_mode == TelemetryMode::Interactive {
-                        eprintln!(
-                            "\nWARNUNG: Integritätsfehler! SHA-256 Prüfsumme stimmt nicht überein."
-                        );
+                        eprintln!("\nWARNING: Integrity error! SHA-256 checksum does not match.");
                     }
-                    Err(
-                        "Integritätsfehler! Die Datei ist möglicherweise beschädigt oder manipuliert."
-                            .to_string(),
-                    )
+                    Err("Integrity error! File may be corrupted or tampered with.".to_string())
                 }
             }
         }
     });
 
-    // Stufe 3: Writer Thread (nur aktiv wenn !verify_only)
+    // Stage 3: Writer thread (only active when !verify_only)
     let writer_handle = thread::spawn(move || -> Result<(), String> {
         if let Some(mut writer) = out_writer {
             while let Ok(msg) = job_rx.recv() {
                 let (mut b_out, len) = msg?;
                 if let Err(e) = writer.write_all(&b_out[..len]) {
                     if e.kind() == io::ErrorKind::BrokenPipe {
-                        return Err("Ausgabepipe wurde vom Empfänger geschlossen (Broken Pipe)."
-                            .to_string());
+                        return Err("Output pipe closed by receiver (Broken Pipe).".to_string());
                     }
-                    return Err(format!("Schreibfehler auf Ziel: {}", e));
+                    return Err(format!("Write error on destination: {}", e));
                 }
                 b_out.as_mut_slice().zeroize();
                 let _ = free_out_tx.send(b_out);
             }
-            writer.flush().map_err(|e| format!("Flush-Fehler: {}", e))?;
+            writer.flush().map_err(|e| format!("Flush error: {}", e))?;
         }
         Ok(())
     });
 
     let reader_res = reader_handle
         .join()
-        .map_err(|_| "Reader-Thread abgestürzt".to_string())?;
+        .map_err(|_| "Reader thread panicked".to_string())?;
     let worker_res = worker_handle
         .join()
-        .map_err(|_| "Worker-Thread abgestürzt".to_string())?;
+        .map_err(|_| "Worker thread panicked".to_string())?;
     let writer_res = writer_handle
         .join()
-        .map_err(|_| "Writer-Thread abgestürzt".to_string())?;
+        .map_err(|_| "Writer thread panicked".to_string())?;
 
     reader_res?;
     if let Err(e) = worker_res {

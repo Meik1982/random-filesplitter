@@ -1,4 +1,4 @@
-//! 3-Stufen Split-Streaming-Pipeline mit Triple-Buffering und ChaCha20-CSPRNG.
+//! 3-stage streaming split pipeline with triple-buffering and ChaCha20-CSPRNG.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -18,16 +18,18 @@ use crate::naming::determine_split_paths;
 use crate::telemetry::{Telemetry, TelemetryMode};
 use crate::types::BLKS_DIGEST_SIZE;
 
-/// Job für den asynchronen I/O-Schreiber im Split-Modus
+/// Job for the asynchronous I/O writer in split mode
 pub(crate) struct WriteJob {
     pub(crate) bufs: Vec<Vec<u8>>,
     pub(crate) valid_len: usize,
 }
 
+/// Splits a file or stream into N One-Time-Pad shares with plausible deniability.
+///
 /// - $N$-Way One-Time-Pad Chain: $P = C_1 \oplus C_2 \oplus \dots \oplus C_N$
-/// - Entkoppelte 3-Stufen Pipeline (Reader ➔ Crypto/SIMD ➔ Writer) mit Zero-Copy Puffer-Pooling
-/// - RFS4-Format mit eingebettetem Originaldateinamen, 4 KiB Cluster-Padding und optionalem `--pad-to`
-/// - Maschinenlesbare NDJSON-Telemetrie (`--json`) und interaktive ANSI-Fortschrittsbalken
+/// - Decoupled 3-stage pipeline (Reader ➔ Crypto/SIMD ➔ Writer) with zero-allocation buffer pooling
+/// - RFS4 format with embedded original filename, 4 KiB cluster padding, and optional `--pad-to`
+/// - Machine-readable NDJSON telemetry (`--json`) and interactive ANSI progress bars
 #[allow(clippy::too_many_arguments)]
 pub fn split_stream_or_file(
     input_source: &str,
@@ -42,7 +44,7 @@ pub fn split_stream_or_file(
     direct_io: bool,
     mlock: bool,
 ) -> Result<Vec<PathBuf>, String> {
-    // 1. Zielpfade bestimmen (<token6>.rfs als Standard für maximale OPSEC)
+    // 1. Determine destination paths (<token6>.rfs default for maximum OPSEC)
     let (real_paths, decoy_paths, n_parts) = determine_split_paths(
         input_source,
         output_parts,
@@ -57,14 +59,14 @@ pub fn split_stream_or_file(
         for path in real_paths.iter().chain(decoy_paths.iter()) {
             if path.exists() {
                 return Err(format!(
-                    "Ausgabedatei '{}' existiert bereits. Nutzen Sie --force zum Überschreiben.",
+                    "Output file '{}' already exists. Use --force to overwrite.",
                     path.display()
                 ));
             }
         }
     }
 
-    // 2. Eingabe vorbereiten (Stdin oder Datei)
+    // 2. Prepare input (stdin or file)
     let is_stdin = input_source == "-";
     let (input_reader, known_size): (Box<dyn Read + Send>, Option<u64>) = if is_stdin {
         (
@@ -75,21 +77,20 @@ pub fn split_stream_or_file(
         let in_path = Path::new(input_source);
         if !in_path.exists() {
             return Err(format!(
-                "Eingabedatei '{}' existiert nicht.",
+                "Input file '{}' does not exist.",
                 in_path.display()
             ));
         }
-        let f =
-            File::open(in_path).map_err(|e| format!("Kann Eingabedatei nicht öffnen: {}", e))?;
+        let f = File::open(in_path).map_err(|e| format!("Cannot open input file: {}", e))?;
         crate::fadvise::advise_sequential(&f);
         let len = f
             .metadata()
-            .map_err(|e| format!("Kann Dateimetadaten nicht lesen: {}", e))?
+            .map_err(|e| format!("Cannot read file metadata: {}", e))?
             .len();
         (Box::new(f), Some(len))
     };
 
-    // 3. Ausgabedateien öffnen
+    // 3. Open output files
     let mut files: Vec<File> = Vec::with_capacity(n_parts);
     for (idx, p) in out_paths.iter().enumerate() {
         let f = OpenOptions::new()
@@ -99,7 +100,7 @@ pub fn split_stream_or_file(
             .open(p)
             .map_err(|e| {
                 format!(
-                    "Kann Ausgabedatei {} ('{}') nicht erstellen: {}",
+                    "Cannot create output file {} ('{}'): {}",
                     idx + 1,
                     p.display(),
                     e
@@ -109,13 +110,13 @@ pub fn split_stream_or_file(
         files.push(f);
     }
 
-    // 4. Initialisiere Entropie & ChaCha20 CSPRNG
+    // 4. Initialize entropy & ChaCha20 CSPRNG
     let (mut master_key, mut master_nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut rng = ChaChaRng::new(&master_key, &master_nonce);
     master_key.zeroize();
     master_nonce.zeroize();
 
-    // 5. Kanäle für entkoppelte 3-Stufen-Pipeline & Puffer-Pools
+    // 5. Channels for decoupled 3-stage pipeline & buffer pools
     let (free_in_tx, free_in_rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = bounded(BUFFER_POOL_SIZE);
     let mut locked_in_count = 0;
     for _ in 0..BUFFER_POOL_SIZE {
@@ -150,14 +151,12 @@ pub fn split_stream_or_file(
         let total_locked = (locked_in_count + locked_out_count) * block_size;
         if total_locked > 0 {
             eprintln!(
-                "[OPSEC] Memory-Locking aktiv: {} Puffer physisch gesperrt ({}) - Swap-Paging geschützt.",
+                "[OPSEC] Memory locking active: {} buffers locked in RAM ({}) - swap paging protected.",
                 locked_in_count + locked_out_count,
                 crate::telemetry::format_bytes(total_locked as u64)
             );
         } else {
-            eprintln!(
-                "[WARNUNG] mlock verweigert (ulimit -l prüfen). Fahre ohne Swap-Locking fort."
-            );
+            eprintln!("[WARNING] mlock denied (check ulimit -l). Continuing without swap locking.");
         }
     }
 
@@ -166,7 +165,7 @@ pub fn split_stream_or_file(
         Receiver<Result<WriteJob, String>>,
     ) = bounded(2);
 
-    // Stufe 1: Reader Thread (füllt Puffer bis zur vollen Blockgröße oder EOF)
+    // Stage 1: Reader thread (fills buffers up to full block size or EOF)
     let reader_handle = thread::spawn(move || -> Result<(), String> {
         let mut reader = input_reader;
         while let Ok(mut buf) = free_in_rx.recv() {
@@ -177,8 +176,8 @@ pub fn split_stream_or_file(
                     Ok(n) => n_read += n,
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(e) => {
-                        let _ = data_tx.send(Err(format!("Lesefehler auf Eingabe: {}", e)));
-                        return Err(format!("Lesefehler auf Eingabe: {}", e));
+                        let _ = data_tx.send(Err(format!("Read error on input: {}", e)));
+                        return Err(format!("Read error on input: {}", e));
                     }
                 }
             }
@@ -195,7 +194,7 @@ pub fn split_stream_or_file(
         Ok(())
     });
 
-    // Stufe 2: Crypto & Hash Worker Thread (N-Way OTP)
+    // Stage 2: Crypto & Hash worker thread (N-Way OTP)
     let mut telemetry = Telemetry::new(telemetry_mode, "Split", known_size);
     let worker_handle = thread::spawn(move || -> Result<(u64, [u8; BLKS_DIGEST_SIZE]), String> {
         let mut total_processed: u64 = 0;
@@ -204,33 +203,33 @@ pub fn split_stream_or_file(
         while let Ok(msg) = data_rx.recv() {
             let (mut in_buf, len) = msg?;
 
-            // 1. In-flight BLKS-384 Hashing
+            // 1. In-flight BLKS-384 hashing
             blks_hasher.update(&in_buf[..len]);
 
-            // 2. Freie Ausgabepuffer anfordern (N Puffer)
+            // 2. Request free output buffers (N buffers)
             let mut part_bufs = free_out_rx
                 .recv()
-                .map_err(|_| "Schreib-Thread vorzeitig beendet".to_string())?;
+                .map_err(|_| "Writer thread terminated prematurely".to_string())?;
 
-            // 3. Teile 2..N mit ChaCha20-CSPRNG füllen
+            // 3. Fill shares 2..N with ChaCha20-CSPRNG keystream
             for buf in part_bufs.iter_mut().take(n_parts).skip(1) {
                 rng.fill_bytes(&mut buf[..len]);
             }
 
-            // 4. Teil 1 schließt die XOR-Kette: part_bufs[0] = in_buf ^ part_bufs[1] ^ ... ^ part_bufs[N-1]
+            // 4. Share 1 completes XOR chain: part_bufs[0] = in_buf ^ part_bufs[1] ^ ... ^ part_bufs[N-1]
             part_bufs[0][..len].copy_from_slice(&in_buf[..len]);
             for k in 1..n_parts {
                 let (first, rest) = part_bufs.split_at_mut(k);
                 xor_in_place(&mut first[0][..len], &rest[0][..len]);
             }
 
-            // 5. Eingabepuffer zurück in den Reader-Pool (Zero-Allocation & Zeroize)
+            // 5. Recycle input buffer to reader pool (zeroization)
             in_buf.as_mut_slice().zeroize();
             let _ = free_in_tx.send(in_buf);
 
             total_processed += len as u64;
 
-            // 6. Job an Writer-Thread weiterreichen
+            // 6. Forward job to writer thread
             if job_tx
                 .send(Ok(WriteJob {
                     bufs: part_bufs,
@@ -238,7 +237,7 @@ pub fn split_stream_or_file(
                 }))
                 .is_err()
             {
-                return Err("Schreib-Thread vorzeitig beendet".to_string());
+                return Err("Writer thread terminated prematurely".to_string());
             }
 
             telemetry.update(total_processed);
@@ -254,7 +253,7 @@ pub fn split_stream_or_file(
         Ok((total_processed, digest))
     });
 
-    // Stufe 3: Paralleler N-Way Writer Thread Pool (Parallel Disk Fanout)
+    // Stage 3: Parallel N-Way writer worker pool (Parallel Disk Fanout)
     let writer_handle = thread::spawn(move || -> Result<(), String> {
         let mut part_txs = Vec::with_capacity(n_parts);
         let (done_tx, done_rx) =
@@ -273,7 +272,7 @@ pub fn split_stream_or_file(
                 let mut writer = BufWriter::with_capacity(block_size, file);
                 while let Ok(Some((buf, valid_len, offset))) = rx.recv() {
                     if let Err(e) = writer.write_all(&buf[..valid_len]) {
-                        let err_msg = format!("Schreibfehler auf Teil {}: {}", k + 1, e);
+                        let err_msg = format!("Write error on share {}: {}", k + 1, e);
                         let _ = done_tx_clone.send((k, Err(err_msg.clone())));
                         return Err(err_msg);
                     }
@@ -288,7 +287,7 @@ pub fn split_stream_or_file(
                 }
                 writer
                     .flush()
-                    .map_err(|e| format!("Flush-Fehler auf Teil {}: {}", k + 1, e))?;
+                    .map_err(|e| format!("Flush error on share {}: {}", k + 1, e))?;
                 Ok(())
             });
             worker_handles.push(handle);
@@ -300,20 +299,20 @@ pub fn split_stream_or_file(
         while let Ok(job_res) = job_rx.recv() {
             let WriteJob { bufs, valid_len } = job_res?;
 
-            // 1. Chunks parallel an alle N Worker verteilen
+            // 1. Distribute chunks concurrently to all N workers
             for (k, buf) in bufs.into_iter().enumerate() {
                 if part_txs[k]
                     .send(Some((buf, valid_len, total_written)))
                     .is_err()
                 {
                     return Err(format!(
-                        "Worker-Thread für Teil {} vorzeitig beendet",
+                        "Worker thread for share {} terminated prematurely",
                         k + 1
                     ));
                 }
             }
 
-            // 2. Auf Fertigstellung aller N Worker für diesen Block warten
+            // 2. Await completion of all N workers for this block
             let mut collected_bufs = vec![Vec::new(); n_parts];
             for _ in 0..n_parts {
                 match done_rx.recv() {
@@ -324,7 +323,7 @@ pub fn split_stream_or_file(
                         return Err(e);
                     }
                     Err(_) => {
-                        return Err("Unerwarteter Verbindungsabbruch beim Disk-Fanout".to_string());
+                        return Err("Unexpected channel disconnect during disk fanout".to_string());
                     }
                 }
             }
@@ -333,37 +332,37 @@ pub fn split_stream_or_file(
             let _ = free_out_tx.send(collected_bufs);
         }
 
-        // Signal EOF an alle Worker
+        // Signal EOF to all workers
         for tx in part_txs {
             let _ = tx.send(None);
         }
 
-        // Auf sauberen Abschluss aller Worker warten
+        // Await clean exit of all worker threads
         for (k, handle) in worker_handles.into_iter().enumerate() {
             handle
                 .join()
-                .map_err(|_| format!("Writer-Worker für Teil {} abgestürzt", k + 1))??;
+                .map_err(|_| format!("Writer worker for share {} panicked", k + 1))??;
         }
 
         Ok(())
     });
 
-    // Warten auf Abschluss aller Threads
+    // Await completion of all main pipeline threads
     let reader_res = reader_handle
         .join()
-        .map_err(|_| "Reader-Thread abgestürzt".to_string())?;
+        .map_err(|_| "Reader thread panicked".to_string())?;
     let worker_res = worker_handle
         .join()
-        .map_err(|_| "Worker-Thread abgestürzt".to_string())?;
+        .map_err(|_| "Worker thread panicked".to_string())?;
     let writer_res = writer_handle
         .join()
-        .map_err(|_| "Writer-Thread abgestürzt".to_string())?;
+        .map_err(|_| "Writer thread panicked".to_string())?;
 
     reader_res?;
     let (total_processed, digest) = worker_res?;
     writer_res?;
 
-    // 6. RFS4-Stealth-Footer & Padding codieren & an alle N Dateien anhängen
+    // 6. Encode RFS4 stealth footer & padding, then append to all N shares
     let original_filename = if input_source == "-" {
         output_prefix.unwrap_or("stdin.bin")
     } else {
@@ -390,13 +389,13 @@ pub fn split_stream_or_file(
         let mut append_file = OpenOptions::new()
             .append(true)
             .open(path)
-            .map_err(|e| format!("Kann Teil {} für Footer nicht öffnen: {}", k + 1, e))?;
+            .map_err(|e| format!("Cannot open share {} for footer: {}", k + 1, e))?;
         append_file
             .write_all(&footers[k])
-            .map_err(|e| format!("Fehler beim Schreiben des Footers {}: {}", k + 1, e))?;
+            .map_err(|e| format!("Error writing footer on share {}: {}", k + 1, e))?;
         append_file
             .flush()
-            .map_err(|e| format!("Flush {}: {}", k + 1, e))?;
+            .map_err(|e| format!("Flush error on footer {}: {}", k + 1, e))?;
     }
 
     let share_size = total_processed + footers[0].len() as u64;
@@ -413,34 +412,31 @@ pub fn split_stream_or_file(
 
     if telemetry_mode == TelemetryMode::Interactive {
         eprintln!(
-            "Erfolgreich in {} Teile gesplittet (N-Way OTP, RFS4):",
+            "Successfully split into {} shares (N-Way OTP, RFS4):",
             n_parts
         );
-        eprintln!("  Eingebetteter Name: {}", original_filename);
-        eprintln!("  Originalgröße: {} Bytes", total_processed);
-        eprintln!(
-            "  Share-Größe (4 KiB-Cluster-Padding): {} Bytes",
-            share_size
-        );
+        eprintln!("  Embedded name: {}", original_filename);
+        eprintln!("  Original size: {} bytes", total_processed);
+        eprintln!("  Share size (4 KiB cluster padding): {} bytes", share_size);
         eprintln!("  BLKS-384: {}", BlksDigest(digest).to_base64());
 
         if !decoy_paths.is_empty() {
-            eprintln!("\nEchte Shares (N={}, zufällig im Set verteilt):", n_parts);
+            eprintln!("\nReal shares (N={}, randomized across set):", n_parts);
             for (i, p) in out_paths.iter().enumerate() {
-                eprintln!("  Teil {}: {}", i + 1, p.display());
+                eprintln!("  Share {}: {}", i + 1, p.display());
             }
 
             eprintln!(
-                "\nKöderdateien (Decoys, D={}, 100% ChaCha20-Zufallsrauschen):",
+                "\nDecoy chaff files (D={}, 100% ChaCha20 random noise):",
                 decoy_paths.len()
             );
             for (i, p) in decoy_paths.iter().enumerate() {
-                eprintln!("  Köder {}: {} ({} Bytes)", i + 1, p.display(), share_size);
+                eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
             }
         } else {
-            eprintln!("\nGenerierte Shares:");
+            eprintln!("\nGenerated shares:");
             for (i, p) in out_paths.iter().enumerate() {
-                eprintln!("  Teil {}: {}", i + 1, p.display());
+                eprintln!("  Share {}: {}", i + 1, p.display());
             }
         }
     }
@@ -448,7 +444,7 @@ pub fn split_stream_or_file(
     Ok(out_paths)
 }
 
-/// Convenience-Wrapper für Abwärtskompatibilität (2 Teile)
+/// Convenience wrapper for backward compatibility (2 shares).
 #[allow(dead_code)]
 pub fn split_file(
     input_path: &Path,

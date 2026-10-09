@@ -1,4 +1,4 @@
-//! Typisiertes CLI-Parsing, Validierung und Hilfetexte für rfs.
+//! Typed CLI argument parsing, validation, and help formatting for rfs.
 
 use std::path::{Path, PathBuf};
 
@@ -7,9 +7,9 @@ use crate::types;
 
 const APP_NAME: &str = "rfs";
 const APP_VERSION: &str = "3.0.0";
-const FORMAT_TAG: &str = "RFS3-PQ";
+const FORMAT_TAG: &str = "RFS4";
 
-/// Zeigt die Versionsinformationen auf stdout an.
+/// Displays version information on stdout.
 pub fn display_version() {
     println!(
         "{} version {} (Format: {}, Rust Edition 2021)",
@@ -18,80 +18,82 @@ pub fn display_version() {
     println!("Copyright (c) 2026 Meik Augenblick (LGPL v3)");
 }
 
-/// Zeigt den vollständigen CLI-Hilfetext auf stdout an.
+/// Displays full CLI usage instructions on stdout.
 pub fn display_help() {
     display_version();
-    println!("\nVerwendung:");
+    println!("\nUsage:");
     println!(
-        "  rfs split [Optionen] <Quelle|-> [Teile...]      (Datei oder Stdin in 2 oder N Teile splitten)"
+        "  rfs split [options] <source|-> [shares...]     (Split file or stdin into 2 or N shares)"
     );
     println!(
-        "  rfs restore [Optionen] <Teile...> [Ziel|-]      (N Teile auf Festplatte oder Stdout wiederherstellen)"
+        "  rfs restore [options] <shares...> [target|-]   (Reconstruct N shares to disk or stdout)"
     );
     println!(
-        "  rfs verify [Optionen] <Teile...>               (Integrität von N Teilen im RAM prüfen)"
+        "  rfs verify [options] <shares...>               (Verify integrity of N shares in RAM)"
     );
     println!(
-        "  rfs decoy [Optionen] [-t <Muster>] [-s <Größe>] (Köderdateien mit ChaCha20-Zufallsrauschen erzeugen)"
+        "  rfs decoy [options] [-t <template>] [-s <size>] (Generate ChaCha20 random decoy files)"
     );
-    println!("\nKlassische Syntax:");
+    println!("\nClassic Syntax:");
     println!(
-        "  rfs [Optionen] <Datei|->                       (Datei oder Stdin in 2 Teile splitten)"
+        "  rfs [options] <file|->                         (Split file or stdin into 2 shares)"
     );
+    println!("  rfs [options] <part1> <part2> [part3...]       (Reconstruct file from N shares)");
+    println!("  rfs --verify <shares...>                       (Verify integrity of N shares)");
+    println!("\nN-Way One-Time-Pad & Unix Streaming Pipes:");
+    println!("  rfs split -n 3 secret.iso                      (Split into 3 noise shares: .rfs1, .rfs2, .rfs3)");
     println!(
-        "  rfs [Optionen] <Teil1> <Teil2> [Teil3...]      (Datei aus N Teilen wiederherstellen)"
-    );
-    println!("  rfs --verify <Teile...>                        (Integrität von N Teilen prüfen)");
-    println!("\nN-Way One-Time-Pad & Unix Streaming-Pipes:");
-    println!("  rfs split -n 3 geheim.iso                      (In 3 Rausch-Dateien aufteilen: .rfs1, .rfs2, .rfs3)");
-    println!("  rfs restore geheim.rfs1 geheim.rfs2 geheim.rfs3 (Bitgenaue Rekonstruktion aus allen 3 Teilen)");
-    println!("  tar -czf - /data | rfs split -n 4 - -o backup  (Stdin direkt in 4 Teile streamen)");
-    println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Aus allen Teilen direkt nach Stdout pipen)");
-    println!("\nBefehle & Werkzeuge:");
-    println!("  -b, --benchmark                                Hardware- und Durchsatz-Benchmark");
-    println!(
-        "  -e, --entropy-test                            Zweiphasige Entropie- & Jitter-Diagnose"
+        "  rfs restore secret.rfs1 secret.rfs2 secret.rfs3 (Bit-exact restore from all 3 shares)"
     );
     println!(
-        "  -a, --analyze <Datei>                         Kryptoanalytische Datei-Entropieanalyse"
+        "  tar -czf - /data | rfs split -n 4 - -o backup  (Stream stdin directly into 4 shares)"
     );
-    println!("  -h, --help                                    Diese Hilfe anzeigen");
-    println!("  -V, --version                                 Versionsnummer anzeigen");
-    println!("\nOptionen:");
-    println!("  -n, --parts <ANZAHL>                          Anzahl der Teile für N-Way Splitting (2 bis 64; Standard: 2)");
-    println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
-    println!("  -d, --decoys <ANZAHL>                         Zusätzliche Köderdateien (Decoys) beim Splitten erzeugen");
-    println!("  --pad-to <GRÖSSE>                             Share-Dateien auf eine exakte Bytegröße aufblähen (z. B. 100M, 20G)");
-    println!("  --token, --rnd                                Anti-Forensik: Zufällige Hex-Tokens (.<rnd>.rfs) statt Nummern");
-    println!("  -c, --count <ANZAHL>                          Anzahl der Köderdateien für 'rfs decoy' (Standard: 1)");
-    println!("  -s, --size <GRÖSSE>                           Explizite Bytegröße für 'rfs decoy' (z. B. 64K, 10M, 1G)");
-    println!("  -t, --template <DATEI>                        Musterdatei für 'rfs decoy' (Rohdatei +60B Footer oder RFS 1:1)");
-    println!("  -o, --output <PFAD>                           Präfix für Teile bzw. Pfad der Zieldatei (oder '-' für stdout)");
-    println!("  --direct                                      Direct I/O: Kernel Page-Cache für Multi-Gigabyte-Dateien umgehen");
-    println!("  --mlock                                       Pufferspeicher im physischen RAM sperren (verhindert Auslagern in Swap)");
-    println!("  --json                                        Maschinenlesbare NDJSON-Telemetrie auf stderr");
+    println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Pipe restored stream directly to stdout)");
+    println!("\nCommands & Tools:");
+    println!("  -b, --benchmark                                Run hardware throughput benchmark");
     println!(
-        "  -f, --force                                   Zieldateien überschreiben falls vorhanden"
+        "  -e, --entropy-test                            Run two-phase entropy and jitter diagnostics"
     );
     println!(
-        "  -q, --quiet, --silent                         Ausgabe stummschalten (nur Fehler)\n"
+        "  -a, --analyze <file>                          Cryptanalytic NIST SP 800-22 file analysis"
+    );
+    println!("  -h, --help                                    Display this help message");
+    println!("  -V, --version                                 Display version information");
+    println!("\nOptions:");
+    println!("  -n, --parts <COUNT>                           Number of shares for N-way splitting (2 to 64; default: 2)");
+    println!("  -B, --block-size <SIZE>                       I/O buffer block size (e.g., 64K, 1M, 4M, 16M; default: 4M)");
+    println!("  -d, --decoys <COUNT>                          Generate additional decoy chaff files during split");
+    println!("  --pad-to <SIZE>                               Pad shares to an exact target byte size (e.g., 100M, 20G)");
+    println!("  --token, --rnd                                Anti-forensics: Uncorrelated hex tokens (.<rnd>.rfs) instead of numbers");
+    println!("  -c, --count <COUNT>                           Number of decoy files for 'rfs decoy' (default: 1)");
+    println!("  -s, --size <SIZE>                             Explicit byte size for 'rfs decoy' (e.g., 64K, 10M, 1G)");
+    println!("  -t, --template <FILE>                         Template file for 'rfs decoy' (raw file +64B footer or RFS 1:1)");
+    println!("  -o, --output <PATH>                           Share prefix or restore target destination (or '-' for stdout)");
+    println!("  --direct                                      Direct I/O: Bypass OS page cache for multi-gigabyte transfers");
+    println!("  --mlock                                       Lock buffer memory in physical RAM (prevents swap paging)");
+    println!("  --json                                        Machine-readable NDJSON telemetry on stderr");
+    println!(
+        "  -f, --force                                   Overwrite existing destination files"
+    );
+    println!(
+        "  -q, --quiet, --silent                         Suppress interactive progress (errors only)\n"
     );
 }
 
-/// Vollständig aufgelöste CLI-Aktion mit allen validierten Parametern.
+/// Fully parsed CLI action with all validated arguments.
 #[derive(Debug, PartialEq, Eq)]
 pub enum CliCommand {
-    /// Hilfe anzeigen
+    /// Display help text
     Help,
-    /// Version anzeigen
+    /// Display version information
     Version,
-    /// Hardware-Benchmark ausführen
+    /// Run hardware benchmark
     Benchmark,
-    /// Entropie-Diagnose ausführen
+    /// Run entropy diagnostics
     Entropy,
-    /// Kryptoanalytische Dateianalyse
+    /// Cryptanalytic file entropy analysis
     Analyze { file: PathBuf, json_mode: bool },
-    /// Datei oder Stdin in N Teile splitten
+    /// Split file or stream into N shares
     Split {
         input: String,
         parts: Option<Vec<PathBuf>>,
@@ -105,7 +107,7 @@ pub enum CliCommand {
         direct_io: bool,
         mlock: bool,
     },
-    /// Rekonstruktion aus N Teilen
+    /// Reconstruct from N shares
     Restore {
         parts: Vec<PathBuf>,
         output_target: Option<String>,
@@ -115,7 +117,7 @@ pub enum CliCommand {
         direct_io: bool,
         mlock: bool,
     },
-    /// RAM-Integritätsprüfung aus N Teilen
+    /// In-memory RAM integrity check across N shares
     Verify {
         parts: Vec<PathBuf>,
         block_size: usize,
@@ -124,7 +126,7 @@ pub enum CliCommand {
         direct_io: bool,
         mlock: bool,
     },
-    /// Köderdateien mit ChaCha20-Zufall erzeugen
+    /// Generate ChaCha20 random decoy files
     Decoy {
         template: Option<PathBuf>,
         size: Option<u64>,
@@ -138,7 +140,7 @@ pub enum CliCommand {
     },
 }
 
-/// Parst die CLI-Argumente in einen typsicheren `CliCommand`.
+/// Parses CLI arguments into a typed `CliCommand`.
 pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help") {
         return Ok(CliCommand::Help);
@@ -157,7 +159,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     if first == "-a" || first == "--analyze" || first == "--file-entropy" {
         if args.len() < 3 {
             return Err(format!(
-                "Fehler: Option {} erfordert einen Dateipfad.\nVerwendung: rfs -a <Datei> [--json]",
+                "Error: Option {} requires a file path.\nUsage: rfs -a <file> [--json]",
                 first
             ));
         }
@@ -173,7 +175,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         });
     }
 
-    // Subcommand-Erkennung
+    // Subcommand detection
     let mut explicit_subcommand: Option<&str> = None;
     let mut start_idx = 1;
     if first == "split" || first == "restore" || first == "verify" || first == "decoy" {
@@ -186,7 +188,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     } else if first == "analyze" {
         if args.len() < 3 {
             return Err(
-                "Fehler: Subcommand 'analyze' erfordert einen Dateipfad.\nVerwendung: rfs analyze <Datei> [--json]".to_string(),
+                "Error: Subcommand 'analyze' requires a file path.\nUsage: rfs analyze <file> [--json]".to_string(),
             );
         }
         let json_mode = args.iter().any(|a| a == "--json");
@@ -201,7 +203,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         });
     }
 
-    // Flag-Parsing
+    // Flag parsing
     let mut verify_only = false;
     let mut force = false;
     let mut silent = false;
@@ -239,28 +241,25 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         } else if arg == "--pad-to" {
             i += 1;
             if i >= args.len() {
-                return Err(format!(
-                    "Fehler: Option {} erfordert eine Größenangabe.",
-                    arg
-                ));
+                return Err(format!("Error: Option {} requires a size argument.", arg));
             }
             pad_to = Some(types::parse_file_size(&args[i])?);
         } else if arg == "-n" || arg == "--parts" {
             i += 1;
             if i >= args.len() {
-                return Err(format!("Fehler: Option {} erfordert eine Anzahl.", arg));
+                return Err(format!("Error: Option {} requires a count argument.", arg));
             }
             match args[i].parse::<usize>() {
                 Ok(n) if (2..=64).contains(&n) => num_parts = n,
                 Ok(n) => {
                     return Err(format!(
-                        "Fehler: Anzahl der Teile ({}) muss zwischen 2 und 64 liegen.",
+                        "Error: Part count ({}) must be between 2 and 64.",
                         n
                     ));
                 }
                 Err(_) => {
                     return Err(format!(
-                        "Fehler: Ungültige Zahl für Option {}: '{}'",
+                        "Error: Invalid number for option {}: '{}'",
                         arg, args[i]
                     ));
                 }
@@ -268,22 +267,19 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         } else if arg == "-B" || arg == "--block-size" {
             i += 1;
             if i >= args.len() {
-                return Err(format!(
-                    "Fehler: Option {} erfordert eine Größenangabe.",
-                    arg
-                ));
+                return Err(format!("Error: Option {} requires a size argument.", arg));
             }
             block_size = types::parse_block_size(&args[i])?;
         } else if arg == "-d" || arg == "--decoys" {
             i += 1;
             if i >= args.len() {
-                return Err(format!("Fehler: Option {} erfordert eine Anzahl.", arg));
+                return Err(format!("Error: Option {} requires a count argument.", arg));
             }
             match args[i].parse::<usize>() {
                 Ok(n) => num_decoys = n,
                 Err(_) => {
                     return Err(format!(
-                        "Fehler: Ungültige Zahl für Option {}: '{}'",
+                        "Error: Invalid number for option {}: '{}'",
                         arg, args[i]
                     ));
                 }
@@ -291,19 +287,19 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         } else if arg == "-c" || arg == "--count" {
             i += 1;
             if i >= args.len() {
-                return Err(format!("Fehler: Option {} erfordert eine Anzahl.", arg));
+                return Err(format!("Error: Option {} requires a count argument.", arg));
             }
             match args[i].parse::<usize>() {
                 Ok(n) if (1..=1000).contains(&n) => decoy_count = n,
                 Ok(n) => {
                     return Err(format!(
-                        "Fehler: Anzahl der Köderdateien ({}) muss zwischen 1 und 1000 liegen.",
+                        "Error: Decoy count ({}) must be between 1 and 1000.",
                         n
                     ));
                 }
                 Err(_) => {
                     return Err(format!(
-                        "Fehler: Ungültige Zahl für Option {}: '{}'",
+                        "Error: Invalid number for option {}: '{}'",
                         arg, args[i]
                     ));
                 }
@@ -311,29 +307,26 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         } else if arg == "-s" || arg == "--size" {
             i += 1;
             if i >= args.len() {
-                return Err(format!(
-                    "Fehler: Option {} erfordert eine Größenangabe.",
-                    arg
-                ));
+                return Err(format!("Error: Option {} requires a size argument.", arg));
             }
             decoy_size = Some(types::parse_file_size(&args[i])?);
         } else if arg == "-t" || arg == "--template" {
             i += 1;
             if i >= args.len() {
-                return Err(format!("Fehler: Option {} erfordert einen Dateipfad.", arg));
+                return Err(format!("Error: Option {} requires a file path.", arg));
             }
             decoy_template = Some(args[i].clone());
         } else if arg == "-o" || arg == "--output" {
             i += 1;
             if i >= args.len() {
-                return Err(format!("Fehler: Option {} erfordert einen Pfad.", arg));
+                return Err(format!("Error: Option {} requires a path.", arg));
             }
             output_path = Some(args[i].clone());
         } else if arg == "-" || !arg.starts_with('-') {
             positionals.push(arg.clone());
         } else {
             return Err(format!(
-                "Fehler: Unbekannte Option '{}'\nFühren Sie 'rfs --help' für Hilfe aus.",
+                "Error: Unknown option '{}'\nRun 'rfs --help' for usage.",
                 arg
             ));
         }
@@ -346,7 +339,9 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
             if verify_only {
                 "verify"
             } else if positionals.is_empty() {
-                return Err("Fehler: Keine Eingabedatei(en) angegeben.\nFühren Sie 'rfs --help' für Hilfe aus.".to_string());
+                return Err(
+                    "Error: No input file(s) specified.\nRun 'rfs --help' for usage.".to_string(),
+                );
             } else if positionals.len() == 1 || (positionals[0] == "-" && positionals.len() >= 3) {
                 "split"
             } else {
@@ -366,7 +361,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     match action_str {
         "split" => {
             if positionals.is_empty() {
-                return Err("Fehler: Keine Eingabedatei für Split angegeben.".to_string());
+                return Err("Error: No input file specified for split.".to_string());
             }
             let input = positionals[0].clone();
             let parts: Option<Vec<PathBuf>> = if positionals.len() > 1 {
@@ -391,7 +386,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         "restore" => {
             let (parts, target) = parse_restore_targets(&positionals, output_path.as_deref())?;
             if parts.len() < 2 {
-                return Err("Fehler: Restore erfordert mindestens 2 Split-Dateien.".to_string());
+                return Err("Error: Restore requires at least 2 share files.".to_string());
             }
             Ok(CliCommand::Restore {
                 parts,
@@ -406,7 +401,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
         "verify" => {
             if positionals.len() < 2 {
                 return Err(
-                    "Fehler: Verify erfordert mindestens 2 Split-Dateien zur Prüfung.".to_string(),
+                    "Error: Verify requires at least 2 share files for verification.".to_string(),
                 );
             }
             let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
@@ -436,19 +431,19 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
             })
         }
         unknown => Err(format!(
-            "Fehler: Unbekannter Befehl '{}'\nFühren Sie 'rfs --help' für Hilfe aus.",
+            "Error: Unknown command '{}'\nRun 'rfs --help' for usage.",
             unknown
         )),
     }
 }
 
-/// Trennt Positionsargumente in Quellteile und optionalen Zielpfad für `restore`.
+/// Separates positional arguments into source shares and optional target destination for `restore`.
 pub fn parse_restore_targets(
     positionals: &[String],
     output_flag: Option<&str>,
 ) -> Result<(Vec<PathBuf>, Option<String>), String> {
     if positionals.is_empty() {
-        return Err("Keine Split-Dateien zur Wiederherstellung angegeben.".to_string());
+        return Err("No share files specified for restore.".to_string());
     }
     if let Some(target) = output_flag {
         let parts: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();

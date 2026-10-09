@@ -4,7 +4,7 @@ use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha20;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// Sichere Kapselung der ChaCha20-Streaming-Engine mit automatischer Nullung im Destruktor.
+/// Secure encapsulation of the ChaCha20 streaming cipher with automatic zeroization on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct ChaChaRng {
     #[zeroize(skip)]
@@ -12,21 +12,21 @@ pub struct ChaChaRng {
 }
 
 impl ChaChaRng {
-    /// Initialisiert den ChaCha20 CSPRNG mit 256-Bit Schlüssel und 96-Bit Nonce.
+    /// Initializes the ChaCha20 CSPRNG with a 256-bit key and 96-bit nonce.
     pub fn new(key: &[u8; 32], nonce: &[u8; 12]) -> Self {
         let cipher = ChaCha20::new(key.into(), nonce.into());
         Self { cipher }
     }
 
-    /// Füllt den übergebenen Puffer mit pseudozufälligem Schlüsselstrom.
+    /// Fills the destination slice with pseudorandom keystream bytes.
     #[inline]
     pub fn fill_bytes(&mut self, dest: &mut [u8]) {
-        // In ChaCha20 ist die Keystream-Generierung äquivalent zum Verschlüsseln von Nullen.
+        // In ChaCha20, generating keystream is equivalent to encrypting zeroes.
         dest.fill(0);
         self.cipher.apply_keystream(dest);
     }
 
-    /// Generiert ein einzelnes Pseudo-Zufallsbyte.
+    /// Generates a single pseudorandom byte.
     #[inline]
     pub fn next_u8(&mut self) -> u8 {
         let mut b = [0u8; 1];
@@ -35,22 +35,21 @@ impl ChaChaRng {
     }
 }
 
-/// Führt ein hochoptimiertes RAM-zu-RAM XOR zweier Puffer durch: `dest[i] ^= src[i]`.
-/// Verwendet 32-Byte (256-Bit) Vektorschritte, die von LLVM/Rust automatisch in AVX2/NEON übersetzt werden,
-/// mit 64-Bit und 8-Bit Fallback für Restbytes.
+/// Performs high-throughput RAM-to-RAM in-place XOR: `dest[i] ^= src[i]`.
+/// Uses 64-byte unrolled SIMD steps (AVX2/NEON vectorization) with 64-bit and scalar fallback.
 #[inline]
 #[allow(dead_code)]
 pub fn xor_in_place(dest: &mut [u8], src: &[u8]) {
     assert_eq!(
         dest.len(),
         src.len(),
-        "Puffergrößen für XOR müssen exakt übereinstimmen"
+        "Buffer lengths for XOR must match exactly"
     );
 
     let len = dest.len();
     let mut offset = 0;
 
-    // 64-Byte / 512-Bit Super-Unrolled Vektor-Schleife (nutzt 2x AVX2 ymm-Register)
+    // 64-byte / 512-bit unrolled vector loop
     while offset + 64 <= len {
         let d = &mut dest[offset..offset + 64];
         let s = &src[offset..offset + 64];
@@ -61,7 +60,7 @@ pub fn xor_in_place(dest: &mut [u8], src: &[u8]) {
         offset += 64;
     }
 
-    // 8-Byte (64-Bit) Fast-Path
+    // 8-byte (64-bit) fast path
     while offset + 8 <= len {
         let d_val = u64::from_ne_bytes(dest[offset..offset + 8].try_into().unwrap());
         let s_val = u64::from_ne_bytes(src[offset..offset + 8].try_into().unwrap());
@@ -69,14 +68,14 @@ pub fn xor_in_place(dest: &mut [u8], src: &[u8]) {
         offset += 8;
     }
 
-    // Restbytes (1 bis 7 Bytes)
+    // Remainder scalar bytes (1 to 7 bytes)
     while offset < len {
         dest[offset] ^= src[offset];
         offset += 1;
     }
 }
 
-/// Führt ein 3-Wege XOR durch: `dest[i] = src1[i] ^ src2[i]`.
+/// Performs 3-way buffer XOR: `dest[i] = src1[i] ^ src2[i]`.
 #[inline]
 pub fn xor_buffers(dest: &mut [u8], src1: &[u8], src2: &[u8]) {
     assert_eq!(dest.len(), src1.len());

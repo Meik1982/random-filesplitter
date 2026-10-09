@@ -1,54 +1,54 @@
 //! Type definitions, format constants, and parsing utilities for RFS.
 
-/// Magic-Bytes für das historische RFS2-Format (4 Bytes)
+/// Magic bytes for legacy RFS2 format (4 bytes)
 pub const RFS2_MAGIC: [u8; 4] = *b"RFS2";
 
-/// Magic-Bytes für das neue Post-Quantum RFS3-Format (4 Bytes)
+/// Magic bytes for post-quantum RFS3 format (4 bytes)
 pub const RFS3_MAGIC: [u8; 4] = *b"RFS3";
 
-/// Magic-Bytes für das neue Post-Quantum RFS4-Format mit Dateinamen & Block-Padding (4 Bytes)
+/// Magic bytes for post-quantum RFS4 format with embedded filename & block padding (4 bytes)
 pub const RFS4_MAGIC: [u8; 4] = *b"RFS4";
 
-/// Größe des SHA-256 Hashes in RFS2 (32 Bytes)
+/// Size of SHA-256 digest in RFS2 (32 bytes)
 pub const SHA256_DIGEST_SIZE: usize = 32;
 
-/// Größe des BLKS-384 Hashes in RFS3 und RFS4 (48 Bytes)
+/// Size of BLKS-384 digest in RFS3 and RFS4 (48 bytes)
 pub const BLKS_DIGEST_SIZE: usize = 48;
 
-/// Größe des Dateigrößen-Feldes (8 Bytes Little-Endian)
+/// Size of original file length field (8 bytes little-endian)
 pub const SIZE_HEADER_SIZE: usize = 8;
 
-/// Gesamtgröße des RFS2 Footers (4B Magic + 32B Hash + 8B Size = 44 Bytes)
+/// Total size of legacy RFS2 footer (4B magic + 32B hash + 8B size = 44 bytes)
 pub const RFS2_FOOTER_SIZE: usize = 4 + SHA256_DIGEST_SIZE + SIZE_HEADER_SIZE;
 
-/// Gesamtgröße des RFS3 Footers (4B Magic + 48B BLKS-384 + 8B Size = 60 Bytes)
+/// Total size of RFS3 footer (4B magic + 48B BLKS-384 + 8B size = 60 bytes)
 pub const RFS3_FOOTER_SIZE: usize = 4 + BLKS_DIGEST_SIZE + SIZE_HEADER_SIZE;
 
-/// Feste Größe des RFS4 Trailers am Dateiende (64 Bytes)
+/// Fixed size of RFS4 trailer at end of file (64 bytes)
 /// [0..4] Magic ("RFS4")
 /// [4..6] Version (0x04, 0x00)
-/// [6..14] Originalgröße (u64 LE, 8 Bytes)
-/// [14..62] BLKS-384 Hash (48 Bytes)
-/// [62..64] Dateinamen-Länge L (u16 LE, 2 Bytes)
+/// [6..14] Original size (u64 LE, 8 bytes)
+/// [14..62] BLKS-384 hash (48 bytes)
+/// [62..64] Filename length L (u16 LE, 2 bytes)
 pub const RFS4_TRAILER_SIZE: usize = 4 + 2 + SIZE_HEADER_SIZE + BLKS_DIGEST_SIZE + 2;
 
-/// Standard-Ausrichtungsblockgröße für RFS4 (4 KiB = 4096 Bytes Cluster-Alignment)
+/// Default alignment block size for RFS4 (4 KiB = 4096 bytes cluster alignment)
 pub const RFS4_ALIGN_BLOCK_SIZE: usize = 4096;
 
-/// Standard-Puffergröße (4 MiB)
+/// Default buffer block size (4 MiB)
 pub const DEFAULT_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 
-/// Minimale erlaubte Blockgröße (64 KiB)
+/// Minimum allowed block size (64 KiB)
 pub const MIN_BLOCK_SIZE: usize = 64 * 1024;
 
-/// Maximale erlaubte Blockgröße (256 MiB)
+/// Maximum allowed block size (256 MiB)
 pub const MAX_BLOCK_SIZE: usize = 256 * 1024 * 1024;
 
-/// Parst menschenlesbare Größenangaben wie "64K", "1M", "4M", "16M" in Bytes.
+/// Parses human-readable block size strings such as "64K", "1M", "4M", "16M" into bytes.
 pub fn parse_block_size(s: &str) -> Result<usize, String> {
     let s = s.trim();
     if s.is_empty() {
-        return Err("Leere Blockgrößenangabe".to_string());
+        return Err("Empty block size specification".to_string());
     }
 
     let (num_part, multiplier) = if s.ends_with(|c: char| c.is_ascii_alphabetic()) {
@@ -59,7 +59,7 @@ pub fn parse_block_size(s: &str) -> Result<usize, String> {
             "G" => 1024 * 1024 * 1024,
             _ => {
                 return Err(format!(
-                    "Unbekannter Größensuffix: '{}'. Erlaubt sind K, M, G.",
+                    "Unknown size suffix: '{}'. Allowed are K, M, G.",
                     suffix
                 ))
             }
@@ -72,15 +72,15 @@ pub fn parse_block_size(s: &str) -> Result<usize, String> {
     let val = num_part
         .trim()
         .parse::<usize>()
-        .map_err(|_| format!("Ungültige Zahl in Blockgrößenangabe: '{}'", s))?;
+        .map_err(|_| format!("Invalid number in block size: '{}'", s))?;
 
     let bytes = val
         .checked_mul(multiplier)
-        .ok_or_else(|| "Blockgröße überschreitet Adressbereich".to_string())?;
+        .ok_or_else(|| "Block size exceeds address space".to_string())?;
 
     if !(MIN_BLOCK_SIZE..=MAX_BLOCK_SIZE).contains(&bytes) {
         return Err(format!(
-            "Blockgröße {} Bytes außerhalb des erlaubten Bereichs (64 KiB - 256 MiB)",
+            "Block size {} bytes outside allowed range (64 KiB - 256 MiB)",
             bytes
         ));
     }
@@ -88,11 +88,11 @@ pub fn parse_block_size(s: &str) -> Result<usize, String> {
     Ok(bytes)
 }
 
-/// Parst eine beliebige Dateigröße (z. B. "1024", "64K", "10M", "4G", "1T").
+/// Parses an arbitrary file size string (e.g. "1024", "64K", "10M", "4G", "1T").
 pub fn parse_file_size(s: &str) -> Result<u64, String> {
     let s_clean = s.trim();
     if s_clean.is_empty() {
-        return Err("Dateigrößenangabe darf nicht leer sein.".to_string());
+        return Err("File size specification must not be empty.".to_string());
     }
 
     let (num_part, multiplier) = if s_clean.ends_with(|c: char| c.is_ascii_alphabetic()) {
@@ -105,7 +105,7 @@ pub fn parse_file_size(s: &str) -> Result<u64, String> {
             "T" => 1024 * 1024 * 1024 * 1024,
             _ => {
                 return Err(format!(
-                    "Unbekannter Größensuffix: '{}'. Erlaubt sind B, K, M, G, T.",
+                    "Unknown size suffix: '{}'. Allowed are B, K, M, G, T.",
                     suffix
                 ))
             }
@@ -118,10 +118,10 @@ pub fn parse_file_size(s: &str) -> Result<u64, String> {
     let val = num_part
         .trim()
         .parse::<u64>()
-        .map_err(|_| format!("Ungültige Zahl in Größenangabe: '{}'", s))?;
+        .map_err(|_| format!("Invalid number in size: '{}'", s))?;
 
     val.checked_mul(multiplier)
-        .ok_or_else(|| "Dateigröße überschreitet 64-Bit Adressbereich".to_string())
+        .ok_or_else(|| "File size exceeds 64-bit address space".to_string())
 }
 
 #[cfg(test)]
@@ -146,8 +146,8 @@ mod tests {
         assert_eq!(parse_block_size("4M").unwrap(), 4 * 1024 * 1024);
         assert_eq!(parse_block_size("16M").unwrap(), 16 * 1024 * 1024);
         assert_eq!(parse_block_size("256M").unwrap(), 256 * 1024 * 1024);
-        assert!(parse_block_size("32K").is_err()); // Zu klein (< 64 KiB)
-        assert!(parse_block_size("512M").is_err()); // Zu groß (> 256 MiB)
+        assert!(parse_block_size("32K").is_err());
+        assert!(parse_block_size("512M").is_err());
         assert!(parse_block_size("invalid").is_err());
     }
 }

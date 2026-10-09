@@ -1,4 +1,4 @@
-//! CLI-Modul für Argument-Parsing, Validierung und Nutzerinteraktion.
+//! CLI module for argument parsing, validation, and user interaction.
 
 pub mod parser;
 

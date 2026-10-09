@@ -4,7 +4,7 @@
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
-/// Weist den OS-Kernel an, aggressives sequentielles Read-Ahead zu aktivieren.
+/// Advises the OS kernel to enable aggressive sequential read-ahead.
 #[cfg(unix)]
 pub fn advise_sequential<F: AsRawFd>(file: &F) {
     #[cfg(target_os = "linux")]
@@ -16,7 +16,7 @@ pub fn advise_sequential<F: AsRawFd>(file: &F) {
 #[cfg(not(unix))]
 pub fn advise_sequential<F>(_file: &F) {}
 
-/// Weist den OS-Kernel an, verarbeitete Seiten aus dem Page-Cache zu entfernen.
+/// Advises the OS kernel to drop processed pages from the page cache.
 #[cfg(unix)]
 pub fn advise_drop_cache<F: AsRawFd>(file: &F, offset: i64, len: i64) {
     #[cfg(target_os = "linux")]

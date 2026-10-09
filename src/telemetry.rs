@@ -6,18 +6,18 @@ use std::cell::Cell;
 use std::io::{self, Write};
 use std::time::Instant;
 
-/// Betriebsmodi für Telemetrie und Fortschrittsanzeige
+/// Operational modes for telemetry and progress reporting
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TelemetryMode {
-    /// Interaktive ANSI-Konsole (Fortschrittsbalken mit Durchsatz und ETA auf stderr)
+    /// Interactive ANSI terminal (progress bar with throughput and ETA on stderr)
     Interactive,
-    /// Maschinenlesbare NDJSON-Events auf stderr (für CI/CD und Agenten)
+    /// Machine-readable NDJSON events on stderr (for CI/CD pipelines and agents)
     Json,
-    /// Keine Fortschrittsanzeige (nur Fehler)
+    /// Silent mode (suppresses progress, emits errors only)
     Silent,
 }
 
-/// Einheitliche Telemetrie- und Fortschritts-Engine
+/// Unified telemetry and visual progress engine
 pub struct Telemetry {
     mode: TelemetryMode,
     action: &'static str,

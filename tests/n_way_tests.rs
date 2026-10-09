@@ -258,7 +258,8 @@ fn test_restore_source_collision_protection() {
     );
     let stderr = String::from_utf8_lossy(&restore_output.stderr);
     assert!(
-        stderr.contains("darf nicht identisch mit Quellteil"),
+        stderr.contains("darf nicht identisch mit Quellteil")
+            || stderr.contains("must not be identical to source share"),
         "Fehlermeldung erwartet: {}",
         stderr
     );
