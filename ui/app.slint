@@ -1,0 +1,259 @@
+import { Button, Slider, CheckBox, LineEdit, ProgressIndicator, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "RFS - Random File Splitter (v3.0.0)";
+    preferred-width: 720px;
+    preferred-height: 560px;
+    min-width: 640px;
+    min-height: 480px;
+    background: #14161b;
+    default-font-family: "sans-serif";
+
+    in-out property <int> active_tab: 0;
+
+    // Split properties
+    in-out property <string> split_file_path: "";
+    in-out property <string> split_file_info: "Keine Datei ausgewählt. Bitte Datei hineinziehen oder Pfad eingeben.";
+    in-out property <int> split_num_parts: 3;
+    in-out property <bool> split_enable_decoys: false;
+    in-out property <int> split_num_decoys: 3;
+    in-out property <string> split_status: "Bereit zum Aufteilen";
+    in-out property <float> split_progress: 0.0;
+    in-out property <bool> split_in_progress: false;
+
+    // Restore properties
+    in-out property <string> restore_shares_input: "";
+    in-out property <string> restore_detected_info: "Ziehen Sie mindestens 2 .rfs-Dateien hierher.";
+    in-out property <string> restore_status: "Bereit zur Wiederherstellung";
+    in-out property <float> restore_progress: 0.0;
+    in-out property <bool> restore_in_progress: false;
+    in-out property <string> restore_integrity_badge: "Ausstehend";
+
+    // Callbacks to Rust
+    callback request_select_file();
+    callback request_split();
+    callback request_select_shares();
+    callback request_restore();
+    callback request_run_benchmark();
+
+    VerticalBox {
+        padding: 18px;
+        spacing: 14px;
+
+        // Header
+        HorizontalLayout {
+            spacing: 12px;
+            Text {
+                text: "🛡️ RFS";
+                font-size: 22px;
+                font-weight: 800;
+                color: #58a6ff;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "Random File Splitter (Information-Theoretic Security)";
+                font-size: 14px;
+                color: #8b949e;
+                vertical-alignment: center;
+            }
+        }
+
+        // Tab Navigation
+        HorizontalLayout {
+            height: 38px;
+            spacing: 8px;
+
+            Rectangle {
+                background: root.active_tab == 0 ? #1f242c : #16181d;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: root.active_tab == 0 ? #58a6ff : #30363d;
+                TouchArea {
+                    clicked => { root.active_tab = 0; }
+                }
+                Text {
+                    text: " Aufteilen (Split) ";
+                    color: root.active_tab == 0 ? #ffffff : #8b949e;
+                    font-weight: root.active_tab == 0 ? 700 : 400;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+
+            Rectangle {
+                background: root.active_tab == 1 ? #1f242c : #16181d;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: root.active_tab == 1 ? #58a6ff : #30363d;
+                TouchArea {
+                    clicked => { root.active_tab = 1; }
+                }
+                Text {
+                    text: " Wiederherstellen (Restore) ";
+                    color: root.active_tab == 1 ? #ffffff : #8b949e;
+                    font-weight: root.active_tab == 1 ? 700 : 400;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Tab Content Area
+        Rectangle {
+            background: #181b22;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #30363d;
+
+            // TAB 0: SPLIT
+            if root.active_tab == 0: VerticalBox {
+                padding: 16px;
+                spacing: 12px;
+
+                Text {
+                    text: "Quelldatei für N-Way One-Time-Pad:";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.split_file_path;
+                        placeholder-text: "Pfad zur Quelldatei...";
+                        edited(val) => { root.split_file_path = val; }
+                    }
+                    Button {
+                        text: "Durchsuchen...";
+                        clicked => { root.request_select_file(); }
+                    }
+                }
+
+                Text {
+                    text: root.split_file_info;
+                    color: #8b949e;
+                    font-size: 12px;
+                }
+
+                Rectangle { height: 1px; background: #30363d; }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text {
+                        text: "Anzahl Shares (N = " + root.split_num_parts + "):";
+                        color: #c9d1d9;
+                        vertical-alignment: center;
+                        min-width: 160px;
+                    }
+                    Slider {
+                        minimum: 2;
+                        maximum: 16;
+                        value: root.split_num_parts;
+                        changed(val) => { root.split_num_parts = Math.round(val); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    CheckBox {
+                        text: "Köderdateien (Decoys) erzeugen";
+                        checked: root.split_enable_decoys;
+                        toggled => { root.split_enable_decoys = !root.split_enable_decoys; }
+                    }
+                    if root.split_enable_decoys: Text {
+                        text: "(+3 ChaCha20 Rauschdateien zur Verkehrsverschleierung)";
+                        color: #7ee787;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { height: 1px; background: #30363d; }
+
+                ProgressIndicator {
+                    progress: root.split_progress;
+                }
+
+                Text {
+                    text: root.split_status;
+                    color: #58a6ff;
+                    font-size: 12px;
+                }
+
+                Button {
+                    text: root.split_in_progress ? "Wird verarbeitet..." : "🚀 Datei sicher aufteilen";
+                    enabled: !root.split_in_progress && root.split_file_path != "";
+                    clicked => { root.request_split(); }
+                }
+            }
+
+            // TAB 1: RESTORE
+            if root.active_tab == 1: VerticalBox {
+                padding: 16px;
+                spacing: 12px;
+
+                Text {
+                    text: "Eingabe der RFS-Shares (mindestens 2 Teile):";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.restore_shares_input;
+                        placeholder-text: "Pfade durch Komma getrennt oder Datei auswählen...";
+                        edited(val) => { root.restore_shares_input = val; }
+                    }
+                    Button {
+                        text: "Shares wählen...";
+                        clicked => { root.request_select_shares(); }
+                    }
+                }
+
+                Text {
+                    text: root.restore_detected_info;
+                    color: #8b949e;
+                    font-size: 12px;
+                }
+
+                Rectangle { height: 1px; background: #30363d; }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text {
+                        text: "Integritäts-Status:";
+                        color: #c9d1d9;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.restore_integrity_badge;
+                        color: root.restore_integrity_badge == "Gültig [OK]" ? #7ee787 : (root.restore_integrity_badge == "Fehler [Mismatch]" ? #f85149 : #8b949e);
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { height: 1px; background: #30363d; }
+
+                ProgressIndicator {
+                    progress: root.restore_progress;
+                }
+
+                Text {
+                    text: root.restore_status;
+                    color: #58a6ff;
+                    font-size: 12px;
+                }
+
+                Button {
+                    text: root.restore_in_progress ? "Wird wiederhergestellt..." : "🔓 Originaldatei rekonstruieren";
+                    enabled: !root.restore_in_progress && root.restore_shares_input != "";
+                    clicked => { root.request_restore(); }
+                }
+            }
+        }
+    }
+}
