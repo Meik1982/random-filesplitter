@@ -21,7 +21,7 @@ required-features = ["gui"]
 
 [features]
 default = []
-gui = ["dep:slint", "dep:slint-build"]
+gui = ["dep:slint", "dep:slint-build", "dep:rfd"]
 
 [dependencies]
 blks-core = { git = "https://github.com/Meik1982/blks.git" }
@@ -32,6 +32,7 @@ crossbeam-channel = "0.5"
 zeroize = { version = "1.8", features = ["derive"] }
 libc = "0.2"
 slint = { version = "1.18", optional = true }
+rfd = { version = "0.15", optional = true }
 
 [build-dependencies]
 slint-build = { version = "1.18", optional = true }

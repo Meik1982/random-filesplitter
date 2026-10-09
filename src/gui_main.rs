@@ -8,12 +8,26 @@ use std::path::PathBuf;
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
 
-    // Callback: Split
+    // Callback: Split File Dialog
     let window_handle = main_window.as_weak();
     main_window.on_request_select_file(move || {
-        if let Some(window) = window_handle.upgrade() {
-            // Optional native file-picker or fallback
-            window.set_split_file_info("Pfad manuell eingeben oder aus Dateimanager kopieren.".into());
+        if let Some(file) = rfd::FileDialog::new()
+            .set_title("Quelldatei für RFS-Split auswählen")
+            .pick_file()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                let path_str = file.to_string_lossy().to_string();
+                let file_name = file.file_name().and_then(|n| n.to_str()).unwrap_or("Datei");
+                let size_str = std::fs::metadata(&file)
+                    .map(|m| rfs_core::telemetry::format_bytes(m.len()))
+                    .unwrap_or_else(|_| "unbekannte Größe".to_string());
+
+                window.set_split_file_path(path_str.into());
+                window.set_split_file_info(
+                    format!("Ausgewählt: {} ({})", file_name, size_str).into(),
+                );
+                window.set_split_status("Bereit zum Aufteilen".into());
+            }
         }
     });
 
@@ -22,7 +36,11 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(window) = window_handle.upgrade() {
             let path_str = window.get_split_file_path().to_string();
             let parts = window.get_split_num_parts() as usize;
-            let decoys = if window.get_split_enable_decoys() { 3 } else { 0 };
+            let decoys = if window.get_split_enable_decoys() {
+                3
+            } else {
+                0
+            };
 
             window.set_split_in_progress(true);
             window.set_split_status("Teile Datei via ChaCha20 & SIMD-XOR...".into());
@@ -61,11 +79,29 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    // Callback: Restore
+    // Callback: Restore Shares Dialog
     let window_handle = main_window.as_weak();
     main_window.on_request_select_shares(move || {
-        if let Some(window) = window_handle.upgrade() {
-            window.set_restore_detected_info("Pfade durch Komma getrennt angeben (z. B. teil1.rfs, teil2.rfs).".into());
+        if let Some(files) = rfd::FileDialog::new()
+            .set_title("RFS Shares zur Rekonstruktion auswählen")
+            .add_filter("RFS Shares", &["rfs", "rfs1", "rfs2", "rfs3", "rfs4"])
+            .add_filter("Alle Dateien", &["*"])
+            .pick_files()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                let joined = files
+                    .iter()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let count = files.len();
+                window.set_restore_shares_input(joined.into());
+                window.set_restore_detected_info(
+                    format!("{} Share-Dateien ausgewählt.", count).into(),
+                );
+                window.set_restore_status("Bereit zur Wiederherstellung".into());
+                window.set_restore_integrity_badge("Ausstehend".into());
+            }
         }
     });
 
@@ -119,7 +155,9 @@ fn main() -> Result<(), slint::PlatformError> {
                             }
                             Err(e) => {
                                 w.set_restore_integrity_badge("Fehler [Mismatch]".into());
-                                w.set_restore_status(format!("Wiederherstellungsfehler: {}", e).into());
+                                w.set_restore_status(
+                                    format!("Wiederherstellungsfehler: {}", e).into(),
+                                );
                             }
                         }
                     }
