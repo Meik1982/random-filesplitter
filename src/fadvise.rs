@@ -8,8 +8,12 @@ use std::os::unix::io::AsRawFd;
 #[cfg(unix)]
 pub fn advise_sequential<F: AsRawFd>(file: &F) {
     #[cfg(target_os = "linux")]
-    unsafe {
-        libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL);
+    {
+        // SAFETY: `file.as_raw_fd()` yields an active, open file descriptor owned by the caller.
+        // `libc::posix_fadvise` with offset 0 and len 0 advises the kernel across the entire file.
+        unsafe {
+            libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL);
+        }
     }
 }
 
@@ -20,8 +24,12 @@ pub fn advise_sequential<F>(_file: &F) {}
 #[cfg(unix)]
 pub fn advise_drop_cache<F: AsRawFd>(file: &F, offset: i64, len: i64) {
     #[cfg(target_os = "linux")]
-    unsafe {
-        libc::posix_fadvise(file.as_raw_fd(), offset, len, libc::POSIX_FADV_DONTNEED);
+    {
+        // SAFETY: `file.as_raw_fd()` is a valid, open file descriptor.
+        // Passing `POSIX_FADV_DONTNEED` informs the OS that cached pages in [offset..offset+len] can be evicted.
+        unsafe {
+            libc::posix_fadvise(file.as_raw_fd(), offset, len, libc::POSIX_FADV_DONTNEED);
+        }
     }
 }
 
