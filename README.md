@@ -1,150 +1,147 @@
 # rfs - Random File Splitter (v3.0.0 Post-Quantum & High-Performance Rust Edition) 🛡️
 
+**English** | [Deutsch](README.de.md)
+
 [![CI & Build RFS Binaries](https://github.com/Meik1982/random-filesplitter/actions/workflows/build.yml/badge.svg)](https://github.com/Meik1982/random-filesplitter/actions/workflows/build.yml)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![Rust](https://img.shields.io/badge/Rust-2021_Edition-orange.svg)](https://www.rust-lang.org)
 [![Post-Quantum Hash](https://img.shields.io/badge/Hash-BLKS--384-brightgreen.svg)](https://github.com/Meik1982/blks)
 
-**rfs** ist ein hochperformantes, modulares Systemwerkzeug zur **physischen Transportsicherung**, kryptografischen Aufteilung und bitgenauen Rekonstruktion von Dateien und Datenströmen.
+**rfs** is a high-performance, modular systems tool designed for **physical transport security**, cryptographic partitioning, and bit-exact reconstruction of files and Unix streams.
 
-Es basiert auf dem mathematischen Prinzip der **Information-Theoretic Security via One-Time-Pad Chain ($N$-aus-$N$ XOR)**:
-Eine Datei wird in $N$ Teile zerlegt ($N \ge 2$), von denen jeder einzelne Teil mathematisch ununterscheidbar von weißem Rauschen ist (**100 % Plausible Deniability, Zero Fingerprint**). Erst wenn **alle $N$ Teile** zusammengeführt werden, wird das Original bitgenau rekonstruiert. Fehlt auch nur ein einziger Teil, ist das Geheimnis mathematisch unlösbar.
-
----
-
-## 🚀 Neue Features in v3.0.0 (Rust Rewrite)
-
-* **Post-Quantum Stealth-Footer (RFS3-PQ):**
-  * Verwendet **BLKS-384** (384-Bit Post-Quantum Merkle-Tree Hashing) anstelle von SHA-256. Beseitigt den früheren Hash-Flaschenhals vollständig (**3,3x schneller als SHA-256**).
-  * Der 60-Byte Metadaten-Footer (Magic `"RFS3"`, 48-Byte BLKS-384 Digest, 8-Byte Dateigröße) ist $N$-fach über alle Teile ge-XORt. Einzeln betrachtet bleibt jede Datei 100 % Rauschen ohne Magic-Header oder Klartextspuren.
-  * Sofort-Abbruch (< 1 ms) bei nicht zusammengehörigen oder unvollständigen Dateien.
-* **$N$-Way One-Time-Pad Splitting (2 bis 64 Teile):**
-  * Beliebige Aufteilung in 3, 4 oder $N$ Teile via `-n, --parts <ANZAHL>`.
-  * Teile $2 \dots N$ werden mit unkorreliertem ChaCha20-CSPRNG-Schlüsselstrom befüllt; Teil 1 schließt die Kette mit SIMD-beschleunigtem XOR ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$).
-* **Entkoppelte 3-Stufen Zero-Allocation Pipeline:**
-  * Dedizierte Threads für Reader, Krypto-Worker und Writer, synchronisiert über gebundene Ringpuffer (`crossbeam-channel` mit Triple-Buffering).
-  * Vollständige Überlappung von Disk-I/O und SIMD-Krypto: Bis zu **1,85 GB/s ChaCha20** und **~4,0 GB/s SIMD-XOR**.
-* **Unix Streaming-Pipes (POSIX `-` Support):**
-  * Nahtlose Integration in Unix-Pipelines: Liest von `stdin` und schreibt nach `stdout`.
-  * Dateigröße muss vorab nicht bekannt sein; In-Flight BLKS-384 Hashing puffert die Metadaten bis zum Stream-Ende.
-* **Maschinenlesbare NDJSON-Telemetrie (`--json`):**
-  * Strukturierte JSON-Lines auf `stderr` (`progress`, `finished`, `error`) mit Bytezählern, Durchsatz, Live-ETA und Hashes für Skripte und KI-Agenten.
-* **Interaktive Fortschrittsanzeige (`blkcp`-Style):**
-  * Dynamischer 24-Zeichen ANSI-Fortschrittsbalken mit Prozentanzeige, formatierter Bytezahl, Live-Geschwindigkeit (MB/s / GB/s) und ETA.
-* **Erweiterte NIST SP 800-22 Entropieanalyse:**
-  * Zweiphasige Diagnose (`rfs --entropy-test`) und Datei-Audit (`rfs -a <Datei>`) mit Runs-Tests, Block-Frequenztests ($M=128$), analytischer `erfc`-Funktion und Wilson-Hilferty Chi²-Transformation.
-* **Swap-Resilienz via Memory-Locking (`--mlock`):**
-  * Sperrt kryptografische Puffer im physischen RAM via POSIX `mlock`, um Auslagerungen von sensiblen Klartextdaten und OTP-Zufallsströmen in Swap-Partitionen oder Ruhezustands-Abbilder hardwareseitig zu unterbinden.
-* **RFS4-Format mit eingebettetem Dateinamen & 4 KiB Cluster-Padding:**
-  * Der Original-Dateiname wird direkt im Stealth-Footer hinterlegt und über alle $N$ Teile informationstheoretisch per One-Time-Pad verschlüsselt ($F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$).
-  * Jede Share-Datei wird automatisch auf ein Vielfaches von **4 KiB (4.096 Bytes Cluster-Alignment)** mit ChaCha20-Zufall aufgefüllt – verhindert jegliche Dateigrößen-Korrelation auf Byte-Ebene.
-  * Mit `--pad-to <GRÖSSE>` können Shares auf eine exakte Bytegröße (z. B. `100M`, `20G`) aufgebläht werden.
-* **Neutrales Anti-Forensik Namensschema (`<token6>.rfs`):**
-  * Shares und Decoys erhalten standardmäßig unkorrelierte 6-stellige Zufalls-Tokens (z. B. `a9f4c2.rfs`, `7c1b3e.rfs`).
-  * Das Dateisystem verrät weder den ursprünglichen Dateinamen, noch die Anzahl der Teile, noch welche Dateien echte Shares und welche Köder sind.
-* **Automatische Wiederherstellung:**
-  * `rfs restore a9f4c2.rfs 7c1b3e.rfs` liest den echten Originaldateinamen bitgenau aus dem Footer und legt die Datei automatisch unter ihrem ursprünglichen Namen ab.
-* **100 % Abwärtskompatibilität:**
-  * Rekonstruiert historische RFS3- und RFS2-Archive (60B / 44B Footer, SHA-256 / BLKS-384) aus Vorversionen automatisch und bitgenau.
-* **Anti-Forensik Köderdateien (Decoys & Traffic-Obfuscation):**
-  * Erzeugung beliebiger ununterscheidbarer Köderdateien mit 100 % ChaCha20-Zufallsrauschen (`-d, --decoys` beim Splitten oder Subcommand `rfs decoy`).
-  * Intelligente Mustererkennung: Berechnet bei Rohdateien automatisch die künftige Share-Größe (`Originalgröße + 60 Bytes Stealth-Footer`) und übernimmt bei RFS-Shares die Dateigröße exakt 1:1.
-  * Zerstört Traffic-Analysen und lässt Abhörer im Unklaren darüber, wie viele und welche Dateien echte Geheimnis-Shares sind.
+It is built on the mathematical foundation of **Information-Theoretic Security via One-Time-Pad Chain ($N$-out-of-$N$ XOR)**:
+A file is split into $N$ parts ($N \ge 2$), where each individual share is mathematically indistinguishable from thermal noise (**100% Plausible Deniability, Zero Forensic Fingerprint**). The original plaintext can only be reconstructed when **all $N$ shares** are combined. If even a single share is missing, the secret remains mathematically unsolvable.
 
 ---
 
-## 💻 Verwendung
+## 🚀 Key Features in v3.0.0 (Rust Rewrite)
 
-### 1. Dateien splitten (RFS4 N-Way One-Time-Pad)
+* **Post-Quantum Stealth Footer (RFS4):**
+  * Employs **BLKS-384** (384-bit Post-Quantum Merkle-Tree Hashing) instead of legacy SHA-256, eliminating hashing bottlenecks (**3.3x faster than SHA-256**).
+  * The 64-byte stealth metadata trailer is $N$-way XOR-encrypted across all shares. In isolation, every share is 100% high-entropy noise with zero plaintext headers or magic numbers.
+  * Instant sub-millisecond abort (< 1 ms) upon detecting tampered, corrupt, or mismatched shares.
+* **$N$-Way One-Time-Pad Splitting (2 to 64 Shares):**
+  * Arbitrary partitioning into 3, 4, or $N$ shares via `-n, --parts <COUNT>`.
+  * Shares $2 \dots N$ are filled with uncorrelated ChaCha20-CSPRNG keystreams; Share 1 closes the loop with SIMD-accelerated XOR ($P = C_1 \oplus C_2 \oplus \dots \oplus C_N$).
+* **Decoupled 3-Stage Pipeline & Parallel Disk Fanout:**
+  * Dedicated worker threads for Reader, SIMD/Crypto engine, and Writer, synchronized over bounded channels (`crossbeam-channel` with zero-allocation triple-buffering).
+  * True concurrent I/O fanout across independent physical mountpoints (e.g., separate USB flash drives or NVMe disks).
+  * Saturated memory bus speeds: up to **1.85 GB/s ChaCha20** and **~4.0 GB/s SIMD-XOR**.
+* **Swap Resilience via Memory-Locking (`--mlock`):**
+  * Locks cryptographic and I/O buffer pools into physical RAM via POSIX `mlock` to prevent sensitive plaintext or keystreams from being swapped to disk or hibernation files.
+* **Unix Streaming Pipes (POSIX `-` Support):**
+  * Native integration into Unix pipelines: reads from `stdin` and emits to `stdout`.
+  * No requirement to know the file size in advance; In-Flight BLKS-384 hashing buffers metadata until stream EOF.
+* **Machine-Readable NDJSON Telemetry (`--json`):**
+  * Structured JSON events on `stderr` (`progress`, `finished`, `error`) with byte counters, throughput, live ETA, and checksums for automation and agent pipelines.
+* **Interactive ANSI Progress Bar (`blkcp`-Style):**
+  * Dynamic 24-character terminal progress bar with percentage, formatted byte counters, live transfer rates (MB/s / GB/s), and ETA.
+* **Advanced NIST SP 800-22 Entropy Diagnostics:**
+  * Two-phase system diagnostics (`rfs --entropy-test`) and file entropy analysis (`rfs -a <file>`) featuring Runs tests, Block Frequency tests ($M=128$), analytical `erfc`, and Wilson-Hilferty Chi² approximation.
+* **RFS4 Format with Embedded Filename & 4 KiB Cluster Padding:**
+  * The original filename is embedded directly into the stealth footer and information-theoretically encrypted across all $N$ shares ($F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$).
+  * Every share is padded to a multiple of **4 KiB (4,096 bytes cluster alignment)** with ChaCha20 noise—eliminating file-size correlation attacks on the filesystem level.
+  * Optional `--pad-to <SIZE>` inflates shares to an exact target size (e.g., `100M`, `20G`).
+* **Anonymous Anti-Forensic Naming (`<token6>.rfs`):**
+  * Shares and decoys default to uncorrelated 6-character hex tokens (e.g., `a9f4c2.rfs`, `7c1b3e.rfs`).
+  * The filesystem reveals neither the original filename, nor the number of shares, nor which files are real shares and which are decoys.
+* **Automatic Restoration:**
+  * `rfs restore a9f4c2.rfs 7c1b3e.rfs` extracts the original filename directly from the decrypted footer and restores the file under its true name.
+* **100% Backward Compatibility:**
+  * Transparently identifies and restores legacy RFS3 and RFS2 archives (60B / 44B footers, SHA-256 / BLKS-384) from previous releases bit-for-bit.
+* **Anti-Forensic Decoys & Traffic Obfuscation:**
+  * Generate indistinguishable chaff files filled with 100% ChaCha20 random noise (`-d, --decoys` during split or standalone `rfs decoy`).
+  * Smart pattern matching: calculates target share size for raw files (`size + 64 bytes footer + padding`) or duplicates existing share sizes 1:1.
+
+---
+
+## 💻 Usage
+
+### 1. Splitting Files (RFS4 N-Way One-Time-Pad)
 ```bash
-# In 2 neutrale Teile aufteilen (erzeugt z. B. a9f4c2.rfs, 7c1b3e.rfs mit 4 KiB Cluster-Padding)
-rfs split datei.iso
+# Split into 2 anonymous shares (creates e.g. a9f4c2.rfs, 7c1b3e.rfs with 4 KiB cluster padding)
+rfs split data.iso
 
-# In 3 Teile aufteilen und auf exakt 50 MB aufblähen
-rfs split -n 3 datei.iso --pad-to 50M
+# Split into 3 shares and pad to an exact size of 50 MB
+rfs split -n 3 data.iso --pad-to 50M
 
-# Mit 3 Köderdateien verwürfeln (insg. 6 ununterscheidbare Dateien mit Zufalls-Tokens)
-rfs split -n 3 datei.iso -d 3
+# Shuffle with 3 decoy files (generates 6 indistinguishable files with random tokens)
+rfs split -n 3 data.iso -d 3
 
-# Explizite Pfade und Blockgröße definieren
-rfs split -n 3 -B 16M datei.iso /media/usb1/partA.rfs /media/usb2/partB.rfs /media/usb3/partC.rfs
+# With memory locking (mlock) and parallel disk fanout across separate mountpoints
+rfs split -n 3 --mlock data.iso /media/usb1/pA.rfs /media/usb2/pB.rfs /media/usb3/pC.rfs
 ```
 
-### 2. Dateien wiederherstellen & verifizieren
+### 2. Restoring & Verifying Files
 ```bash
-# Stellt den Original-Dateinamen automatisch aus dem RFS4-Footer wieder her:
+# Automatically restores original filename from the RFS4 footer:
 rfs restore a9f4c2.rfs 7c1b3e.rfs
 
-# In spezifische Zieldatei wiederherstellen (oder '-' für stdout)
-rfs restore a9f4c2.rfs 7c1b3e.rfs -o wunschname.iso
+# Restore into a specific target destination (or '-' for stdout)
+rfs restore a9f4c2.rfs 7c1b3e.rfs -o custom_name.iso
 
-# Integrität im RAM prüfen ohne Disk-Schreibzugriff
+# Fast integrity verification in RAM without writing to disk
 rfs verify a9f4c2.rfs 7c1b3e.rfs
 ```
 
-### 3. Unix Streaming-Pipes
+### 3. Unix Streaming Pipes
 ```bash
-# Tar-Archiv direkt beim Erstellen in 4 Teile streamen
+# Stream tar archive into 4 shares on-the-fly
 tar -czf - /var/data | rfs split -n 4 - -o backup
 
-# Aus 4 Teilen direkt nach stdout entpacken
+# Restore from 4 shares directly to stdout and decompress
 rfs restore backup.rfs1 backup.rfs2 backup.rfs3 backup.rfs4 -o - | tar -xzf -
 ```
 
-### 4. Köderdateien (Decoys) & Anti-Forensik
+### 4. Decoys & Anti-Forensics
 ```bash
-# Beim Splitten sofort 4 Köder mitgenerieren (insg. 7 Dateien: .rfs1 bis .rfs7)
-# RFS verwürfelt per ChaCha20, welche Nummern echte Shares und welche Köder sind!
-rfs split -n 3 geheim.iso -d 4
+# Generate 4 decoys during split (total of 7 files)
+rfs split -n 3 secret.iso -d 4
 
-# Anti-Forensik Token-Modus: Statt Nummern unkorrelierte Hex-Tokens (.<rnd>.rfs) nutzen
-rfs split -n 3 geheim.iso -d 4 --token
-# Erzeugt z. B.: geheim.iso.a9f4.rfs, geheim.iso.7c1b.rfs, geheim.iso.3e82.rfs ...
+# Create decoys matching an existing raw file (+64 bytes footer automatically calculated)
+rfs decoy -t contract.pdf -c 5
 
-# Nachträglich Köder basierend auf einer Rohdatei erstellen (+60 Bytes Footer auto-berechnet)
-rfs decoy -t vertrag.pdf -c 5 --token
+# Create decoys matching an existing RFS share (exact 1:1 byte size)
+rfs decoy -t 7c1b3e.rfs -c 3
 
-# Nachträglich Köder basierend auf einem RFS-Share erstellen (1:1 Bytegröße)
-rfs decoy -t vertrag.pdf.rfs1 -c 3
-
-# Köder mit expliziter Zielgröße erzeugen (z. B. 50 MB)
+# Create decoys with explicit target size (e.g. 50 MB)
 rfs decoy -s 50M -c 2 -o fake_share
 ```
 
-### 5. Maschinenlesbare Telemetrie (--json)
+### 5. Machine-Readable Telemetry (--json)
 ```bash
-rfs split -n 3 riesig.iso --json
-# Ausgabe auf stderr:
+rfs split -n 3 huge.iso --json
+# Emits NDJSON on stderr:
 # {"event":"progress","action":"Split","processed_bytes":524288000,"total_bytes":1048576000,"percent":50.00,"speed_bps":1850230120,"elapsed_s":0.28,"eta_s":0.2}
 # {"event":"finished","action":"Split","processed_bytes":1048576000,"elapsed_s":0.5512,"avg_speed_bps":1902340123,"num_parts":3,"checksum":{"algorithm":"blks-384","digest":"..."}}
 ```
 
-### 5. Kryptoanalyse & Benchmarks
+### 6. Cryptanalysis & Benchmarks
 ```bash
-# NIST SP 800-22 Datei-Entropieanalyse
-rfs -a datei.iso.rfs1
+# NIST SP 800-22 file entropy analysis
+rfs -a data.iso.rfs1
 
-# Zweiphasige System- und Hardware-Entropiediagnose
+# Two-phase hardware and system entropy diagnostics
 rfs --entropy-test
 
-# Hardware-Benchmark (SIMD ChaCha20, XOR, BLKS-384)
+# Hardware throughput benchmark (SIMD ChaCha20, XOR, BLKS-384)
 rfs --benchmark
 ```
 
 ---
 
-## 🛠️ Kompilierung & Installation
+## 🛠️ Building & Installation
 
-### Voraussetzungen
+### Requirements
 * Rust Toolchain (Edition 2021, MSRV 1.75+)
 
-### Aus dem Quellcode bauen
+### Build from Source
 ```bash
 git clone https://github.com/Meik1982/random-filesplitter.git
 cd random-filesplitter
 cargo build --release
 
-# Binary testen
+# Test binary
 ./target/release/rfs --version
 ./target/release/rfs --benchmark
 ```
@@ -157,22 +154,22 @@ makepkg -si
 
 ---
 
-## 📊 Kryptoanalytischer Nachweis (Plausible Deniability)
+## 📊 Cryptanalytic Validation (Plausible Deniability)
 
-Für jeden Split-Teil gelten nachweisbar folgende statistische Schwellenwerte:
+Every split share provably satisfies the following statistical thresholds:
 
-| Metrik | Sollwert / Ideal | Typischer RFS3-Messwert | Status |
+| Metric | Target / Ideal | Typical RFS Value | Status |
 | :--- | :--- | :--- | :--- |
-| **Shannon-Entropie** | $\approx 8{,}000000$ Bits/Byte | **$7{,}99983$ Bits/Byte** | ✅ Bestanden |
-| **Chi-Quadrat ($\chi^2$)** | $180{,}0 \dots 330{,}0$ ($p = 0{,}05 \dots 0{,}95$) | **$248{,}32$** | ✅ Bestanden |
-| **Arithmetischer Mittelwert** | $127{,}500$ | **$127{,}498$** | ✅ Bestanden |
-| **Bit-Balance (1/0)** | $50{,}000\ \%$ | **$50{,}016\ \%$** | ✅ Bestanden |
-| **NIST Runs-Test** | $p \ge 0{,}01$ | **$p = 0{,}627$** | ✅ Bestanden |
-| **NIST Block-Frequenz ($M=128$)** | $p \ge 0{,}01$ | **$p = 0{,}172$** | ✅ Bestanden |
+| **Shannon Entropy** | $\approx 8.000000$ bits/byte | **$7.99983$ bits/byte** | ✅ Passed |
+| **Chi-Square ($\chi^2$)** | $180.0 \dots 330.0$ ($p = 0.05 \dots 0.95$) | **$248.32$** | ✅ Passed |
+| **Arithmetic Mean** | $127.500$ | **$127.498$** | ✅ Passed |
+| **Bit Balance (1/0)** | $50.000\%$ | **$50.016\%$** | ✅ Passed |
+| **NIST Runs Test** | $p \ge 0.01$ | **$p = 0.627$** | ✅ Passed |
+| **NIST Block Frequency ($M=128$)** | $p \ge 0.01$ | **$p = 0.172$** | ✅ Passed |
 
 ---
 
-## 📜 Lizenz & Urheberrecht
+## 📜 License & Copyright
 
 Copyright (c) 2026 Meik Augenblick.  
-Lizenziert unter der **GNU Lesser General Public License v3.0 (LGPL v3)**.
+Licensed under the **GNU Lesser General Public License v3.0 (LGPL v3)**.
