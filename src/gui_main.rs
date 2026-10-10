@@ -149,6 +149,105 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // 4b. Callback: Ordner scannen und Kombinationen testen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_scan_folder(move || {
+        if let Some(folder) = rfd::FileDialog::new()
+            .set_title("Ordner mit RFS-Dateien zum Kombinatorik-Scan auswählen")
+            .pick_folder()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_restore_status("Scanne Ordner nach N-Way Kombinationen...".into());
+                let window_bg = window.as_weak();
+                std::thread::spawn(move || {
+                    let mut candidate_files: Vec<PathBuf> = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir(&folder) {
+                        for entry in entries.flatten() {
+                            let p = entry.path();
+                            if p.is_file() {
+                                candidate_files.push(p);
+                            }
+                        }
+                    }
+
+                    let matches = rfs_core::scanner::scan_candidate_files(&candidate_files);
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = window_bg.upgrade() {
+                            match matches {
+                                Ok(found) if !found.is_empty() => {
+                                    w.set_restore_status(
+                                        format!("🎯 {} gültige(s) Set(s) entdeckt!", found.len())
+                                            .into(),
+                                    );
+                                    let first = &found[0];
+                                    let joined = first
+                                        .shares
+                                        .iter()
+                                        .map(|p| p.to_string_lossy().to_string())
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
+                                    w.set_restore_shares_input(joined.into());
+                                    let orig_name =
+                                        first.metadata.filename().unwrap_or("unbenannt");
+                                    w.set_restore_detected_info(
+                                        format!(
+                                            "Set #1 vorausgewählt: \"{}\" ({} Shares)",
+                                            orig_name,
+                                            first.shares.len()
+                                        )
+                                        .into(),
+                                    );
+                                    w.set_restore_integrity_badge("Gültig [OK]".into());
+
+                                    let mut report = String::new();
+                                    report.push_str(&format!(
+                                        "=== SCAN-ERGEBNIS: {} DATEIEN GEPRÜFT, {} SETS GEFUNDEN ===\n\n",
+                                        candidate_files.len(),
+                                        found.len()
+                                    ));
+                                    for (i, m) in found.iter().enumerate() {
+                                        let name = m.metadata.filename().unwrap_or("unbenannt");
+                                        report.push_str(&format!(
+                                            "🎯 Set #{}: \"{}\" ({})\n",
+                                            i + 1,
+                                            name,
+                                            rfs_core::telemetry::format_bytes(
+                                                m.metadata.original_size()
+                                            )
+                                        ));
+                                        report.push_str(&format!(
+                                            "   Shares ({} Teile):\n",
+                                            m.shares.len()
+                                        ));
+                                        for s in &m.shares {
+                                            report.push_str(&format!("     - {}\n", s.display()));
+                                        }
+                                        report.push('\n');
+                                    }
+                                    w.set_restore_results_log(report.into());
+                                }
+                                Ok(_) => {
+                                    w.set_restore_status("Keine passenden Sets gefunden.".into());
+                                    w.set_restore_detected_info(
+                                        "Alle geprüften Dateien sind unkorreliertes Rauschen."
+                                            .into(),
+                                    );
+                                    w.set_restore_results_log(
+                                        "Keine gültigen RFS-Kombinationen im Ordner gefunden."
+                                            .into(),
+                                    );
+                                }
+                                Err(e) => {
+                                    w.set_restore_status(format!("Scan-Fehler: {}", e).into());
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+        }
+    });
+
     // 5. Callback: Zielordner für Wiederherstellung
     let window_handle = main_window.as_weak();
     main_window.on_request_select_restore_target_dir(move || {

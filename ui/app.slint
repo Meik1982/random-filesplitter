@@ -39,6 +39,7 @@ export component MainWindow inherits Window {
     callback request_select_split_target_dir();
     callback request_split();
     callback request_select_shares();
+    callback request_scan_folder();
     callback request_select_restore_target_dir();
     callback request_restore();
 
@@ -266,6 +267,10 @@ export component MainWindow inherits Window {
                     Button {
                         text: "Shares wählen...";
                         clicked => { root.request_select_shares(); }
+                    }
+                    Button {
+                        text: "🔍 Ordner scannen...";
+                        clicked => { root.request_scan_folder(); }
                     }
                 }
                 Text {

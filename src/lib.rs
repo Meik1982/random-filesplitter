@@ -11,5 +11,6 @@ pub mod format;
 pub mod memlock;
 pub mod naming;
 pub mod pipeline;
+pub mod scanner;
 pub mod telemetry;
 pub mod types;

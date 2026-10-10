@@ -34,6 +34,9 @@ libc = "0.2"
 slint = { version = "1.18", optional = true }
 rfd = { version = "0.15", optional = true }
 
+[dev-dependencies]
+tempfile = "3.17"
+
 [build-dependencies]
 slint-build = { version = "1.18", optional = true }
 

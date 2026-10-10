@@ -138,6 +138,12 @@ pub enum CliCommand {
         force: bool,
         direct_io: bool,
     },
+    /// Combinatorial scan and auto-assembly of candidate shares
+    Scan {
+        paths: Vec<PathBuf>,
+        restore: bool,
+        output_dir: Option<PathBuf>,
+    },
 }
 
 /// Parses CLI arguments into a typed `CliCommand`.
@@ -211,7 +217,6 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     let mut direct_io = false;
     let mut mlock = false;
     let mut token_mode = false;
-    let mut pad_to: Option<u64> = None;
     let mut num_parts: usize = 2;
     let mut num_decoys: usize = 0;
     let mut decoy_count: usize = 1;
@@ -219,6 +224,8 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     let mut decoy_template: Option<String> = None;
     let mut block_size = types::DEFAULT_BLOCK_SIZE;
     let mut output_path: Option<String> = None;
+    let mut pad_to: Option<u64> = None;
+    let mut scan_restore = false;
     let mut positionals: Vec<String> = Vec::new();
 
     let mut i = start_idx;
@@ -228,6 +235,8 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
             verify_only = true;
         } else if arg == "-f" || arg == "--force" {
             force = true;
+        } else if arg == "-r" || arg == "--restore" {
+            scan_restore = true;
         } else if arg == "-q" || arg == "--quiet" || arg == "--silent" {
             silent = true;
         } else if arg == "--json" {
@@ -428,6 +437,17 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                 telemetry_mode,
                 force,
                 direct_io,
+            })
+        }
+        "scan" => {
+            if positionals.len() < 2 {
+                return Err("Error: At least 2 candidate files required for 'scan'.".to_string());
+            }
+            let paths: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
+            Ok(CliCommand::Scan {
+                paths,
+                restore: scan_restore,
+                output_dir: output_path.map(PathBuf::from),
             })
         }
         unknown => Err(format!(

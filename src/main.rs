@@ -13,6 +13,7 @@ mod format;
 mod memlock;
 mod naming;
 mod pipeline;
+mod scanner;
 mod telemetry;
 mod types;
 
@@ -191,5 +192,16 @@ fn main() {
             }
             process::exit(0);
         }
+        CliCommand::Scan {
+            paths,
+            restore,
+            output_dir,
+        } => match scanner::run_cli_scan(&paths, restore, output_dir.as_deref()) {
+            Ok(code) => process::exit(code),
+            Err(e) => {
+                eprintln!("Error during scan: {}", e);
+                process::exit(1);
+            }
+        },
     }
 }

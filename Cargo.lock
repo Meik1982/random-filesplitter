@@ -3719,6 +3719,7 @@ dependencies = [
  "sha2",
  "slint",
  "slint-build",
+ "tempfile",
  "zeroize",
 ]
 
