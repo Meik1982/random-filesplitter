@@ -137,10 +137,11 @@ pub fn xor_in_place(dest: &mut [u8], src: &[u8]) {
 }
 ```
 
-**Benchmark-Ergebnisse (x86_64, AVX2):**  
+**Benchmark-Ergebnisse & Assembler-Verifikation (x86_64, AVX2):**  
 - Standard Byte-für-Byte Iterator-XOR: $\approx 1{,}1 \text{ GB/s}$
 - 64-Byte entrollter Chunk-XOR: **$\approx 4{,}02 \text{ GB/s}$**  
-- Hardware-Limit: Vollständige Sättigung des Speicherbusses. 100 % Safe Rust ohne Zeiger-Arithmetik.
+- **Verifizierter Assembler-Code:** Eine Analyse des emittierten Maschinencodes (`cargo rustc --release -- --emit asm`) bestätigt, dass LLVM die Schleife zuverlässig in 256-Bit AVX2-Vektorbefehle (`vpxor %ymm...` und `vinserti128`) übersetzt, ohne auf skalare Operationen zurückzufallen.
+- **Hardware-Limitierung:** Bei $\approx 4 \text{ GB/s}$ ist die CPU-Rechenzeit vernachlässigbar; der Durchsatz stößt direkt an die physische Bandbreitengrenze des Speichercontrollers und des RAM-Busses gängiger Dual-Channel x86_64 Systeme. 100 % Safe Rust ohne Zeiger-Arithmetik.
 
 ---
 

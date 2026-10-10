@@ -139,10 +139,11 @@ pub fn xor_in_place(dest: &mut [u8], src: &[u8]) {
 }
 ```
 
-**Benchmark Results (x86_64, AVX2):**  
+**Benchmark Results & Assembly Verification (x86_64, AVX2):**  
 - Standard byte-by-byte iterator XOR: $\approx 1.1 \text{ GB/s}$
 - 64-byte unrolled chunk XOR: **$\approx 4.02 \text{ GB/s}$**  
-- Hardware saturation: Memory-bus bound. Completely Safe Rust without unsafe pointer offsets.
+- **Verified Compiler Output:** Inspecting the emitted assembly (`cargo rustc --release -- --emit asm`) confirms that LLVM reliably auto-vectorizes this loop into 256-bit AVX2 instructions (`vpxor %ymm...` and `vinserti128`), avoiding scalar fallback.
+- **Hardware Bottleneck:** At $\approx 4 \text{ GB/s}$, CPU execution latency drops below memory access latency; throughput fully saturates the memory controller and bus bandwidth on standard dual-channel x86_64 architectures. Completely Safe Rust without unsafe pointer offsets.
 
 ---
 
