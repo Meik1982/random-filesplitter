@@ -2,6 +2,7 @@ import { Button, Slider, CheckBox, LineEdit, TextEdit, ProgressIndicator, Horizo
 
 export component MainWindow inherits Window {
     title: "RFS - Random File Splitter (v3.0.0 Desktop)";
+    icon: @image-url("../assets/icon.png");
     preferred-width: 820px;
     preferred-height: 690px;
     min-width: 700px;
@@ -48,8 +49,14 @@ export component MainWindow inherits Window {
         // Header
         HorizontalLayout {
             spacing: 12px;
+            Image {
+                source: @image-url("../assets/icon.png");
+                width: 32px;
+                height: 32px;
+                vertical-alignment: center;
+            }
             Text {
-                text: "🛡️ RFS";
+                text: "RFS";
                 font-size: 22px;
                 font-weight: 800;
                 color: #58a6ff;
