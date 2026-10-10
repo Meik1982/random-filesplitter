@@ -7,6 +7,7 @@ pub mod crypto;
 pub mod decoy;
 pub mod entropy;
 pub mod fadvise;
+pub mod forge;
 pub mod format;
 pub mod memlock;
 pub mod naming;

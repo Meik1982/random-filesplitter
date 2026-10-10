@@ -144,6 +144,15 @@ pub enum CliCommand {
         restore: bool,
         output_dir: Option<PathBuf>,
     },
+    /// Forge a decoy counterpart share revealing a benign decoy plaintext (Rubber-Hose defense)
+    Forge {
+        existing_shares: Vec<PathBuf>,
+        decoy_path: PathBuf,
+        output_share: PathBuf,
+        block_size: usize,
+        direct_io: bool,
+        force: bool,
+    },
 }
 
 /// Parses CLI arguments into a typed `CliCommand`.
@@ -184,7 +193,13 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     // Subcommand detection
     let mut explicit_subcommand: Option<&str> = None;
     let mut start_idx = 1;
-    if first == "split" || first == "restore" || first == "verify" || first == "decoy" {
+    if first == "split"
+        || first == "restore"
+        || first == "verify"
+        || first == "decoy"
+        || first == "scan"
+        || first == "forge"
+    {
         explicit_subcommand = Some(first.as_str());
         start_idx = 2;
     } else if first == "benchmark" {
@@ -319,7 +334,11 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                 return Err(format!("Error: Option {} requires a size argument.", arg));
             }
             decoy_size = Some(types::parse_file_size(&args[i])?);
-        } else if arg == "-t" || arg == "--template" {
+        } else if arg == "-t"
+            || arg == "--template"
+            || arg == "--reveal-as"
+            || arg == "--decoy-file"
+        {
             i += 1;
             if i >= args.len() {
                 return Err(format!("Error: Option {} requires a file path.", arg));
@@ -448,6 +467,29 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                 paths,
                 restore: scan_restore,
                 output_dir: output_path.map(PathBuf::from),
+            })
+        }
+        "forge" => {
+            if positionals.is_empty() {
+                return Err(
+                    "Error: At least 1 existing share file required for 'forge'.".to_string(),
+                );
+            }
+            let decoy_path = decoy_template.map(PathBuf::from).ok_or_else(|| {
+                "Error: Option --reveal-as / -t <DECOY_FILE> is required for 'forge'.".to_string()
+            })?;
+            let output_share = output_path.map(PathBuf::from).ok_or_else(|| {
+                "Error: Option -o / --output <OUTPUT_SHARE> is required for 'forge'.".to_string()
+            })?;
+            let existing_shares: Vec<PathBuf> = positionals.iter().map(PathBuf::from).collect();
+
+            Ok(CliCommand::Forge {
+                existing_shares,
+                decoy_path,
+                output_share,
+                block_size,
+                direct_io,
+                force,
             })
         }
         unknown => Err(format!(

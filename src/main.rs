@@ -9,6 +9,7 @@ mod crypto;
 mod decoy;
 mod entropy;
 mod fadvise;
+mod forge;
 mod format;
 mod memlock;
 mod naming;
@@ -203,5 +204,35 @@ fn main() {
                 process::exit(1);
             }
         },
+        CliCommand::Forge {
+            existing_shares,
+            decoy_path,
+            output_share,
+            block_size,
+            direct_io,
+            force,
+        } => {
+            if let Err(e) = forge::forge_decoy_share(
+                &existing_shares,
+                &decoy_path,
+                &output_share,
+                block_size,
+                direct_io,
+                force,
+            ) {
+                eprintln!("Error during forge: {}", e);
+                process::exit(1);
+            }
+            println!(
+                "Successfully forged decoy counterpart share: {}",
+                output_share.display()
+            );
+            println!(
+                "When combined with {} existing share(s), restoration reveals: \"{}\"",
+                existing_shares.len(),
+                decoy_path.display()
+            );
+            process::exit(0);
+        }
     }
 }
