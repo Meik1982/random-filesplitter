@@ -34,6 +34,14 @@ export component MainWindow inherits Window {
     in-out property <string> restore_integrity_badge: "Ausstehend";
     in-out property <string> restore_results_log: "";
 
+    // Forge properties (Deniable Decoy Forge)
+    in-out property <string> forge_shares_input: "";
+    in-out property <string> forge_decoy_input: "";
+    in-out property <string> forge_output_path: "";
+    in-out property <string> forge_status: "Bereit zur Köder-Synthese";
+    in-out property <bool> forge_in_progress: false;
+    in-out property <string> forge_results_log: "";
+
     // Callbacks to Rust
     callback request_select_file();
     callback request_select_split_target_dir();
@@ -42,6 +50,10 @@ export component MainWindow inherits Window {
     callback request_scan_folder();
     callback request_select_restore_target_dir();
     callback request_restore();
+    callback request_select_forge_shares();
+    callback request_select_forge_decoy();
+    callback request_select_forge_output();
+    callback request_forge();
 
     VerticalBox {
         padding: 16px;
@@ -101,6 +113,21 @@ export component MainWindow inherits Window {
                     text: " 🔓 Wiederherstellen (Restore) ";
                     color: root.active_tab == 1 ? #ffffff : #8b949e;
                     font-weight: root.active_tab == 1 ? 700 : 400;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+
+            Rectangle {
+                background: root.active_tab == 2 ? #1f242c : #16181d;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: root.active_tab == 2 ? #58a6ff : #30363d;
+                TouchArea { clicked => { root.active_tab = 2; } }
+                Text {
+                    text: " 🎭 Täuschung (Forge) ";
+                    color: root.active_tab == 2 ? #ffffff : #8b949e;
+                    font-weight: root.active_tab == 2 ? 700 : 400;
                     vertical-alignment: center;
                     horizontal-alignment: center;
                 }
@@ -352,6 +379,102 @@ export component MainWindow inherits Window {
                         text: root.restore_results_log;
                         read-only: true;
                         height: 100px;
+                    }
+                }
+            }
+
+            // TAB 2: FORGE (Rubber-Hose Schutz)
+            if root.active_tab == 2: VerticalBox {
+                padding: 14px;
+                spacing: 10px;
+
+                Text {
+                    text: "1. Vorhandene / beschlagnahmte Shares:";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.forge_shares_input;
+                        placeholder-text: "Bestehende .rfs-Dateien auswählen...";
+                        edited(val) => { root.forge_shares_input = val; }
+                    }
+                    Button {
+                        text: "Shares wählen...";
+                        clicked => { root.request_select_forge_shares(); }
+                    }
+                }
+
+                Text {
+                    text: "2. Vorzulegender Köder-Klartext (z. B. Urlaubsbilder, Dummy-PDF):";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.forge_decoy_input;
+                        placeholder-text: "Köderdatei auswählen...";
+                        edited(val) => { root.forge_decoy_input = val; }
+                    }
+                    Button {
+                        text: "Köder wählen...";
+                        clicked => { root.request_select_forge_decoy(); }
+                    }
+                }
+
+                Text {
+                    text: "3. Zielpfad für synthetisierte Gegen-Share (C_fake):";
+                    color: #e6edf3;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.forge_output_path;
+                        placeholder-text: "Pfad für die Fake-Share (z. B. fake_counterpart.rfs)...";
+                        edited(val) => { root.forge_output_path = val; }
+                    }
+                    Button {
+                        text: "Speicherort wählen...";
+                        clicked => { root.request_select_forge_output(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #30363d; }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text {
+                        text: root.forge_status;
+                        color: #58a6ff;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { } // Spacer
+                    Button {
+                        text: root.forge_in_progress ? "Synthese läuft..." : "🎭 Gegen-Share synthetisieren";
+                        enabled: !root.forge_in_progress && root.forge_shares_input != "" && root.forge_decoy_input != "" && root.forge_output_path != "";
+                        clicked => { root.request_forge(); }
+                    }
+                }
+
+                if root.forge_results_log != "": VerticalBox {
+                    spacing: 4px;
+                    Text {
+                        text: "📋 Synthese-Protokoll & Krypto-Integrität:";
+                        color: #7ee787;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                    TextEdit {
+                        text: root.forge_results_log;
+                        read-only: true;
+                        height: 120px;
                     }
                 }
             }

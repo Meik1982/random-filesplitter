@@ -346,5 +346,128 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // 7. Callback: Shares für Forge auswählen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_select_forge_shares(move || {
+        if let Some(files) = rfd::FileDialog::new()
+            .set_title("Bestehende RFS Shares zur Köder-Synthese auswählen")
+            .add_filter("RFS Shares", &["rfs", "rfs1", "rfs2", "rfs3", "rfs4"])
+            .add_filter("Alle Dateien", &["*"])
+            .pick_files()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                let joined = files
+                    .iter()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                window.set_forge_shares_input(joined.into());
+            }
+        }
+    });
+
+    // 8. Callback: Köder-Klartext auswählen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_select_forge_decoy(move || {
+        if let Some(file) = rfd::FileDialog::new()
+            .set_title("Köder-Klartextdatei auswählen (z. B. PDF oder Urlaubsbild)")
+            .pick_file()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_forge_decoy_input(file.to_string_lossy().to_string().into());
+            }
+        }
+    });
+
+    // 9. Callback: Zielort für Fake-Share auswählen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_select_forge_output(move || {
+        if let Some(file) = rfd::FileDialog::new()
+            .set_title("Speicherort für gefälschte Gegen-Share festlegen")
+            .set_file_name("counterpart_fake.rfs")
+            .save_file()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_forge_output_path(file.to_string_lossy().to_string().into());
+            }
+        }
+    });
+
+    // 10. Callback: Forge ausführen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_forge(move || {
+        if let Some(window) = window_handle.upgrade() {
+            let shares_str = window.get_forge_shares_input().to_string();
+            let decoy_str = window.get_forge_decoy_input().to_string();
+            let out_str = window.get_forge_output_path().to_string();
+
+            let share_paths: Vec<PathBuf> = shares_str
+                .split(',')
+                .map(|s| PathBuf::from(s.trim()))
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect();
+            let decoy_path = PathBuf::from(decoy_str.trim());
+            let out_path = PathBuf::from(out_str.trim());
+
+            if share_paths.is_empty() {
+                window.set_forge_status("Mindestens 1 bestehende Share erforderlich!".into());
+                return;
+            }
+
+            window.set_forge_in_progress(true);
+            window.set_forge_status("Synthetisiere Gegen-Share...".into());
+            window.set_forge_results_log("".into());
+
+            let window_bg = window.as_weak();
+            std::thread::spawn(move || {
+                let res = rfs_core::forge::forge_decoy_share(
+                    &share_paths,
+                    &decoy_path,
+                    &out_path,
+                    rfs_core::types::DEFAULT_BLOCK_SIZE,
+                    false,
+                    true,
+                );
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = window_bg.upgrade() {
+                        w.set_forge_in_progress(false);
+                        match res {
+                            Ok(()) => {
+                                w.set_forge_status(
+                                    "Gegen-Share erfolgreich synthetisiert [OK]".into(),
+                                );
+                                let mut log = String::new();
+                                log.push_str("=== DENIABLE DECOY FORGE ERFOLGREICH ===\n\n");
+                                log.push_str(&format!(
+                                    "🎭 Synthetisierte Gegen-Share: {}\n",
+                                    out_path.display()
+                                ));
+                                log.push_str(&format!(
+                                    "📄 Eingebetteter Köder: {}\n",
+                                    decoy_path.display()
+                                ));
+                                log.push_str(&format!(
+                                    "🔗 Verknüpfte Basis-Shares: {} Datei(en)\n\n",
+                                    share_paths.len()
+                                ));
+                                log.push_str("🛡️ Krypto-Garantie: Wenn diese Fake-Share mit den Basis-Shares rekonstruiert wird,\n");
+                                log.push_str("   bestätigt RFS 100% BLKS-384 Integrität und liefert bitgenau den Köder-Klartext.\n");
+                                log.push_str("   Ein Beweis für ein anderes Original ist mathematisch unmöglich.");
+                                w.set_forge_results_log(log.into());
+                            }
+                            Err(e) => {
+                                w.set_forge_status(format!("Fehler bei Synthese: {}", e).into());
+                                w.set_forge_results_log(
+                                    format!("FEHLER BEI DER KÖDER-SYNTHESE:\n{}", e).into(),
+                                );
+                            }
+                        }
+                    }
+                });
+            });
+        }
+    });
+
     main_window.run()
 }

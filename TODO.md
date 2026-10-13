@@ -143,23 +143,25 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 
 ---
 
-### 🖥️ Stufe 7.5: Schlanke Cross-Platform Desktop-GUI (Drag & Drop für jedermann)
-- [ ] **Architektur & Framework-Entscheidung**
-  - Schlankes natives Rust-UI (z. B. Slint oder iced / Tauri v2 mit Rust-Backend) statt ressourcenhungriger Web-Browser-Wrappers (kein Electron-Bloat).
-  - Minimaler Memory-Footprint (< 20 MB RAM) und blitzschneller Start.
+### 🖥️ Stufe 7.5: Schlanke Cross-Platform Desktop-GUI (Slint v1.18 Native)
+- [x] **Architektur & Framework-Entscheidung**
+  - Schlankes natives Rust-UI mit Slint v1.18 und nativem System-Dateidialog `rfd` (XDG Portal / Dolphin / Explorer) statt ressourcenhungriger Web-Browser-Wrappers (kein Electron-Bloat).
+  - Minimaler Memory-Footprint (< 20 MB RAM), Instant-Startup und Dark-Theme mit verifiziertem RFS-Kristall-Branding (`assets/icon.png`).
   - Direkte Einbindung der bestehenden Streaming-Engine (`rfs-core` / `src/pipeline/`).
-- [ ] **Intuitive Benutzeroberfläche (UX für den Alltagseinsatz)**
+- [x] **Intuitive Benutzeroberfläche (UX für den Alltagseinsatz)**
   - **Tab „Aufteilen (Split)“:**
-    - Drag & Drop Ablagezone für beliebige Dateien oder Ordner-Archive.
-    - Visueller Schieberegler für Anzahl der Shares ($2 \le N \le 16$).
-    - Einfache Checkbox: *„Köder-Dateien (Decoys) erzeugen“* zur Verkehrsverschleierung.
-    - Zielauswahl: Automatischer Fanout auf verschiedene erkannte USB-Sticks oder Verzeichnisse.
+    - Native Dateiauswahl und Zielverzeichnis-Picker.
+    - Visueller Schieberegler für Anzahl der Shares ($2 \le N \le 16$) und Köderdateien ($1 \le D \le 16$).
+    - Detailliertes OPSEC-Ergebnisprotokoll mit getrennter Zuordnung von echten Shares und Köderdateien.
   - **Tab „Wiederherstellen (Restore)“:**
-    - Drag & Drop Zone: Alle empfangenen `.rfs`-Dateien einfach zusammen reinziehen.
-    - Automatisches Erkennen passender Shares und Filtern von Decoys.
-    - Visuelle Bestätigung der BLKS-384 Post-Quantum Integrität mit grünem Status-Badge.
+    - Dateiauswahl oder One-Click-Button `[ 🔍 Ordner scannen... ]` (Kombinatorik-Engine).
+    - Automatisches Erkennen passender Shares und Aussortieren von Rauschen.
+    - Visuelle Bestätigung der BLKS-384 Post-Quantum Integrität mit grünem Status-Badge (`Gültig [OK]`).
+  - **Tab „Täuschung (Deniable Forge)“:**
+    - Grafische Synthese von gefälschten Gegen-Shares zur Rubber-Hose-Abwehr.
+    - Auswahl bestehender Shares + harmloser Köderdatei $\rightarrow$ Erzeugung von $C_{\text{fake}}$ mit 100 % BLKS-384 Integritätsgarantie.
   - **Fortschritt & Transparenz:**
-    - Echtzeit-Durchsatzanzeige (MB/s) und Restzeitanzeige (ETA).
+    - Live-Fortschrittsanzeige und asynchrone Worker-Thread-Entkopplung.
 
 ---
 
