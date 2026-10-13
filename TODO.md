@@ -134,12 +134,13 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Zero-Data Tail-Seeking Engine (64-Byte Trailer-XOR) in `src/scanner.rs`.
   - Erkennt automatisch alle gültigen N-Way OTP Sets aus einem Pool von Dateien und isoliert Köderdateien (Decoys) in Millisekunden.
   - Vollständige Integration in CLI (`rfs scan`) und Desktop-GUI (`[ 🔍 Ordner scannen... ]`).
+- [x] **Criterion Micro-Benchmarks**
+  - Ergänzung einer `benches/`-Suite (`benches/crypto_benchmarks.rs`) zur automatisierten Erkennung von Performance-Regressionen bei SIMD-XOR, ChaCha20 und BLKS-384 über verschiedene Puffergrößen (64 KiB bis 4 MiB).
+- [x] **Paketierung, Manpage & Shell-Completions für v3.1.0**
+  - Manpage `docs/rfs.1` und Shell-Completions (`bash`, `zsh`, `fish`) lückenlos um die neuen Befehle `scan` und `forge` erweitert.
+  - AUR `PKGBUILD` für Pacman-konforme Paketierung mit Manpage und Completions vorbereitet.
 - [ ] **Fuzzing-Suite (`cargo fuzz` / AFL++)**
   - Continuous Fuzzing für Trailer-Parsing (`decode_footer_n_way`), Dateinamen-Extrahierung und korrupte/böswillige Bytefolgen.
-- [ ] **Criterion Micro-Benchmarks**
-  - Ergänzung einer `benches/`-Suite zur automatisierten Erkennung von Performance-Regressionen bei SIMD-XOR, ChaCha20 und BLKS-384 über verschiedene Puffergrößen (64 KiB bis 16 MiB).
-- [ ] **Paketierung & Release v3.0.0 / v3.1.0 im AUR**
-  - Vorbereitung und Pflege des AUR-Pakets mit Manpage, Completions und strikter Pacman-Integration.
 
 ---
 

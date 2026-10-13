@@ -4,11 +4,13 @@ _rfs_completions() {
     local cur prev words cword
     _init_completion || return
 
-    local subcommands="split restore verify decoy benchmark entropy analyze"
+    local subcommands="split restore verify decoy scan forge benchmark entropy analyze"
     local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct --mlock --token --rnd"
     local split_opts="-n --parts -d --decoys --pad-to -B --block-size -o --output"
     local restore_opts="-o --output -B --block-size"
     local decoy_opts="-c --count -s --size -t --template -o --output -B --block-size"
+    local scan_opts="-r --restore -o --output"
+    local forge_opts="-t --template --reveal-as -o --output -f --force -B --block-size"
 
     if [[ $cword -eq 1 ]]; then
         if [[ "$cur" == -* ]]; then
@@ -49,6 +51,12 @@ _rfs_completions() {
                 ;;
             decoy)
                 COMPREPLY=( $(compgen -W "$common_opts $decoy_opts" -- "$cur") )
+                ;;
+            scan)
+                COMPREPLY=( $(compgen -W "$common_opts $scan_opts" -- "$cur") )
+                ;;
+            forge)
+                COMPREPLY=( $(compgen -W "$common_opts $forge_opts" -- "$cur") )
                 ;;
             analyze)
                 COMPREPLY=( $(compgen -W "$common_opts" -- "$cur") )

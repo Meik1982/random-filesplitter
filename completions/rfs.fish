@@ -23,6 +23,8 @@ complete -c rfs -n "__fish_use_subcommand" -a split -d "Datei in N Rausch-Teile 
 complete -c rfs -n "__fish_use_subcommand" -a restore -d "Originaldatei aus N Teilen wiederherstellen"
 complete -c rfs -n "__fish_use_subcommand" -a verify -d "Integrität im RAM prüfen"
 complete -c rfs -n "__fish_use_subcommand" -a decoy -d "Köderdateien (Decoys) erzeugen"
+complete -c rfs -n "__fish_use_subcommand" -a scan -d "Kombinatorischer Scan zur Auto-Erkennung von N-Way Shares"
+complete -c rfs -n "__fish_use_subcommand" -a forge -d "Gefälschte Gegen-Share zur Rubber-Hose-Abwehr synthetisieren"
 complete -c rfs -n "__fish_use_subcommand" -a benchmark -d "Hardware-Benchmark ausführen"
 complete -c rfs -n "__fish_use_subcommand" -a entropy -d "Entropiediagnose ausführen"
 complete -c rfs -n "__fish_use_subcommand" -a analyze -d "Datei analysieren"
@@ -51,6 +53,17 @@ complete -c rfs -n "__fish_seen_subcommand_from restore" -F
 # verify options
 complete -c rfs -n "__fish_seen_subcommand_from verify" -s B -l block-size -x -a "64K 256K 1M 4M 8M 16M" -d "Puffergröße"
 complete -c rfs -n "__fish_seen_subcommand_from verify" -F
+
+# scan options
+complete -c rfs -n "__fish_seen_subcommand_from scan" -s r -l restore -d "Gefundene Payloads direkt wiederherstellen"
+complete -c rfs -n "__fish_seen_subcommand_from scan" -s o -l output -r -F -d "Ausgabe-Zielverzeichnis"
+complete -c rfs -n "__fish_seen_subcommand_from scan" -F
+
+# forge options
+complete -c rfs -n "__fish_seen_subcommand_from forge" -l reveal-as -r -F -d "Vorzulegende Köder-Klartextdatei"
+complete -c rfs -n "__fish_seen_subcommand_from forge" -s o -l output -r -F -d "Ausgabepfad der gefälschten Gegen-Share"
+complete -c rfs -n "__fish_seen_subcommand_from forge" -s B -l block-size -x -a "64K 256K 1M 4M 8M 16M" -d "Puffergröße"
+complete -c rfs -n "__fish_seen_subcommand_from forge" -F
 
 # analyze options
 complete -c rfs -n "__fish_seen_subcommand_from analyze" -F

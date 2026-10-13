@@ -30,6 +30,8 @@ _rfs() {
                 'restore:Originaldatei aus N Teilen bitgenau wiederherstellen'
                 'verify:Integrität und Prüfsummen im RAM verifizieren'
                 'decoy:Ununterscheidbare Köderdateien (Decoys) erzeugen'
+                'scan:Kombinatorischer Scan zur Auto-Erkennung von N-Way Shares'
+                'forge:Gefälschte Gegen-Share zur Rubber-Hose-Abwehr synthetisieren'
                 'benchmark:Hardware-Durchsatzmessung (SIMD, CSPRNG, BLKS)'
                 'entropy:Zweiphasige Hardware- und CSPRNG-Entropiediagnose'
                 'analyze:NIST SP 800-22 Datei-Entropieanalyse'
@@ -62,6 +64,21 @@ _rfs() {
                         '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
                         '(-o --output)'{-o,--output}'[Präfix oder Dateipfad]:Datei:_files' \
                         '*:Optionale Musterdatei:_files'
+                    ;;
+                scan)
+                    _arguments \
+                        $common_opts \
+                        '(-r --restore)'{-r,--restore}'[Gefundene Payloads direkt wiederherstellen]' \
+                        '(-o --output)'{-o,--output}'[Ausgabe-Zielverzeichnis]:Verzeichnis:_files -/' \
+                        '*:Kandidaten-Dateien:_files'
+                    ;;
+                forge)
+                    _arguments \
+                        $common_opts \
+                        '--reveal-as[Vorzulegende Köder-Klartextdatei]:Köderdatei:_files' \
+                        '(-o --output)'{-o,--output}'[Ausgabepfad der gefälschten Gegen-Share]:Datei:_files' \
+                        '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
+                        '*:Bestehende Share-Dateien:_files'
                     ;;
                 restore)
                     _arguments \

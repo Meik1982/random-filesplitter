@@ -17,6 +17,12 @@ rfs \- High-Performance Cryptographic File Splitter & Reconstructor (Post-Quantu
 .B rfs decoy
 [\fB\-c\fR \fICOUNT\fR] [\fB\-t\fR \fITEMPLATE\fR] [\fB\-s\fR \fISIZE\fR] [\fB\-o\fR \fIPREFIX\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR]
 .br
+.B rfs scan
+[\fB\-r\fR|\fB\-\-restore\fR] [\fB\-o\fR \fIDEST\fR] \fIFILES...\fR
+.br
+.B rfs forge
+[\fB\-\-reveal\-as\fR \fIDECOY_FILE\fR] [\fB\-o\fR \fIOUTPUT_SHARE\fR] [\fB\-f\fR|\fB\-\-force\fR] \fIEXISTING_SHARES...\fR
+.br
 .B rfs
 [\fB\-b\fR|\fB\-\-benchmark\fR]
 .br
@@ -52,6 +58,12 @@ Performs fast RAM-only integrity and BLKS-384 / SHA-256 verification without wri
 .TP
 .B decoy
 Generates indistinguishable noise decoy files for traffic analysis resistance and multi-path obfuscation.
+.TP
+.B scan
+Rapidly scans candidate files via zero-cost tail seeking (64-byte trailer XOR) to automatically discover and reconstruct valid N-Way OTP shares while filtering out decoys and noise.
+.TP
+.B forge
+Synthesizes a tailor-made counterpart fake share matching seized shares and revealing a benign decoy plaintext with 100% BLKS-384 cryptographic integrity (Rubber-Hose coercion defense).
 .TP
 .B benchmark
 Runs hardware throughput benchmarks measuring ChaCha20 CSPRNG streaming, AVX2/NEON SIMD-XOR, and BLKS-384 hashing.
