@@ -128,9 +128,9 @@ pub fn synthesize_multi_target_trailers(
         }
 
         // Assign solution bits to each share trailer
-        for share_idx in 0..m {
+        for (share_idx, trailer) in share_trailers.iter_mut().enumerate().take(m) {
             if sol.get(share_idx) {
-                share_trailers[share_idx][byte_pos] |= 1 << bit_in_byte;
+                trailer[byte_pos] |= 1 << bit_in_byte;
             }
         }
     }
