@@ -34,8 +34,12 @@ fn main() {
     };
 
     match command {
-        CliCommand::Help => {
-            display_help();
+        CliCommand::Help(subcmd) => {
+            if let Some(cmd) = subcmd {
+                cli::parser::display_subcommand_help(&cmd);
+            } else {
+                display_help();
+            }
             process::exit(0);
         }
         CliCommand::Version => {

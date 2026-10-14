@@ -276,6 +276,119 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // 4b. Callback: Ordner scannen UND direkt alle Sets entpacken (Auto-Restore)
+    let window_handle = main_window.as_weak();
+    main_window.on_request_scan_and_restore(move || {
+        if let Some(folder) = rfd::FileDialog::new()
+            .set_title("Ordner mit RFS-Shares für Auto-Restore auswählen")
+            .pick_folder()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_restore_in_progress(true);
+                window.set_restore_status("Scanne Ordner & stelle gefundene Sets her...".into());
+                window.set_restore_results_log("".into());
+
+                let target_dir_str = window.get_restore_target_dir().to_string();
+                let output_dir = if target_dir_str.trim().is_empty() {
+                    Some(folder.clone())
+                } else {
+                    Some(PathBuf::from(target_dir_str.trim()))
+                };
+
+                let window_bg = window.as_weak();
+                std::thread::spawn(move || {
+                    let mut candidate_files = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir(&folder) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() {
+                                candidate_files.push(path);
+                            }
+                        }
+                    }
+
+                    let outcome: Result<Vec<_>, String> = (|| {
+                        let found = rfs_core::scanner::scan_candidate_files(&candidate_files)?;
+                        let mut restored_list = Vec::new();
+                        for m in &found {
+                            let orig_name = m.metadata.filename().unwrap_or("unbenannt");
+                            let out_target = output_dir.as_ref().map(|d| d.join(orig_name));
+                            let out_target_str =
+                                out_target.as_ref().map(|p| p.to_string_lossy().to_string());
+                            let restored = rfs_core::pipeline::restore_file(
+                                &m.shares,
+                                out_target_str.as_deref(),
+                                true,
+                                rfs_core::telemetry::TelemetryMode::Silent,
+                                false,
+                                rfs_core::types::DEFAULT_BLOCK_SIZE,
+                                false,
+                                false,
+                            )?;
+                            if let Some(p) = restored {
+                                restored_list.push((orig_name.to_string(), p, m.shares.len()));
+                            }
+                        }
+                        Ok(restored_list)
+                    })();
+
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = window_bg.upgrade() {
+                            w.set_restore_in_progress(false);
+                            match outcome {
+                                Ok(restored_list) if !restored_list.is_empty() => {
+                                    w.set_restore_status(
+                                        format!(
+                                            "✅ {} Set(s) automatisch entpackt!",
+                                            restored_list.len()
+                                        )
+                                        .into(),
+                                    );
+                                    w.set_restore_integrity_badge("✅ 100% OK (BLKS-384)".into());
+
+                                    let mut report = String::new();
+                                    report.push_str(&format!(
+                                        "=== AUTO-RESTORE: {} SETS ERFOLGREICH ENTPACKT ===\n\n",
+                                        restored_list.len()
+                                    ));
+                                    for (i, (orig_name, out_path, num_shares)) in
+                                        restored_list.iter().enumerate()
+                                    {
+                                        report.push_str(&format!(
+                                            "🎯 Set #{}: \"{}\"\n",
+                                            i + 1,
+                                            orig_name
+                                        ));
+                                        report.push_str(&format!(
+                                            "   Zieldatei: {}\n",
+                                            out_path.display()
+                                        ));
+                                        report.push_str(
+                                            "   Status: ✅ Bitgenau mit BLKS-384 Integrität wiederhergestellt\n",
+                                        );
+                                        report.push_str(&format!(
+                                            "   Verwendete Shares: {} Teile\n\n",
+                                            num_shares
+                                        ));
+                                    }
+                                    w.set_restore_results_log(report.into());
+                                }
+                                Ok(_) => {
+                                    w.set_restore_status("Keine passenden Sets gefunden.".into());
+                                }
+                                Err(e) => {
+                                    w.set_restore_status(
+                                        format!("Wiederherstellungs-Fehler: {}", e).into(),
+                                    );
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+        }
+    });
+
     // 5. Callback: Zielordner für Wiederherstellung
     let window_handle = main_window.as_weak();
     main_window.on_request_select_restore_target_dir(move || {
