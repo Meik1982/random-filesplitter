@@ -10,7 +10,7 @@ use zeroize::Zeroize;
 /// Runs full hardware and cryptographic benchmark.
 pub fn run_benchmark() -> i32 {
     println!("============================================================");
-    println!(" RFS v3.0.0 Hardware Benchmark (Rust & BLKS-384 Throughput)");
+    println!(" RFS v3.1.0 Hardware Benchmark (Rust & BLKS-384 Throughput)");
     println!("============================================================\n");
 
     const BENCH_BUF_SIZE: usize = 4 * 1024 * 1024; // 4 MB block
@@ -105,7 +105,7 @@ pub fn run_benchmark() -> i32 {
         "Conclusion: With BLKS-384 ({:.1} GB/s), the former SHA-256 bottleneck is completely eliminated.",
         blks_speed_mb / 1024.0
     );
-    println!("RFS v3.0.0 achieves maximum pipeline and NVMe saturation.\n");
+    println!("RFS v3.1.0 achieves maximum pipeline and NVMe saturation.\n");
 
     buf_a.zeroize();
     buf_b.zeroize();

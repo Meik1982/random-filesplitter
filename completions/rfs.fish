@@ -1,4 +1,4 @@
-# Fish completion for rfs (random-filesplitter v3.0.0)
+# Fish completion for rfs (random-filesplitter v3.1.0)
 
 # Disable file completions by default unless requested
 complete -c rfs -f

@@ -1,4 +1,4 @@
-# Bash completion for rfs (random-filesplitter v3.0.0)
+# Bash completion for rfs (random-filesplitter v3.1.0)
 
 _rfs_completions() {
     local cur prev words cword

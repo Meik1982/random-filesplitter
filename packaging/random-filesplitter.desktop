@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Random File Splitter
+GenericName=Cryptographic File Splitter & Reconstructor
+GenericName[de]=Kryptografischer Dateispalter & Rekonstruktor
+Comment=Information-theoretic One-Time-Pad file splitting with deniable decoys and BLKS-384 integrity
+Comment[de]=Informationstheoretisches One-Time-Pad File-Splitting mit glaubhafter Abstreitbarkeit und BLKS-384 Integrität
+Exec=rfs-gui
+Icon=random-filesplitter
+Terminal=false
+Type=Application
+Categories=Utility;Security;Cryptography;
+Keywords=cryptography;security;splitter;otp;one-time-pad;deniable;blake3;chacha20;
+StartupNotify=true

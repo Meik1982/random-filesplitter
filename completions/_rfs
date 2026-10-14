@@ -1,6 +1,6 @@
 #compdef rfs
 
-# Zsh completion for rfs (random-filesplitter v3.0.0)
+# Zsh completion for rfs (random-filesplitter v3.1.0)
 
 _rfs() {
     local context state state_descr line

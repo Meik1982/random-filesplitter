@@ -1,4 +1,4 @@
-//! rfs: Next-Gen High-Performance Cryptographic File Splitter & Reconstructor (v3.0.0 Rust)
+//! rfs: Next-Gen High-Performance Cryptographic File Splitter & Reconstructor (v3.1.0 Rust)
 //! Copyright (c) 2026 Meik Augenblick (LGPL v3)
 
 #![warn(missing_docs)]

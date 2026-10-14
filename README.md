@@ -1,4 +1,4 @@
-# rfs - Random File Splitter (v3.0.0 Post-Quantum & High-Performance Rust Edition) 🛡️
+# rfs - Random File Splitter (v3.1.0 Post-Quantum & High-Performance Rust Edition) 🛡️
 
 **English** | [Deutsch](README.de.md)
 
@@ -9,13 +9,26 @@
 
 **rfs** is a high-performance, modular systems tool designed for **physical transport security**, cryptographic partitioning, and bit-exact reconstruction of files and Unix streams.
 
-It is built on the mathematical foundation of **Information-Theoretic Security via One-Time-Pad Chain ($N$-out-of-$N$ XOR)**:
+It is built on the mathematical foundation of **Information-Theoretic Security via One-Time-Pad Chain ($N$-out-of-$N$ XOR)** and **General Access Linear Secret Sharing over $\mathbb{F}_2$**:
 A file is split into $N$ parts ($N \ge 2$), where each individual share is mathematically indistinguishable from thermal noise (**100% Plausible Deniability, Zero Forensic Fingerprint**). The original plaintext can only be reconstructed when **all $N$ shares** are combined. If even a single share is missing, the secret remains mathematically unsolvable.
 
 ---
 
-## 🚀 Key Features in v3.0.0 (Rust Rewrite)
+## 🚀 Key Features in v3.1.0
 
+* **Combinatorial Auto-Discovery & Assembly Engine (`rfs scan`):**
+  * Reads only the 64-byte trailers in RAM without scanning multi-gigabyte payloads.
+  * Discovers all valid $N$-way OTP sets from arbitrary folders in milliseconds and automatically distinguishes genuine shares from decoy chaff.
+  * **1-Click Auto-Restore:** `rfs scan *.rfs -r -o ./recovered` automatically reconstructs all discovered payloads bit-for-bit.
+* **Deniable Decoy Forge (`rfs forge` / Rubber-Hose Defense):**
+  * Mathematically exploits OTP information-theoretic security: Given $K$ seized shares and a harmless decoy file (e.g. vacation photos or a dummy PDF), `rfs forge` synthesizes a tailored counterpart share.
+  * Combining the seized shares with the fake counterpart restores the decoy file with **100% BLKS-384 PQ integrity** (green status). An adversary cannot mathematically prove another original existed.
+* **Simultaneous Multi-Payload Decoys (`rfs split --decoy-reveal <FILE>`):**
+  * Embeds an authentic plaintext decoy directly during the initial split.
+  * Real shares reconstruct the true secret; the decoy counterpart reconstructs the harmless decoy file.
+* **Modern Slint Desktop GUI (`rfs-gui`):**
+  * Native, GPU-accelerated desktop interface with 3 tabs: `📦 Aufteilen (Split)`, `🔓 Wiederherstellen & Scanner (Restore)`, and `🎭 Täuschung (Forge)`.
+  * Shipped with custom crystal app icon and `.desktop` Linux desktop integration.
 * **Post-Quantum Stealth Footer (RFS4):**
   * Employs **BLKS-384** (384-bit Post-Quantum Merkle-Tree Hashing) instead of legacy SHA-256, eliminating hashing bottlenecks (**3.3x faster than SHA-256**).
   * The 64-byte stealth metadata trailer is $N$-way XOR-encrypted across all shares. In isolation, every share is 100% high-entropy noise with zero plaintext headers or magic numbers.
@@ -31,27 +44,20 @@ A file is split into $N$ parts ($N \ge 2$), where each individual share is mathe
   * Locks cryptographic and I/O buffer pools into physical RAM via POSIX `mlock` to prevent sensitive plaintext or keystreams from being swapped to disk or hibernation files.
 * **Unix Streaming Pipes (POSIX `-` Support):**
   * Native integration into Unix pipelines: reads from `stdin` and emits to `stdout`.
-  * No requirement to know the file size in advance; In-Flight BLKS-384 hashing buffers metadata until stream EOF.
 * **Machine-Readable NDJSON Telemetry (`--json`):**
   * Structured JSON events on `stderr` (`progress`, `finished`, `error`) with byte counters, throughput, live ETA, and checksums for automation and agent pipelines.
-* **Interactive ANSI Progress Bar (`blkcp`-Style):**
-  * Dynamic 24-character terminal progress bar with percentage, formatted byte counters, live transfer rates (MB/s / GB/s), and ETA.
+* **Interactive ANSI Progress Bar:**
+  * Dynamic terminal progress bar with percentage, formatted byte counters, live transfer rates (MB/s / GB/s), and ETA.
 * **Advanced NIST SP 800-22 Entropy Diagnostics:**
   * Two-phase system diagnostics (`rfs --entropy-test`) and file entropy analysis (`rfs -a <file>`) featuring Runs tests, Block Frequency tests ($M=128$), analytical `erfc`, and Wilson-Hilferty Chi² approximation.
 * **RFS4 Format with Embedded Filename & 4 KiB Cluster Padding:**
-  * The original filename is embedded directly into the stealth footer and information-theoretically encrypted across all $N$ shares ($F_1 = \text{Plain} \oplus F_2 \oplus \dots \oplus F_N$).
+  * The original filename is embedded directly into the stealth footer and information-theoretically encrypted across all $N$ shares.
   * Every share is padded to a multiple of **4 KiB (4,096 bytes cluster alignment)** with ChaCha20 noise—eliminating file-size correlation attacks on the filesystem level.
   * Optional `--pad-to <SIZE>` inflates shares to an exact target size (e.g., `100M`, `20G`).
 * **Anonymous Anti-Forensic Naming (`<token6>.rfs`):**
   * Shares and decoys default to uncorrelated 6-character hex tokens (e.g., `a9f4c2.rfs`, `7c1b3e.rfs`).
-  * The filesystem reveals neither the original filename, nor the number of shares, nor which files are real shares and which are decoys.
-* **Automatic Restoration:**
-  * `rfs restore a9f4c2.rfs 7c1b3e.rfs` extracts the original filename directly from the decrypted footer and restores the file under its true name.
 * **100% Backward Compatibility:**
   * Transparently identifies and restores legacy RFS3 and RFS2 archives (60B / 44B footers, SHA-256 / BLKS-384) from previous releases bit-for-bit.
-* **Anti-Forensic Decoys & Traffic Obfuscation:**
-  * Generate indistinguishable chaff files filled with 100% ChaCha20 random noise (`-d, --decoys` during split or standalone `rfs decoy`).
-  * Smart pattern matching: calculates target share size for raw files (`size + 64 bytes footer + padding`) or duplicates existing share sizes 1:1.
 
 ---
 
@@ -65,111 +71,63 @@ rfs split data.iso
 # Split into 3 shares and pad to an exact size of 50 MB
 rfs split -n 3 data.iso --pad-to 50M
 
+# Split into 3 shares with an authentic plaintext decoy (simultaneous decoy reveal)
+rfs split -n 3 confidential.kdbx --decoy-reveal harmless_recipe.txt -o /media/backup/
+
 # Shuffle with 3 decoy files (generates 6 indistinguishable files with random tokens)
 rfs split -n 3 data.iso -d 3
-
-# With memory locking (mlock) and parallel disk fanout across separate mountpoints
-rfs split -n 3 --mlock data.iso /media/usb1/pA.rfs /media/usb2/pB.rfs /media/usb3/pC.rfs
 ```
 
-### 2. Restoring & Verifying Files
+### 2. Auto-Discovery & Assembly (`rfs scan`)
 ```bash
-# Automatically restores original filename from the RFS4 footer:
-rfs restore a9f4c2.rfs 7c1b3e.rfs
+# Inspect all .rfs files in a directory and print discovered sets in milliseconds
+rfs scan /media/usb/*.rfs
 
-# Restore into a specific target destination (or '-' for stdout)
-rfs restore a9f4c2.rfs 7c1b3e.rfs -o custom_name.iso
-
-# Fast integrity verification in RAM without writing to disk
-rfs verify a9f4c2.rfs 7c1b3e.rfs
+# Scan and automatically reconstruct all discovered valid sets to a target folder
+rfs scan /media/usb/*.rfs -r -o ./restored/
 ```
 
-### 3. Unix Streaming Pipes
+### 3. Plausible Deniability Decoy Forge (`rfs forge`)
 ```bash
-# Stream tar archive into 4 shares on-the-fly
-tar -czf - /var/data | rfs split -n 4 - -o backup
+# Seized share 'share1.rfs' + harmless decoy 'vacation.pdf' -> generates 'fake_share2.rfs'
+rfs forge share1.rfs --reveal-as vacation.pdf -o fake_share2.rfs
 
-# Restore from 4 shares directly to stdout and decompress
-rfs restore backup.rfs1 backup.rfs2 backup.rfs3 backup.rfs4 -o - | tar -xzf -
+# Restoring with the forged share bit-exactly reconstructs vacation.pdf with verified BLKS-384 integrity:
+rfs restore share1.rfs fake_share2.rfs
 ```
 
-### 4. Decoys & Anti-Forensics
+### 4. Unix Streaming Pipes
 ```bash
-# Generate 4 decoys during split (total of 7 files)
-rfs split -n 3 secret.iso -d 4
+# Stream stdin directly into 4 shares on disk
+tar -czf - /data | rfs split -n 4 - -o backup
 
-# Create decoys matching an existing raw file (+64 bytes footer automatically calculated)
-rfs decoy -t contract.pdf -c 5
-
-# Create decoys matching an existing RFS share (exact 1:1 byte size)
-rfs decoy -t 7c1b3e.rfs -c 3
-
-# Create decoys with explicit target size (e.g. 50 MB)
-rfs decoy -s 50M -c 2 -o fake_share
+# Reconstruct stream directly to stdout without intermediate temporary files
+rfs restore backup.*.rfs -o - | tar -xzf -
 ```
 
-### 5. Machine-Readable Telemetry (--json)
+### 5. Integrity Verification (Zero Disk Writes)
 ```bash
-rfs split -n 3 huge.iso --json
-# Emits NDJSON on stderr:
-# {"event":"progress","action":"Split","processed_bytes":524288000,"total_bytes":1048576000,"percent":50.00,"speed_bps":1850230120,"elapsed_s":0.28,"eta_s":0.2}
-# {"event":"finished","action":"Split","processed_bytes":1048576000,"elapsed_s":0.5512,"avg_speed_bps":1902340123,"num_parts":3,"checksum":{"algorithm":"blks-384","digest":"..."}}
+# Verify BLKS-384 Post-Quantum integrity in RAM
+rfs verify share1.rfs share2.rfs share3.rfs
 ```
 
-### 6. Cryptanalysis & Benchmarks
+### 6. Desktop GUI
 ```bash
-# NIST SP 800-22 file entropy analysis
-rfs -a data.iso.rfs1
-
-# Two-phase hardware and system entropy diagnostics
-rfs --entropy-test
-
-# Hardware throughput benchmark (SIMD ChaCha20, XOR, BLKS-384)
-rfs --benchmark
+# Launch the native Slint GUI
+rfs-gui
 ```
 
 ---
 
-## 🛠️ Building & Installation
+## 🏗️ Architecture & Mathematical Foundation
 
-### Requirements
-* Rust Toolchain (Edition 2021, MSRV 1.75+)
-
-### Build from Source
-```bash
-git clone https://github.com/Meik1982/random-filesplitter.git
-cd random-filesplitter
-cargo build --release
-
-# Test binary
-./target/release/rfs --version
-./target/release/rfs --benchmark
-```
-
-### Arch Linux / CachyOS (makepkg)
-```bash
-cd packaging/arch
-makepkg -si
-```
+For in-depth mathematical proofs and design specifications, refer to:
+* **[docs/lsss-matrix-konzept.md](docs/lsss-matrix-konzept.md):** Information-Theoretic Security Proof (Shannon Perfect Secrecy $I(\mathbf{P}; \vec{y}^T \mathbf{C}) = 0$) & Bit-Parallel $\mathbb{F}_2$ Linear Secret Sharing.
+* **[docs/articles/zero-allocation-pipeline-rust.md](docs/articles/zero-allocation-pipeline-rust.md):** Architectural deep dive into the SIMD-accelerated zero-allocation streaming pipeline.
 
 ---
 
-## 📊 Cryptanalytic Validation (Plausible Deniability)
-
-Every split share provably satisfies the following statistical thresholds:
-
-| Metric | Target / Ideal | Typical RFS Value | Status |
-| :--- | :--- | :--- | :--- |
-| **Shannon Entropy** | $\approx 8.000000$ bits/byte | **$7.99983$ bits/byte** | ✅ Passed |
-| **Chi-Square ($\chi^2$)** | $180.0 \dots 330.0$ ($p = 0.05 \dots 0.95$) | **$248.32$** | ✅ Passed |
-| **Arithmetic Mean** | $127.500$ | **$127.498$** | ✅ Passed |
-| **Bit Balance (1/0)** | $50.000\%$ | **$50.016\%$** | ✅ Passed |
-| **NIST Runs Test** | $p \ge 0.01$ | **$p = 0.627$** | ✅ Passed |
-| **NIST Block Frequency ($M=128$)** | $p \ge 0.01$ | **$p = 0.172$** | ✅ Passed |
-
----
-
-## 📜 License & Copyright
+## 📜 License
 
 Copyright (c) 2026 Meik Augenblick.  
-Licensed under the **GNU Lesser General Public License v3.0 (LGPL v3)**.
+Licensed under the **GNU Lesser General Public License v3.0 or later (LGPL v3)**.
