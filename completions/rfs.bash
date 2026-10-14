@@ -6,7 +6,7 @@ _rfs_completions() {
 
     local subcommands="split restore verify decoy scan forge benchmark entropy analyze"
     local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct --mlock --token --rnd"
-    local split_opts="-n --parts -d --decoys --pad-to -B --block-size -o --output"
+    local split_opts="-n --parts -d --decoys --decoy-reveal --pad-to -B --block-size -o --output"
     local restore_opts="-o --output -B --block-size"
     local decoy_opts="-c --count -s --size -t --template -o --output -B --block-size"
     local scan_opts="-r --restore -o --output"

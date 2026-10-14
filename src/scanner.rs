@@ -272,6 +272,7 @@ mod tests {
             2,
             None,
             None,
+            None,
             crate::types::MIN_BLOCK_SIZE,
             crate::telemetry::TelemetryMode::Silent,
             false,

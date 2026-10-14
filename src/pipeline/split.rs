@@ -45,6 +45,7 @@ pub fn split_stream_or_file(
     output_parts: Option<&[PathBuf]>,
     num_parts: usize,
     num_decoys: usize,
+    decoy_reveal: Option<&Path>,
     pad_to_target: Option<u64>,
     output_prefix: Option<&str>,
     block_size: usize,
@@ -409,7 +410,29 @@ pub fn split_stream_or_file(
 
     let share_size = total_processed + footers[0].len() as u64;
 
-    if !decoy_paths.is_empty() {
+    if let Some(decoy_file) = decoy_reveal {
+        if !decoy_paths.is_empty() {
+            crate::forge::forge_decoy_share(
+                &out_paths[..n_parts - 1],
+                decoy_file,
+                &decoy_paths[0],
+                block_size,
+                direct_io,
+                force,
+            )?;
+
+            // If additional decoy slots were requested, fill them with uncorrelated noise
+            if decoy_paths.len() > 1 {
+                write_decoy_files_to_paths(
+                    &decoy_paths[1..],
+                    share_size,
+                    block_size,
+                    telemetry_mode,
+                    direct_io,
+                )?;
+            }
+        }
+    } else if !decoy_paths.is_empty() {
         write_decoy_files_to_paths(
             &decoy_paths,
             share_size,
@@ -474,6 +497,7 @@ pub fn split_file(
         None,
         2,
         0,
+        None,
         None,
         output_prefix,
         block_size,

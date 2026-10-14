@@ -99,6 +99,7 @@ pub enum CliCommand {
         parts: Option<Vec<PathBuf>>,
         num_parts: usize,
         num_decoys: usize,
+        decoy_reveal: Option<PathBuf>,
         pad_to: Option<u64>,
         output_prefix: Option<String>,
         block_size: usize,
@@ -234,6 +235,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
     let mut token_mode = false;
     let mut num_parts: usize = 2;
     let mut num_decoys: usize = 0;
+    let mut decoy_reveal: Option<PathBuf> = None;
     let mut decoy_count: usize = 1;
     let mut decoy_size: Option<u64> = None;
     let mut decoy_template: Option<String> = None;
@@ -308,6 +310,12 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
                     ));
                 }
             }
+        } else if arg == "--decoy-reveal" || arg == "--reveal-decoy" {
+            i += 1;
+            if i >= args.len() {
+                return Err(format!("Error: Option {} requires a file path.", arg));
+            }
+            decoy_reveal = Some(PathBuf::from(&args[i]));
         } else if arg == "-c" || arg == "--count" {
             i += 1;
             if i >= args.len() {
@@ -397,11 +405,17 @@ pub fn parse_cli_args(args: &[String]) -> Result<CliCommand, String> {
             } else {
                 None
             };
+            let mut final_num_decoys = num_decoys;
+            if decoy_reveal.is_some() && final_num_decoys == 0 {
+                final_num_decoys = 1;
+            }
+
             Ok(CliCommand::Split {
                 input,
                 parts,
                 num_parts,
-                num_decoys,
+                num_decoys: final_num_decoys,
+                decoy_reveal,
                 pad_to,
                 output_prefix: output_path,
                 block_size,

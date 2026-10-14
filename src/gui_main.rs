@@ -44,6 +44,19 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // 2b. Callback: Klartext-Köder auswählen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_select_split_decoy(move || {
+        if let Some(file) = rfd::FileDialog::new()
+            .set_title("Klartext-Köderdatei auswählen (z. B. urlaub.pdf)")
+            .pick_file()
+        {
+            if let Some(window) = window_handle.upgrade() {
+                window.set_split_plaintext_decoy_path(file.to_string_lossy().to_string().into());
+            }
+        }
+    });
+
     // 3. Callback: Split ausführen
     let window_handle = main_window.as_weak();
     main_window.on_request_split(move || {
@@ -57,10 +70,24 @@ fn main() -> Result<(), slint::PlatformError> {
             };
 
             let parts = window.get_split_num_parts() as usize;
-            let decoys = if window.get_split_enable_decoys() {
+            let mut decoys = if window.get_split_enable_decoys() {
                 (window.get_split_num_decoys() as usize).max(1)
             } else {
                 0
+            };
+
+            let plaintext_decoy = if window.get_split_enable_plaintext_decoy() {
+                let s = window.get_split_plaintext_decoy_path().to_string();
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    if decoys == 0 {
+                        decoys = 1;
+                    }
+                    Some(PathBuf::from(s.trim()))
+                }
+            } else {
+                None
             };
 
             window.set_split_in_progress(true);
@@ -74,6 +101,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     None,
                     parts,
                     decoys,
+                    plaintext_decoy.as_deref(),
                     None,
                     target_prefix.as_deref(),
                     rfs_core::types::DEFAULT_BLOCK_SIZE,
