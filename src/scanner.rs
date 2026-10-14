@@ -121,21 +121,56 @@ fn test_combinations(
 
         if let Ok(meta) = decode_footer_n_way(&tails) {
             // Verify sanity: Original size must not exceed share size
-            if meta.original_size() <= share_size {
-                let shares: Vec<PathBuf> =
-                    indices.iter().map(|&idx| group[idx].path.clone()).collect();
+            if meta.original_size() > 0 && meta.original_size() <= share_size {
+                let valid_fn = if let Some(fn_str) = meta.filename() {
+                    !fn_str.is_empty()
+                        && fn_str.len() <= 255
+                        && !fn_str.chars().any(|c| {
+                            c.is_control()
+                                || c == '?'
+                                || c == '<'
+                                || c == '>'
+                                || c == ':'
+                                || c == ';'
+                                || c == '='
+                        })
+                } else {
+                    true
+                };
 
-                // Prevent duplicate subsets
-                let already_found = results.iter().any(|r| {
-                    r.shares.len() == shares.len() && r.shares.iter().all(|s| shares.contains(s))
-                });
+                if valid_fn {
+                    let shares: Vec<PathBuf> =
+                        indices.iter().map(|&idx| group[idx].path.clone()).collect();
 
-                if !already_found {
-                    results.push(DiscoveredMatch {
-                        shares,
-                        metadata: meta,
-                        share_size,
-                    });
+                    // Cryptographic validation: verify that the XORed data actually matches the BLKS-384 hash.
+                    // This strictly eliminates linear ghost/phantom combinations over GF(2).
+                    let is_authentic = crate::pipeline::restore_file(
+                        &shares,
+                        None,
+                        false,
+                        crate::telemetry::TelemetryMode::Silent,
+                        true,
+                        crate::types::DEFAULT_BLOCK_SIZE,
+                        false,
+                        false,
+                    )
+                    .is_ok();
+
+                    if is_authentic {
+                        // Prevent duplicate subsets
+                        let already_found = results.iter().any(|r| {
+                            r.shares.len() == shares.len()
+                                && r.shares.iter().all(|s| shares.contains(s))
+                        });
+
+                        if !already_found {
+                            results.push(DiscoveredMatch {
+                                shares,
+                                metadata: meta,
+                                share_size,
+                            });
+                        }
+                    }
                 }
             }
         }

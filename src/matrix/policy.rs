@@ -78,25 +78,45 @@ impl MatrixPolicy {
         // Generate candidate combinations of size T
         let all_combinations = generate_combinations(num_shares, threshold);
 
-        // Greedily find K combinations whose indicator vectors are linearly independent over GF(2)
+        // Find K combinations with balanced share distribution and linear independence over GF(2)
         let mut chosen_subsets: Vec<Vec<usize>> = Vec::new();
         let mut chosen_vectors: Vec<BitVector> = Vec::new();
+        let mut share_usage = vec![0usize; num_shares];
 
-        for comb in all_combinations {
-            let vec = BitVector::from_indices(&comb);
-            // Check linear independence via rank increase
-            let mut rows: Vec<u64> = chosen_vectors.iter().map(|v| v.0).collect();
-            rows.push(vec.0);
+        while chosen_subsets.len() < k {
+            let mut best_cand: Option<(Vec<usize>, BitVector)> = None;
+            let mut best_score = usize::MAX;
 
-            let mut test_matrix = BitMatrix::from_rows(&rows, num_shares);
-            let (rank, _) = test_matrix.gauss_jordan_rref();
-
-            if rank == chosen_vectors.len() + 1 {
-                chosen_subsets.push(comb);
-                chosen_vectors.push(vec);
-                if chosen_subsets.len() == k {
-                    break;
+            for comb in &all_combinations {
+                if chosen_subsets.contains(comb) {
+                    continue;
                 }
+                let vec = BitVector::from_indices(comb);
+
+                // Check linear independence via rank increase
+                let mut rows: Vec<u64> = chosen_vectors.iter().map(|v| v.0).collect();
+                rows.push(vec.0);
+
+                let mut test_matrix = BitMatrix::from_rows(&rows, num_shares);
+                let (rank, _) = test_matrix.gauss_jordan_rref();
+
+                if rank == chosen_vectors.len() + 1 {
+                    let score: usize = comb.iter().map(|&idx| share_usage[idx]).sum();
+                    if score < best_score {
+                        best_score = score;
+                        best_cand = Some((comb.clone(), vec));
+                    }
+                }
+            }
+
+            if let Some((cand, vec)) = best_cand {
+                for &idx in &cand {
+                    share_usage[idx] += 1;
+                }
+                chosen_subsets.push(cand);
+                chosen_vectors.push(vec);
+            } else {
+                break;
             }
         }
 
