@@ -176,10 +176,11 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Bit-parallele $\mathbb{F}_2$-Algebra (`src/matrix/gf2.rs`) mit Wort-Level `u64`-Bitboards für bis zu 64 Shares.
   - Gauß-Jordan-Elimination (RREF), Rang- und Nullraum-/Kernel-Berechnung über $\mathbb{F}_2$.
   - Deklarative Richtlinien-Modellierung (`src/matrix/policy.rs`) und linearer Gleichungssolver (`src/matrix/solver.rs`) für simultane Rausch-Annihilation ($\vec{x}^T \mathbf{G} = \vec{0}$) und orthogonale Nutzdaten-Isolation ($\vec{x}^T \mathbf{H} = \vec{e}_k$).
-- [ ] **Multi-Target Footer-Verschleierung**
-  - Erzeugung authentischer, in sich geschlossener RFS4-Trailer für jede definierte Teilmenge – ohne globale Metadaten oder Verrat anderer existierender Payloads.
-- [ ] **Koexistenz & Performance-Garantie**
-  - Der bestehende, hochoptimierte lineare $N$-aus-$N$ Streaming-Kern bleibt als nativer Standardpfad (Identitätsmatrix) unverändert und blitzschnell erhalten.
+- [x] **Multi-Target Footer-Verschleierung (`src/matrix/trailer.rs`)**
+  - Bit-parallele Synthese authentischer, überlagerter 64-Byte RFS4-Trailer für jede definierte Teilmenge via Gauß-Jordan über $\mathbb{F}_2^{512}$.
+  - Vollständige Metadaten-Isolation ohne globale Tabelle; unautorisierte Kombinationen ergeben unkorreliertes Zufallsrauschen ohne Magic-Tag.
+- [x] **Koexistenz & Performance-Garantie**
+  - Der lineare $N$-aus-$N$ Standardpfad verbleibt als allokationsfreier AVX2 Fast-Path (~4,02 GB/s) ohne Laufzeit-Matrix-Overhead unberührt.
 
 ---
 

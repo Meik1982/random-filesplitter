@@ -3,3 +3,4 @@
 pub mod gf2;
 pub mod policy;
 pub mod solver;
+pub mod trailer;
