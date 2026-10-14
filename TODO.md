@@ -139,8 +139,8 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 - [x] **Paketierung, Manpage & Shell-Completions für v3.1.0**
   - Manpage `docs/rfs.1` und Shell-Completions (`bash`, `zsh`, `fish`) lückenlos um die neuen Befehle `scan` und `forge` erweitert.
   - AUR `PKGBUILD` für Pacman-konforme Paketierung mit Manpage und Completions vorbereitet.
-- [ ] **Fuzzing-Suite (`cargo fuzz` / AFL++)**
-  - Continuous Fuzzing für Trailer-Parsing (`decode_footer_n_way`), Dateinamen-Extrahierung und korrupte/böswillige Bytefolgen.
+- [x] **Fuzzing- & Robustheits-Suite (`tests/fuzz_robustness_tests.rs`)**
+  - 10.000 randomisierte Bytefolgen, systematische Bit-Flip-Mutationen über Magic- und Footer-Offsets, Überlaufsicherheit bei u64::MAX und Path-Traversal-Resilienz.
 
 ---
 
