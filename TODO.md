@@ -167,9 +167,10 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
 ---
 
 ### 🌌 Stufe 8: RFS-Matrix – General Access Linear Secret Sharing & Multi-Payload Decoys (GF(2))
-- [ ] **Mathematische Spezifikation & Informationstheoretischer Formalbeweis (`docs/lsss-matrix-konzept.md`)**
+- [x] **Mathematische Spezifikation & Informationstheoretischer Formalbeweis (`docs/lsss-matrix-konzept.md`)**
   - Modellierung beliebiger überlappender Zugriffskontrollstrukturen (*Access Structures*) über dem Körper $\mathbb{F}_2$.
-  - Beispiel: Aus Pool $RFS_{1..9}$ ergeben $\{1, 3, 7\} \rightarrow \text{Geheimnis}$, $\{1, 2, 3\} \rightarrow \text{Decoy}_0$, $\{2, 3, 9\} \rightarrow \text{Decoy}_1$, $\{4, 5, 7\} \rightarrow \text{Decoy}_3$.
+  - Formaler Beweis der Shannon Perfect Secrecy ($I(\mathbf{P}; \vec{y}^T \mathbf{C}) = 0$) für unvollständige Teilmengen.
+  - Bilinguale Spezifikation in `docs/lsss-matrix-konzept.md` und `docs/lsss-matrix-konzept.de.md`.
   - Gauß-Jordan-Elimination über $\mathbb{F}_2$ zur automatisierten Verifikation: Prüfung auf lineare Unabhängigkeit und strikter Beweis, dass unvollständige oder alternative Teilmengen keine Quer-Lecks auf das echte Geheimnis erzeugen.
 - [ ] **Matrix-Kompilierer & Solver-Engine (`src/matrix/`)**
   - Deklarative Konfiguration von Payloads und Ziel-Teilmengen.
