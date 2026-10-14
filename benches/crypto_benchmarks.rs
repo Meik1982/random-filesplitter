@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use blks_core::BlksHasher;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use rfs_core::crypto::{self, ChaChaRng};
 
 fn bench_simd_xor(c: &mut Criterion) {
@@ -60,5 +60,10 @@ fn bench_blks384_hashing(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_simd_xor, bench_chacha20_throughput, bench_blks384_hashing);
+criterion_group!(
+    benches,
+    bench_simd_xor,
+    bench_chacha20_throughput,
+    bench_blks384_hashing
+);
 criterion_main!(benches);

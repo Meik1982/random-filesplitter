@@ -172,9 +172,10 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Formaler Beweis der Shannon Perfect Secrecy ($I(\mathbf{P}; \vec{y}^T \mathbf{C}) = 0$) für unvollständige Teilmengen.
   - Bilinguale Spezifikation in `docs/lsss-matrix-konzept.md` und `docs/lsss-matrix-konzept.de.md`.
   - Gauß-Jordan-Elimination über $\mathbb{F}_2$ zur automatisierten Verifikation: Prüfung auf lineare Unabhängigkeit und strikter Beweis, dass unvollständige oder alternative Teilmengen keine Quer-Lecks auf das echte Geheimnis erzeugen.
-- [ ] **Matrix-Kompilierer & Solver-Engine (`src/matrix/`)**
-  - Deklarative Konfiguration von Payloads und Ziel-Teilmengen.
-  - Generierung von $N$ Shares über linear kombinierte ChaCha20-Zufallsbasisvektoren bei vollständiger Erhaltung der Shannon-Entropie ($\ge 7{,}9998$).
+- [x] **Matrix-Kompilierer & Solver-Engine (`src/matrix/`)**
+  - Bit-parallele $\mathbb{F}_2$-Algebra (`src/matrix/gf2.rs`) mit Wort-Level `u64`-Bitboards für bis zu 64 Shares.
+  - Gauß-Jordan-Elimination (RREF), Rang- und Nullraum-/Kernel-Berechnung über $\mathbb{F}_2$.
+  - Deklarative Richtlinien-Modellierung (`src/matrix/policy.rs`) und linearer Gleichungssolver (`src/matrix/solver.rs`) für simultane Rausch-Annihilation ($\vec{x}^T \mathbf{G} = \vec{0}$) und orthogonale Nutzdaten-Isolation ($\vec{x}^T \mathbf{H} = \vec{e}_k$).
 - [ ] **Multi-Target Footer-Verschleierung**
   - Erzeugung authentischer, in sich geschlossener RFS4-Trailer für jede definierte Teilmenge – ohne globale Metadaten oder Verrat anderer existierender Payloads.
 - [ ] **Koexistenz & Performance-Garantie**

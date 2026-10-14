@@ -9,6 +9,7 @@ pub mod entropy;
 pub mod fadvise;
 pub mod forge;
 pub mod format;
+pub mod matrix;
 pub mod memlock;
 pub mod naming;
 pub mod pipeline;
