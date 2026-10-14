@@ -20,7 +20,7 @@ path = "src/gui_main.rs"
 required-features = ["gui"]
 
 [features]
-default = []
+default = ["gui"]
 gui = ["dep:slint", "dep:slint-build", "dep:rfd"]
 
 [dependencies]
