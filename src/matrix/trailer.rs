@@ -1,7 +1,7 @@
 //! Multi-Target Stealth Footer & Trailer Obfuscation over GF(2).
-//! Solves for M 64-byte trailers such that each authorized access subset
-//! XOR-reconstructs its distinct authentic RFS4 trailer with 100% BLKS-384 integrity,
-//! while unauthorized combinations yield uncorrelated pseudorandom noise.
+//! Solves for M share tail blocks (filename + 64-byte trailer) such that each
+//! authorized access subset XOR-reconstructs its distinct authentic filename and RFS4 trailer
+//! with 100% BLKS-384 integrity, while unauthorized combinations yield uncorrelated noise.
 
 use zeroize::Zeroize;
 
@@ -38,12 +38,12 @@ impl TargetPayloadMeta {
     }
 }
 
-/// Solves for M 64-byte share trailers satisfying all subset XOR constraints.
+/// Solves for M tail blocks (filename bytes + 64-byte trailer) satisfying all subset XOR constraints.
 pub fn synthesize_multi_target_trailers(
     policy: &MatrixPolicy,
     targets: &[TargetPayloadMeta],
     rng: &mut ChaChaRng,
-) -> Result<Vec<[u8; RFS4_TRAILER_SIZE]>, String> {
+) -> Result<Vec<Vec<u8>>, String> {
     let m = policy.num_shares;
     let num_payloads = policy.payloads.len();
 
@@ -55,10 +55,26 @@ pub fn synthesize_multi_target_trailers(
         ));
     }
 
-    // Build plaintext 64-byte trailers for all targets
-    let mut target_trailers = Vec::with_capacity(num_payloads);
+    let max_fn_len = targets.iter().map(|t| t.filename.len()).max().unwrap_or(0);
+    let full_tail_len = max_fn_len + RFS4_TRAILER_SIZE;
+
+    // Build plaintext full tails [padding/random | filename | 64B trailer] for all targets
+    let mut target_tails = Vec::with_capacity(num_payloads);
     for t in targets {
-        target_trailers.push(t.build_plaintext_trailer()?);
+        let mut tail = vec![0u8; full_tail_len];
+        // Fill prefix with random noise
+        for b in &mut tail[..max_fn_len] {
+            *b = rng.next_u8();
+        }
+
+        let trailer_64 = t.build_plaintext_trailer()?;
+        tail[full_tail_len - RFS4_TRAILER_SIZE..full_tail_len].copy_from_slice(&trailer_64);
+
+        let fn_bytes = t.filename.as_bytes();
+        let fn_offset = full_tail_len - RFS4_TRAILER_SIZE - fn_bytes.len();
+        tail[fn_offset..fn_offset + fn_bytes.len()].copy_from_slice(fn_bytes);
+
+        target_tails.push(tail);
     }
 
     // Build constraint matrix rows: each authorized subset forms a row in A
@@ -81,11 +97,12 @@ pub fn synthesize_multi_target_trailers(
     let a_matrix = BitMatrix::from_rows(&constraint_rows, m);
     let nullspace_basis = a_matrix.nullspace();
 
-    // Result: M trailers of 64 bytes each
-    let mut share_trailers = vec![[0u8; RFS4_TRAILER_SIZE]; m];
+    // Result: M tails of full_tail_len bytes each
+    let mut share_trailers = vec![vec![0u8; full_tail_len]; m];
 
-    // Total bits per trailer: 64 bytes * 8 = 512 bits
-    for bit_idx in 0..512 {
+    // Total bits per tail block: full_tail_len * 8
+    let total_bits = full_tail_len * 8;
+    for bit_idx in 0..total_bits {
         let byte_pos = bit_idx / 8;
         let bit_in_byte = bit_idx % 8;
 
@@ -93,7 +110,7 @@ pub fn synthesize_multi_target_trailers(
         let mut aug_rows = Vec::with_capacity(num_constraints);
         for r in 0..num_constraints {
             let p_idx = row_payload_idx[r];
-            let target_byte = target_trailers[p_idx][byte_pos];
+            let target_byte = target_tails[p_idx][byte_pos];
             let target_bit = ((target_byte >> bit_in_byte) & 1) as u64;
 
             let aug_row = constraint_rows[r] | (target_bit << m);
@@ -113,17 +130,16 @@ pub fn synthesize_multi_target_trailers(
         // Extract particular solution
         let mut sol = BitVector::ZERO;
         for (row_idx, &pivot_col) in pivots.iter().enumerate() {
-            if pivot_col < m && aug.get(row_idx, m) {
-                sol.set(pivot_col, true);
+            if pivot_col < m {
+                let target_bit = (aug.rows[row_idx] >> m) & 1;
+                sol.set(pivot_col, target_bit == 1);
             }
         }
 
-        // Add random degrees of freedom from nullspace (white noise mask)
-        for &null_vec in &nullspace_basis {
-            let mut rand_byte = [0u8; 1];
-            rng.fill_bytes(&mut rand_byte);
-            if (rand_byte[0] & 1) == 1 {
-                sol ^= null_vec;
+        // Add random linear combinations from nullspace basis for white-noise degrees of freedom
+        for basis_vec in &nullspace_basis {
+            if rng.next_u8() & 1 == 1 {
+                sol = BitVector(sol.0 ^ basis_vec.0);
             }
         }
 
@@ -135,9 +151,9 @@ pub fn synthesize_multi_target_trailers(
         }
     }
 
-    // Clean up sensitive stack memory
-    for t in &mut target_trailers {
-        t.zeroize();
+    // Zeroize sensitive plaintext targets
+    for mut tail in target_tails {
+        tail.zeroize();
     }
 
     Ok(share_trailers)
@@ -146,61 +162,70 @@ pub fn synthesize_multi_target_trailers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format::decode_footer_n_way;
+    use crate::format::RfsMetadata;
 
     #[test]
     fn test_multi_target_trailer_synthesis_and_reconstruction() {
         let mut policy = MatrixPolicy::new(4);
-        // Subset {0, 1, 2} reveals secret
-        policy.add_payload("secret.txt", &[&[0, 1, 2]], true);
-        // Subset {1, 2, 3} reveals decoy
-        policy.add_payload("decoy.pdf", &[&[1, 2, 3]], false);
+        policy.add_payload("payload_alpha.txt", &[&[0, 1, 2]], true);
+        policy.add_payload("payload_beta.pdf", &[&[1, 2, 3]], false);
 
         let targets = vec![
             TargetPayloadMeta {
-                original_size: 42,
-                blks_digest: [0x55u8; BLKS_DIGEST_SIZE],
-                filename: "secret.txt".to_string(),
+                original_size: 1024,
+                blks_digest: [0x11; BLKS_DIGEST_SIZE],
+                filename: "payload_alpha.txt".to_string(),
             },
             TargetPayloadMeta {
-                original_size: 999,
-                blks_digest: [0xAAu8; BLKS_DIGEST_SIZE],
-                filename: "decoy.pdf".to_string(),
+                original_size: 2048,
+                blks_digest: [0x22; BLKS_DIGEST_SIZE],
+                filename: "payload_beta.pdf".to_string(),
             },
         ];
 
-        let mut rng = ChaChaRng::new(&[0x12u8; 32], &[0x34u8; 12]);
+        let mut rng = ChaChaRng::new(&[0x33; 32], &[0x44; 12]);
         let trailers = synthesize_multi_target_trailers(&policy, &targets, &mut rng)
-            .expect("Should synthesize trailers");
+            .expect("Trailer synthesis failed");
 
         assert_eq!(trailers.len(), 4);
 
-        // Verify subset {0, 1, 2} XOR sum matches target 0 trailer bit-exact!
-        let mut combined_secret = [0u8; RFS4_TRAILER_SIZE];
-        for i in [0, 1, 2] {
-            for b in 0..RFS4_TRAILER_SIZE {
-                combined_secret[b] ^= trailers[i][b];
+        // Check authorized subset 1: {0, 1, 2}
+        let set1_slices: Vec<&[u8]> = vec![&trailers[0], &trailers[1], &trailers[2]];
+        let meta1 = decode_footer_n_way(&set1_slices).expect("Failed to decode subset 1");
+        match meta1 {
+            RfsMetadata::Rfs4 {
+                expected_blks,
+                original_size,
+                filename,
+                ..
+            } => {
+                assert_eq!(expected_blks, [0x11; BLKS_DIGEST_SIZE]);
+                assert_eq!(original_size, 1024);
+                assert_eq!(filename, "payload_alpha.txt");
             }
+            _ => panic!("Expected RFS4 metadata"),
         }
-        let expected_secret = targets[0].build_plaintext_trailer().unwrap();
-        assert_eq!(combined_secret, expected_secret);
 
-        // Verify subset {1, 2, 3} XOR sum matches target 1 trailer bit-exact!
-        let mut combined_decoy = [0u8; RFS4_TRAILER_SIZE];
-        for i in [1, 2, 3] {
-            for b in 0..RFS4_TRAILER_SIZE {
-                combined_decoy[b] ^= trailers[i][b];
+        // Check authorized subset 2: {1, 2, 3}
+        let set2_slices: Vec<&[u8]> = vec![&trailers[1], &trailers[2], &trailers[3]];
+        let meta2 = decode_footer_n_way(&set2_slices).expect("Failed to decode subset 2");
+        match meta2 {
+            RfsMetadata::Rfs4 {
+                expected_blks,
+                original_size,
+                filename,
+                ..
+            } => {
+                assert_eq!(expected_blks, [0x22; BLKS_DIGEST_SIZE]);
+                assert_eq!(original_size, 2048);
+                assert_eq!(filename, "payload_beta.pdf");
             }
+            _ => panic!("Expected RFS4 metadata"),
         }
-        let expected_decoy = targets[1].build_plaintext_trailer().unwrap();
-        assert_eq!(combined_decoy, expected_decoy);
 
-        // Verify unauthorized subset {0, 3} yields noise without RFS4 magic tag
-        let mut combined_unauth = [0u8; RFS4_TRAILER_SIZE];
-        for i in [0, 3] {
-            for b in 0..RFS4_TRAILER_SIZE {
-                combined_unauth[b] ^= trailers[i][b];
-            }
-        }
-        assert_ne!(&combined_unauth[0..4], &RFS4_MAGIC);
+        // Check unauthorized subset: {0, 3}
+        let unauth_slices: Vec<&[u8]> = vec![&trailers[0], &trailers[3]];
+        assert!(decode_footer_n_way(&unauth_slices).is_err());
     }
 }

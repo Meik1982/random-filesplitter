@@ -4,9 +4,12 @@
 
 #![allow(clippy::type_complexity)]
 
+pub mod multi_split;
 pub mod restore;
 pub mod split;
 
+#[allow(unused_imports)]
+pub use multi_split::{split_multi_payloads, MultiSplitResult};
 pub use restore::restore_file;
 #[allow(unused_imports)]
 pub use split::{split_file, split_stream_or_file, SplitResult};

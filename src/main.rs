@@ -11,6 +11,7 @@ mod entropy;
 mod fadvise;
 mod forge;
 mod format;
+mod matrix;
 mod memlock;
 mod naming;
 mod pipeline;
@@ -93,6 +94,37 @@ fn main() {
                 Err(e) => {
                     if telemetry_mode != telemetry::TelemetryMode::Json {
                         eprintln!("Error during split: {}", e);
+                    }
+                    process::exit(1);
+                }
+            }
+        }
+        CliCommand::MultiSplit {
+            payloads,
+            num_shares,
+            threshold,
+            output_dir,
+            block_size,
+            telemetry_mode,
+            force,
+            direct_io,
+            mlock,
+        } => {
+            match pipeline::split_multi_payloads(
+                &payloads,
+                num_shares,
+                threshold,
+                output_dir.as_deref(),
+                block_size,
+                telemetry_mode,
+                force,
+                direct_io,
+                mlock,
+            ) {
+                Ok(_) => process::exit(0),
+                Err(e) => {
+                    if telemetry_mode != telemetry::TelemetryMode::Json {
+                        eprintln!("Error during multi-payload split: {}", e);
                     }
                     process::exit(1);
                 }

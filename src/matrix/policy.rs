@@ -1,6 +1,6 @@
 //! Access Structure Policies for RFS-Matrix over GF(2).
 
-use crate::matrix::gf2::BitVector;
+use crate::matrix::gf2::{BitMatrix, BitVector};
 
 /// Specification for a single payload (genuine secret or decoy).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,5 +49,120 @@ impl MatrixPolicy {
             is_secret,
         });
         id
+    }
+
+    /// Automatically designs an optimal, linearly independent access policy
+    /// distributing K payloads across M shares with subset size T (threshold).
+    pub fn create_multi_payload_policy(
+        num_shares: usize,
+        threshold: usize,
+        payload_names: &[String],
+    ) -> Result<(MatrixPolicy, Vec<Vec<usize>>), String> {
+        let k = payload_names.len();
+        if k == 0 {
+            return Err("At least 1 payload required".to_string());
+        }
+        if threshold < 2 || threshold > num_shares {
+            return Err(format!(
+                "Threshold T ({}) must be between 2 and total shares M ({})",
+                threshold, num_shares
+            ));
+        }
+        if k > num_shares {
+            return Err(format!(
+                "Cannot embed {} payloads into {} shares over GF(2) (maximum is M = {})",
+                k, num_shares, num_shares
+            ));
+        }
+
+        // Generate candidate combinations of size T
+        let all_combinations = generate_combinations(num_shares, threshold);
+
+        // Greedily find K combinations whose indicator vectors are linearly independent over GF(2)
+        let mut chosen_subsets: Vec<Vec<usize>> = Vec::new();
+        let mut chosen_vectors: Vec<BitVector> = Vec::new();
+
+        for comb in all_combinations {
+            let vec = BitVector::from_indices(&comb);
+            // Check linear independence via rank increase
+            let mut rows: Vec<u64> = chosen_vectors.iter().map(|v| v.0).collect();
+            rows.push(vec.0);
+
+            let mut test_matrix = BitMatrix::from_rows(&rows, num_shares);
+            let (rank, _) = test_matrix.gauss_jordan_rref();
+
+            if rank == chosen_vectors.len() + 1 {
+                chosen_subsets.push(comb);
+                chosen_vectors.push(vec);
+                if chosen_subsets.len() == k {
+                    break;
+                }
+            }
+        }
+
+        if chosen_subsets.len() < k {
+            return Err(format!(
+                "Could not find {} linearly independent subsets of size {} on {} shares over GF(2)",
+                k, threshold, num_shares
+            ));
+        }
+
+        let mut policy = MatrixPolicy::new(num_shares);
+        for (i, name) in payload_names.iter().enumerate() {
+            let slice: &[usize] = &chosen_subsets[i];
+            policy.add_payload(name, &[slice], true);
+        }
+
+        Ok((policy, chosen_subsets))
+    }
+}
+
+/// Generates all combinations of size k from 0..n.
+fn generate_combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
+    let mut result = Vec::new();
+    let mut current = Vec::new();
+    combinations_recurse(0, n, k, &mut current, &mut result);
+    result
+}
+
+fn combinations_recurse(
+    start: usize,
+    n: usize,
+    k: usize,
+    current: &mut Vec<usize>,
+    result: &mut Vec<Vec<usize>>,
+) {
+    if current.len() == k {
+        result.push(current.clone());
+        return;
+    }
+    for i in start..n {
+        current.push(i);
+        combinations_recurse(i + 1, n, k, current, result);
+        current.pop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::matrix::solver::solve_matrix_policy;
+
+    #[test]
+    fn test_multi_payload_policy_design_and_solution() {
+        let names = vec![
+            "vault.kdbx".to_string(),
+            "vacation.pdf".to_string(),
+            "invoice.xlsx".to_string(),
+        ];
+        // 3 payloads on 5 shares, 3-out-of-5 threshold
+        let (policy, subsets) = MatrixPolicy::create_multi_payload_policy(5, 3, &names).unwrap();
+
+        assert_eq!(subsets.len(), 3);
+        assert_eq!(policy.payloads.len(), 3);
+
+        // Verify that the policy solves cleanly and satisfies all GF(2) conditions
+        let solved = solve_matrix_policy(&policy).unwrap();
+        solved.verify_policy(&policy).unwrap();
     }
 }

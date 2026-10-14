@@ -1,10 +1,12 @@
 //! Bit-parallel Linear Algebra over the Galois Field GF(2) ({0, 1}, XOR, AND).
 //! Highly optimized for 64-bit word-level CPU instructions (up to 64 shares).
 
-/// Represents an element of (GF(2))^M encoded into a single 64-bit integer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// Represents an element of (GF(2))^M encoded in a u64 word.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BitVector(pub u64);
 
+#[allow(dead_code)]
 impl BitVector {
     pub const ZERO: Self = BitVector(0);
 
@@ -54,7 +56,7 @@ impl BitVector {
         self.0.count_ones()
     }
 
-    pub fn to_indices(&self) -> Vec<usize> {
+    pub fn to_indices(self) -> Vec<usize> {
         let mut list = Vec::new();
         for i in 0..64 {
             if self.get(i) {
@@ -80,14 +82,16 @@ impl std::ops::BitXorAssign for BitVector {
     }
 }
 
-/// A dense matrix over GF(2) with row-major `u64` bitboard representation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A bit-packed matrix over GF(2) with row-major representation.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BitMatrix {
     pub rows: Vec<u64>,
     pub num_rows: usize,
     pub num_cols: usize,
 }
 
+#[allow(dead_code)]
 impl BitMatrix {
     pub fn zeros(num_rows: usize, num_cols: usize) -> Self {
         assert!(

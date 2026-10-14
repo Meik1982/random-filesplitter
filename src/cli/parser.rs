@@ -252,6 +252,18 @@ pub enum CliCommand {
         direct_io: bool,
         mlock: bool,
     },
+    /// Split multiple plaintext files into M shares with threshold T over GF(2)
+    MultiSplit {
+        payloads: Vec<PathBuf>,
+        num_shares: usize,
+        threshold: Option<usize>,
+        output_dir: Option<PathBuf>,
+        block_size: usize,
+        telemetry_mode: TelemetryMode,
+        force: bool,
+        direct_io: bool,
+        mlock: bool,
+    },
     /// Reconstruct from N shares
     Restore {
         parts: Vec<PathBuf>,
@@ -399,6 +411,7 @@ where
     let mut block_size = types::DEFAULT_BLOCK_SIZE;
     let mut output_path: Option<String> = None;
     let mut pad_to: Option<u64> = None;
+    let mut threshold: Option<usize> = None;
     let mut scan_restore = false;
     let mut forge_decoy_path: Option<PathBuf> = None;
     let mut positionals: Vec<String> = Vec::new();
@@ -444,6 +457,20 @@ where
                 Err(_) => {
                     return Err(format!(
                         "Error: Invalid number for option {}: '{}'",
+                        arg, args[i]
+                    ));
+                }
+            }
+        } else if arg == "-T" || arg == "--threshold" {
+            i += 1;
+            if i >= args.len() {
+                return Err(format!("Error: Option {} requires a count argument.", arg));
+            }
+            match args[i].parse::<usize>() {
+                Ok(n) if n >= 2 => threshold = Some(n),
+                _ => {
+                    return Err(format!(
+                        "Error: Invalid threshold count for option {}: '{}' (must be >= 2)",
                         arg, args[i]
                     ));
                 }
@@ -557,10 +584,34 @@ where
         "split" => {
             if positionals.is_empty() {
                 return Err(
-                    "Error: No input file specified for split.\n\nUsage: rfs split [options] <source|-> [shares...]\n\nExamples:\n  rfs split confidential.pdf\n  rfs split -n 3 database.kdbx -o /media/usb/\n  rfs split secret.iso -n 3 --decoy-reveal harmless.pdf\n  cat large.tar | rfs split -n 4 - -o backup"
+                    "Error: No input file specified for split.\n\nUsage: rfs split [options] <source|-> [shares...]\n\nMulti-Payload Usage:\n  rfs split <file1> <file2> [file3...] -n <SHARES> [-T <THRESHOLD>] -o <DIR>\n\nExamples:\n  rfs split confidential.pdf\n  rfs split vault.kdbx vacation.pdf invoice.xlsx -n 5 -T 3 -o ./shares/\n  rfs split secret.iso -n 3 --decoy-reveal harmless.pdf\n  cat large.tar | rfs split -n 4 - -o backup"
                         .to_string(),
                 );
             }
+
+            // Detect Multi-Payload Split:
+            // If >= 2 files are given that all exist on disk, or if -T/--threshold is specified
+            let all_exist = positionals.len() > 1
+                && positionals.iter().all(|p| std::path::Path::new(p).exists());
+            let is_multi_split = (all_exist
+                && !positionals[1].ends_with(".rfs")
+                && !positionals[1].contains(".part"))
+                || (threshold.is_some() && positionals.len() > 1);
+
+            if is_multi_split {
+                return Ok(CliCommand::MultiSplit {
+                    payloads: positionals.iter().map(PathBuf::from).collect(),
+                    num_shares: num_parts.max(positionals.len()),
+                    threshold,
+                    output_dir: output_path.map(PathBuf::from),
+                    block_size,
+                    telemetry_mode,
+                    force,
+                    direct_io,
+                    mlock,
+                });
+            }
+
             let input = positionals[0].clone();
             let parts: Option<Vec<PathBuf>> = if positionals.len() > 1 {
                 Some(positionals[1..].iter().map(PathBuf::from).collect())

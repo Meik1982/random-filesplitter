@@ -8,25 +8,44 @@ use std::path::PathBuf;
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
 
-    // 1. Callback: Quelldatei-Auswahldialog
+    // 1. Callback: Quelldatei(en) auswählen
     let window_handle = main_window.as_weak();
     main_window.on_request_select_file(move || {
-        if let Some(file) = rfd::FileDialog::new()
-            .set_title("Quelldatei für RFS-Split auswählen")
-            .pick_file()
+        if let Some(files) = rfd::FileDialog::new()
+            .set_title("Quelldatei(en) für One-Time-Pad auswählen")
+            .pick_files()
         {
-            if let Some(window) = window_handle.upgrade() {
-                let path_str = file.to_string_lossy().to_string();
-                let file_name = file.file_name().and_then(|n| n.to_str()).unwrap_or("Datei");
-                let size_str = std::fs::metadata(&file)
-                    .map(|m| rfs_core::telemetry::format_bytes(m.len()))
-                    .unwrap_or_else(|_| "unbekannte Größe".to_string());
+            if !files.is_empty() {
+                if let Some(window) = window_handle.upgrade() {
+                    let joined_paths = files
+                        .iter()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
 
-                window.set_split_file_path(path_str.into());
-                window.set_split_file_info(
-                    format!("Ausgewählt: {} ({})", file_name, size_str).into(),
-                );
-                window.set_split_status("Bereit zum Aufteilen".into());
+                    window.set_split_file_path(joined_paths.into());
+
+                    if files.len() == 1 {
+                        let file = &files[0];
+                        let file_name =
+                            file.file_name().and_then(|n| n.to_str()).unwrap_or("Datei");
+                        let size_str = std::fs::metadata(file)
+                            .map(|m| rfs_core::telemetry::format_bytes(m.len()))
+                            .unwrap_or_else(|_| "unbekannte Größe".to_string());
+                        window.set_split_file_info(
+                            format!("Ausgewählt: {} ({})", file_name, size_str).into(),
+                        );
+                    } else {
+                        window.set_split_file_info(
+                            format!(
+                                "{} Payloads ausgewählt (Symmetrisches Multi-Splitting über GF(2))",
+                                files.len()
+                            )
+                            .into(),
+                        );
+                    }
+                    window.set_split_status("Bereit zum Aufteilen".into());
+                }
             }
         }
     });
@@ -69,7 +88,22 @@ fn main() -> Result<(), slint::PlatformError> {
                 Some(target_dir_str.trim().to_string())
             };
 
-            let parts = window.get_split_num_parts() as usize;
+            let path_entries: Vec<PathBuf> = path_str
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect();
+
+            if path_entries.is_empty() {
+                window.set_split_status("Bitte mindestens eine Datei auswählen!".into());
+                return;
+            }
+
+            let parts = (window.get_split_num_parts() as usize).max(path_entries.len());
+            let threshold = (window.get_split_threshold() as usize).max(2).min(parts);
+            let is_multi = path_entries.len() > 1;
+
             let mut decoys = if window.get_split_enable_decoys() {
                 (window.get_split_num_decoys() as usize).max(1)
             } else {
@@ -91,25 +125,107 @@ fn main() -> Result<(), slint::PlatformError> {
             };
 
             window.set_split_in_progress(true);
-            window.set_split_status("Teile Datei via ChaCha20 & SIMD-XOR...".into());
+            if is_multi {
+                window.set_split_status(
+                    format!(
+                        "Symmetrisches Multi-Splitting ({} Payloads auf {} Shares)...",
+                        path_entries.len(),
+                        parts
+                    )
+                    .into(),
+                );
+            } else {
+                window.set_split_status("Teile Datei via ChaCha20 & SIMD-XOR...".into());
+            }
             window.set_split_results_log("".into());
 
             let window_bg = window.as_weak();
             std::thread::spawn(move || {
-                let res = rfs_core::pipeline::split_stream_or_file(
-                    &path_str,
-                    None,
-                    parts,
-                    decoys,
-                    plaintext_decoy.as_deref(),
-                    None,
-                    target_prefix.as_deref(),
-                    rfs_core::types::DEFAULT_BLOCK_SIZE,
-                    rfs_core::telemetry::TelemetryMode::Silent,
-                    false,
-                    false,
-                    false,
-                );
+                if is_multi {
+                    let res = rfs_core::pipeline::split_multi_payloads(
+                        &path_entries,
+                        parts,
+                        Some(threshold),
+                        target_prefix.as_deref().map(std::path::Path::new),
+                        rfs_core::types::DEFAULT_BLOCK_SIZE,
+                        rfs_core::telemetry::TelemetryMode::Silent,
+                        false,
+                        false,
+                        false,
+                    );
+
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = window_bg.upgrade() {
+                            w.set_split_in_progress(false);
+                            match res {
+                                Ok(multi_res) => {
+                                    w.set_split_progress(1.0);
+                                    w.set_split_status(
+                                        format!(
+                                            "✅ {} Payloads erfolgreich aufgeteilt!",
+                                            multi_res.payload_subsets.len()
+                                        )
+                                        .into(),
+                                    );
+
+                                    let mut log = String::new();
+                                    log.push_str(&format!(
+                                        "=== RFS MULTI-PAYLOAD SPLIT: {} DATEIEN AUF {} SHARES ({}-AUS-{}) ===\n\n",
+                                        multi_res.payload_subsets.len(),
+                                        parts,
+                                        threshold,
+                                        parts
+                                    ));
+                                    log.push_str(&format!(
+                                        "Einheitliche Share-Größe: {}\n\n",
+                                        rfs_core::telemetry::format_bytes(multi_res.share_size)
+                                    ));
+                                    log.push_str("🔐 ERZEUGTE ANONYME SHARES:\n");
+                                    for (i, p) in multi_res.share_paths.iter().enumerate() {
+                                        log.push_str(&format!("  [Share {}] {}\n", i + 1, p.display()));
+                                    }
+
+                                    log.push_str("\n🎯 KOMBINATORISCHE ZUGRIFFSZUORDNUNG:\n");
+                                    for (name, shares) in &multi_res.payload_subsets {
+                                        let names = shares
+                                            .iter()
+                                            .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        log.push_str(&format!("  🎯 Payload: \"{}\"\n", name));
+                                        log.push_str(&format!(
+                                            "     Benötigt {}-Way Kombination: [{}]\n\n",
+                                            shares.len(),
+                                            names
+                                        ));
+                                    }
+                                    log.push_str("HINWEIS: Alle Kombinationen können via 'rfs scan' oder den Scanner-Tab auto-entdeckt werden.");
+                                    w.set_split_results_log(log.into());
+                                }
+                                Err(e) => {
+                                    w.set_split_status(format!("Fehler: {}", e).into());
+                                    w.set_split_results_log(
+                                        format!("FEHLER BEIM MULTI-SPLIT:\n{}", e).into(),
+                                    );
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    let res = rfs_core::pipeline::split_stream_or_file(
+                        &path_str,
+                        None,
+                        parts,
+                        decoys,
+                        plaintext_decoy.as_deref(),
+                        None,
+                        target_prefix.as_deref(),
+                        rfs_core::types::DEFAULT_BLOCK_SIZE,
+                        rfs_core::telemetry::TelemetryMode::Silent,
+                        false,
+                        false,
+                        false,
+                    );
 
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = window_bg.upgrade() {
@@ -147,9 +263,10 @@ fn main() -> Result<(), slint::PlatformError> {
                         }
                     }
                 });
-            });
-        }
-    });
+            }
+        });
+    }
+});
 
     // 4. Callback: Restore Shares Dialog (Mehrfachauswahl)
     let window_handle = main_window.as_weak();

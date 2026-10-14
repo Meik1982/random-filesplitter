@@ -14,9 +14,10 @@ export component MainWindow inherits Window {
 
     // Split properties
     in-out property <string> split_file_path: "";
-    in-out property <string> split_file_info: "Keine Datei ausgewählt. Bitte Quelldatei wählen.";
+    in-out property <string> split_file_info: "Wählen Sie eine oder mehrere Dateien aus.";
     in-out property <string> split_target_dir: "";
     in-out property <int> split_num_parts: 3;
+    in-out property <int> split_threshold: 2;
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
     in-out property <bool> split_enable_plaintext_decoy: false;
@@ -150,9 +151,9 @@ export component MainWindow inherits Window {
                 padding: 14px;
                 spacing: 10px;
 
-                // 1. Quelldatei
+                // 1. Quelldatei(en)
                 Text {
-                    text: "1. Quelldatei für One-Time-Pad:";
+                    text: "1. Quelldatei(en) für One-Time-Pad (Symmetrisches Multi-Splitting möglich):";
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -161,11 +162,11 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.split_file_path;
-                        placeholder-text: "Quelldatei auswählen...";
+                        placeholder-text: "Eine oder mehrere Dateien auswählen (komma-separiert)...";
                         edited(val) => { root.split_file_path = val; }
                     }
                     Button {
-                        text: "Datei wählen...";
+                        text: "Dateien wählen...";
                         clicked => { root.request_select_file(); }
                     }
                 }
@@ -197,11 +198,11 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                // 3. Konfiguration: Shares & Köder
+                // 3. Konfiguration: Shares & Schwellenwert
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Echte Shares (N = " + root.split_num_parts + "):";
+                        text: "Gesamt-Shares (M = " + root.split_num_parts + "):";
                         color: #c9d1d9;
                         vertical-alignment: center;
                         min-width: 160px;
@@ -210,7 +211,28 @@ export component MainWindow inherits Window {
                         minimum: 2;
                         maximum: 16;
                         value: root.split_num_parts;
-                        changed(val) => { root.split_num_parts = Math.round(val); }
+                        changed(val) => {
+                            root.split_num_parts = Math.round(val);
+                            if root.split_threshold > root.split_num_parts {
+                                root.split_threshold = root.split_num_parts;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text {
+                        text: "Kombinationsgröße (T = " + root.split_threshold + "):";
+                        color: #58a6ff;
+                        vertical-alignment: center;
+                        min-width: 160px;
+                    }
+                    Slider {
+                        minimum: 2;
+                        maximum: root.split_num_parts;
+                        value: root.split_threshold;
+                        changed(val) => { root.split_threshold = Math.round(val); }
                     }
                 }
 

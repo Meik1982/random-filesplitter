@@ -180,6 +180,12 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Vollständige Metadaten-Isolation ohne globale Tabelle; unautorisierte Kombinationen ergeben unkorreliertes Zufallsrauschen ohne Magic-Tag.
 - [x] **Koexistenz & Performance-Garantie**
   - Der lineare $N$-aus-$N$ Standardpfad verbleibt als allokationsfreier AVX2 Fast-Path (~4,02 GB/s) ohne Laufzeit-Matrix-Overhead unberührt.
+- [x] **Symmetrisches Multi-Klartext-Splitting (Pipeline, CLI & Desktop-GUI)**
+  - Gleichzeitige Einbettung von $K$ beliebigen Klartextdateien in $M$ Shares mit Schwellenwert $T$ (z. B. 3 aus 5).
+  - Greedily verifizierte lineare Unabhängigkeit der Zugriffsvektoren über $\mathbb{F}_2$ via Gauß-Jordan Rang-Check.
+  - Multi-File-Streaming (`src/pipeline/multi_split.rs`) mit einheitlicher Bytegröße (4-KiB-Padding) und simultaner BLKS-384 Hashing-Integrität.
+  - Vollständige Integration in CLI (`rfs split <f1> <f2>... -n <M> -T <T>`) und Desktop-GUI (Multi-File-Auswahl).
+  - End-to-End validiert in `tests/multi_payload_tests.rs`: bitgenaue Rekonstruktion aller $K$ Dateien und automatische Entdeckung durch `rfs scan`.
 
 ---
 
