@@ -1,20 +1,95 @@
 import { Button, Slider, CheckBox, LineEdit, TextEdit, ProgressIndicator, HorizontalBox, VerticalBox } from "std-widgets.slint";
 
+component LangPill inherits Rectangle {
+    in property <string> code;
+    in property <string> label;
+    in property <string> active_code;
+    callback clicked_lang(string);
+
+    width: 38px;
+    height: 24px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: root.code == root.active_code ? #58a6ff : #30363d;
+    background: root.code == root.active_code ? #1f2937 : #16181d;
+
+    TouchArea {
+        clicked => { root.clicked_lang(root.code); }
+    }
+
+    Text {
+        text: root.label;
+        font-size: 11px;
+        font-weight: root.code == root.active_code ? 700 : 400;
+        color: root.code == root.active_code ? #58a6ff : #8b949e;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
 export component MainWindow inherits Window {
     title: "RFS - Random File Splitter (v3.1.0 Desktop)";
     icon: @image-url("../assets/icon.png");
-    preferred-width: 820px;
+    preferred-width: 840px;
     preferred-height: 690px;
-    min-width: 700px;
+    min-width: 720px;
     min-height: 580px;
     background: #14161b;
     default-font-family: "sans-serif";
 
     in-out property <int> active_tab: 0;
+    in-out property <string> current_lang: "en";
 
-    // Split properties
+    // i18n translatable UI labels (Default: English)
+    in-out property <string> tr_subtitle: "Random File Splitter (Information-Theoretic Security & Anti-Forensics)";
+    in-out property <string> tr_tab_split: " 📦 Split ";
+    in-out property <string> tr_tab_restore: " 🔓 Restore ";
+    in-out property <string> tr_tab_forge: " 🎭 Deniable Forge ";
+
+    in-out property <string> tr_split_step1_label: "1. Source File(s) for One-Time-Pad (Symmetric Multi-Splitting supported):";
+    in-out property <string> tr_split_file_placeholder: "Select one or multiple files...";
+    in-out property <string> tr_split_select_files_btn: "Select Files...";
+    in-out property <string> tr_split_step2_label: "2. Output Directory (e.g., USB drive or target folder):";
+    in-out property <string> tr_split_target_placeholder: "Default: Same directory as source file";
+    in-out property <string> tr_split_select_dir_btn: "Choose Folder...";
+    in-out property <string> tr_split_total_shares_prefix: "Total Shares (M = ";
+    in-out property <string> tr_split_threshold_prefix: "Threshold (T = ";
+    in-out property <string> tr_split_threshold_of: " of ";
+    in-out property <string> tr_split_enable_decoys_label: "Generate Decoy Chaff Files";
+    in-out property <string> tr_split_decoy_count_prefix: "Decoy Count (D = ";
+    in-out property <string> tr_split_action_btn: "🚀 Split File Securely";
+    in-out property <string> tr_split_action_running_btn: "Splitting...";
+    in-out property <string> tr_split_log_label: "📋 Share Allocation & Output Log (Required for Reconstruction):";
+
+    in-out property <string> tr_restore_step1_label: "1. Input RFS Shares (at least 2 parts):";
+    in-out property <string> tr_restore_shares_placeholder: "Select share files or scan a directory...";
+    in-out property <string> tr_restore_select_shares_btn: "Select Shares...";
+    in-out property <string> tr_restore_scan_folder_btn: "🔍 Scan Folder...";
+    in-out property <string> tr_restore_auto_restore_btn: "⚡ Auto-Restore...";
+    in-out property <string> tr_restore_step2_label: "2. Output Target Directory (optional):";
+    in-out property <string> tr_restore_target_placeholder: "Default: Original filename from RFS4 footer";
+    in-out property <string> tr_restore_target_btn: "Target Folder...";
+    in-out property <string> tr_restore_integrity_label: "Integrity Check:";
+    in-out property <string> tr_restore_action_btn: "🔓 Reconstruct Original File";
+    in-out property <string> tr_restore_action_running_btn: "Restoring...";
+    in-out property <string> tr_restore_log_label: "📋 Restoration Report:";
+
+    in-out property <string> tr_forge_step1_label: "1. Existing / Seized Shares:";
+    in-out property <string> tr_forge_shares_placeholder: "Select existing .rfs share files...";
+    in-out property <string> tr_forge_select_shares_btn: "Select Shares...";
+    in-out property <string> tr_forge_step2_label: "2. Decoy Plaintext to Reveal (e.g., vacation photo, benign PDF):";
+    in-out property <string> tr_forge_decoy_placeholder: "Select decoy plaintext file...";
+    in-out property <string> tr_forge_select_decoy_btn: "Select Decoy...";
+    in-out property <string> tr_forge_step3_label: "3. Output Path for Synthesized Counterpart Share (C_fake):";
+    in-out property <string> tr_forge_output_placeholder: "Output path for fake share (e.g., counterpart_fake.rfs)...";
+    in-out property <string> tr_forge_select_output_btn: "Save As...";
+    in-out property <string> tr_forge_action_btn: "🎭 Synthesize Counterpart Share";
+    in-out property <string> tr_forge_action_running_btn: "Synthesizing...";
+    in-out property <string> tr_forge_log_label: "📋 Synthesis Log & Cryptographic Guarantee:";
+
+    // Split state properties
     in-out property <string> split_file_path: "";
-    in-out property <string> split_file_info: "Wählen Sie eine oder mehrere Dateien aus.";
+    in-out property <string> split_file_info: "Select one or multiple files to split.";
     in-out property <string> split_target_dir: "";
     in-out property <int> split_num_parts: 3;
     in-out property <int> split_min_parts: 2;
@@ -24,30 +99,33 @@ export component MainWindow inherits Window {
     in-out property <string> split_info_hint: "";
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
-    in-out property <string> split_status: "Bereit zum Aufteilen";
+    in-out property <string> split_status: "Ready to split";
     in-out property <float> split_progress: 0.0;
     in-out property <bool> split_in_progress: false;
     in-out property <string> split_results_log: "";
 
-    // Restore properties
+    // Restore state properties
     in-out property <string> restore_shares_input: "";
-    in-out property <string> restore_detected_info: "Wählen Sie mindestens 2 .rfs-Dateien aus.";
+    in-out property <string> restore_detected_info: "Select at least 2 .rfs share files.";
     in-out property <string> restore_target_dir: "";
-    in-out property <string> restore_status: "Bereit zur Wiederherstellung";
+    in-out property <string> restore_status: "Ready to restore";
     in-out property <float> restore_progress: 0.0;
     in-out property <bool> restore_in_progress: false;
-    in-out property <string> restore_integrity_badge: "Ausstehend";
+    in-out property <string> restore_integrity_badge: "Pending";
+    // 0 = pending (grey), 1 = valid (green), 2 = error (red)
+    in-out property <int> restore_integrity_state: 0;
     in-out property <string> restore_results_log: "";
 
-    // Forge properties (Deniable Decoy Forge)
+    // Forge state properties (Deniable Decoy Forge)
     in-out property <string> forge_shares_input: "";
     in-out property <string> forge_decoy_input: "";
     in-out property <string> forge_output_path: "";
-    in-out property <string> forge_status: "Bereit zur Köder-Synthese";
+    in-out property <string> forge_status: "Ready for decoy synthesis";
     in-out property <bool> forge_in_progress: false;
     in-out property <string> forge_results_log: "";
 
     // Callbacks to Rust
+    callback request_set_lang(string);
     callback request_select_file();
     callback request_shares_changed(int);
     callback request_select_split_target_dir();
@@ -66,9 +144,9 @@ export component MainWindow inherits Window {
         padding: 16px;
         spacing: 12px;
 
-        // Header
+        // Header with Language Switcher
         HorizontalLayout {
-            spacing: 12px;
+            spacing: 10px;
             Image {
                 source: @image-url("../assets/icon.png");
                 width: 32px;
@@ -83,10 +161,22 @@ export component MainWindow inherits Window {
                 vertical-alignment: center;
             }
             Text {
-                text: "Random File Splitter (Information-Theoretic Security & Anti-Forensics)";
-                font-size: 14px;
+                text: root.tr_subtitle;
+                font-size: 13px;
                 color: #8b949e;
                 vertical-alignment: center;
+                overflow: elide;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            HorizontalLayout {
+                spacing: 4px;
+                LangPill { code: "en"; label: "EN"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "de"; label: "DE"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "es"; label: "ES"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "fr"; label: "FR"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "ja"; label: "JA"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "zh"; label: "ZH"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "tok"; label: "TOK"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
             }
         }
 
@@ -102,7 +192,7 @@ export component MainWindow inherits Window {
                 border-color: root.active_tab == 0 ? #58a6ff : #30363d;
                 TouchArea { clicked => { root.active_tab = 0; } }
                 Text {
-                    text: " 📦 Aufteilen (Split) ";
+                    text: root.tr_tab_split;
                     color: root.active_tab == 0 ? #ffffff : #8b949e;
                     font-weight: root.active_tab == 0 ? 700 : 400;
                     vertical-alignment: center;
@@ -117,7 +207,7 @@ export component MainWindow inherits Window {
                 border-color: root.active_tab == 1 ? #58a6ff : #30363d;
                 TouchArea { clicked => { root.active_tab = 1; } }
                 Text {
-                    text: " 🔓 Wiederherstellen (Restore) ";
+                    text: root.tr_tab_restore;
                     color: root.active_tab == 1 ? #ffffff : #8b949e;
                     font-weight: root.active_tab == 1 ? 700 : 400;
                     vertical-alignment: center;
@@ -132,7 +222,7 @@ export component MainWindow inherits Window {
                 border-color: root.active_tab == 2 ? #58a6ff : #30363d;
                 TouchArea { clicked => { root.active_tab = 2; } }
                 Text {
-                    text: " 🎭 Täuschung (Forge) ";
+                    text: root.tr_tab_forge;
                     color: root.active_tab == 2 ? #ffffff : #8b949e;
                     font-weight: root.active_tab == 2 ? 700 : 400;
                     vertical-alignment: center;
@@ -153,9 +243,8 @@ export component MainWindow inherits Window {
                 padding: 14px;
                 spacing: 10px;
 
-                // 1. Quelldatei(en)
                 Text {
-                    text: "1. Quelldatei(en) für One-Time-Pad (Symmetrisches Multi-Splitting möglich):";
+                    text: root.tr_split_step1_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -164,11 +253,11 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.split_file_path;
-                        placeholder-text: "Eine oder mehrere Dateien auswählen (komma-separiert)...";
+                        placeholder-text: root.tr_split_file_placeholder;
                         edited(val) => { root.split_file_path = val; }
                     }
                     Button {
-                        text: "Dateien wählen...";
+                        text: root.tr_split_select_files_btn;
                         clicked => { root.request_select_file(); }
                     }
                 }
@@ -193,9 +282,8 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // 2. Zielordner
                 Text {
-                    text: "2. Ausgabe-Zielordner (z. B. USB-Stick oder Verzeichnis):";
+                    text: root.tr_split_step2_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -204,25 +292,24 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.split_target_dir;
-                        placeholder-text: "Standard: Gleiches Verzeichnis wie Quelldatei";
+                        placeholder-text: root.tr_split_target_placeholder;
                         edited(val) => { root.split_target_dir = val; }
                     }
                     Button {
-                        text: "Ordner wählen...";
+                        text: root.tr_split_select_dir_btn;
                         clicked => { root.request_select_split_target_dir(); }
                     }
                 }
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                // 3. Konfiguration: Shares & Schwellenwert
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Gesamt-Shares (M = " + root.split_num_parts + "):";
+                        text: root.tr_split_total_shares_prefix + root.split_num_parts + "):";
                         color: #c9d1d9;
                         vertical-alignment: center;
-                        min-width: 160px;
+                        min-width: 170px;
                     }
                     Slider {
                         minimum: root.split_min_parts;
@@ -238,10 +325,10 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Kombination (T = " + root.split_threshold + " aus " + root.split_num_parts + "):";
+                        text: root.tr_split_threshold_prefix + root.split_threshold + root.tr_split_threshold_of + root.split_num_parts + "):";
                         color: #58a6ff;
                         vertical-alignment: center;
-                        min-width: 160px;
+                        min-width: 170px;
                     }
                     Slider {
                         minimum: root.split_min_threshold;
@@ -254,14 +341,14 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     spacing: 12px;
                     CheckBox {
-                        text: "Köderdateien (Decoys) erzeugen";
+                        text: root.tr_split_enable_decoys_label;
                         checked: root.split_enable_decoys;
                         toggled => { root.split_enable_decoys = !root.split_enable_decoys; }
                     }
                     if root.split_enable_decoys: HorizontalLayout {
                         spacing: 8px;
                         Text {
-                            text: "Anzahl Köder (D = " + root.split_num_decoys + "):";
+                            text: root.tr_split_decoy_count_prefix + root.split_num_decoys + "):";
                             color: #7ee787;
                             vertical-alignment: center;
                         }
@@ -276,7 +363,6 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                // Fortschritt & Action Button
                 HorizontalLayout {
                     spacing: 12px;
                     ProgressIndicator {
@@ -291,16 +377,15 @@ export component MainWindow inherits Window {
                 }
 
                 Button {
-                    text: root.split_in_progress ? "Teilung läuft..." : "🚀 Datei sicher aufteilen";
+                    text: root.split_in_progress ? root.tr_split_action_running_btn : root.tr_split_action_btn;
                     enabled: !root.split_in_progress && root.split_file_path != "";
                     clicked => { root.request_split(); }
                 }
 
-                // 4. Ausgabe-Protokoll (Echte Shares vs. Köder)
                 if root.split_results_log != "": VerticalBox {
                     spacing: 4px;
                     Text {
-                        text: "📋 Share-Zuordnung & Ergebnis-Protokoll (Wichtig für Rekonstruktion):";
+                        text: root.tr_split_log_label;
                         color: #7ee787;
                         font-size: 12px;
                         font-weight: 700;
@@ -318,9 +403,8 @@ export component MainWindow inherits Window {
                 padding: 14px;
                 spacing: 10px;
 
-                // 1. Shares Auswahl
                 Text {
-                    text: "1. Eingabe der RFS-Shares (mindestens 2 Teile):";
+                    text: root.tr_restore_step1_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -329,19 +413,19 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.restore_shares_input;
-                        placeholder-text: "Dateien auswählen oder Pfade komma-separiert eingeben...";
+                        placeholder-text: root.tr_restore_shares_placeholder;
                         edited(val) => { root.restore_shares_input = val; }
                     }
                     Button {
-                        text: "Shares wählen...";
+                        text: root.tr_restore_select_shares_btn;
                         clicked => { root.request_select_shares(); }
                     }
                     Button {
-                        text: "🔍 Ordner scannen...";
+                        text: root.tr_restore_scan_folder_btn;
                         clicked => { root.request_scan_folder(); }
                     }
                     Button {
-                        text: "⚡ Auto-Restore...";
+                        text: root.tr_restore_auto_restore_btn;
                         clicked => { root.request_scan_and_restore(); }
                     }
                 }
@@ -351,9 +435,8 @@ export component MainWindow inherits Window {
                     font-size: 12px;
                 }
 
-                // 2. Zielordner für Wiederherstellung
                 Text {
-                    text: "2. Ausgabe-Zielverzeichnis (optional):";
+                    text: root.tr_restore_step2_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -362,28 +445,27 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.restore_target_dir;
-                        placeholder-text: "Standard: Originalpfad aus RFS4-Footer";
+                        placeholder-text: root.tr_restore_target_placeholder;
                         edited(val) => { root.restore_target_dir = val; }
                     }
                     Button {
-                        text: "Zielordner...";
+                        text: root.tr_restore_target_btn;
                         clicked => { root.request_select_restore_target_dir(); }
                     }
                 }
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                // Integritäts-Status
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Integritäts-Prüfung:";
+                        text: root.tr_restore_integrity_label;
                         color: #c9d1d9;
                         vertical-alignment: center;
                     }
                     Text {
                         text: root.restore_integrity_badge;
-                        color: root.restore_integrity_badge == "Gültig [OK]" ? #7ee787 : (root.restore_integrity_badge == "Fehler [Mismatch]" ? #f85149 : #8b949e);
+                        color: root.restore_integrity_state == 1 ? #7ee787 : (root.restore_integrity_state == 2 ? #f85149 : #8b949e);
                         font-weight: 700;
                         vertical-alignment: center;
                     }
@@ -391,7 +473,6 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #30363d; }
 
-                // Fortschritt & Action Button
                 HorizontalLayout {
                     spacing: 12px;
                     ProgressIndicator {
@@ -406,16 +487,15 @@ export component MainWindow inherits Window {
                 }
 
                 Button {
-                    text: root.restore_in_progress ? "Wiederherstellung läuft..." : "🔓 Originaldatei rekonstruieren";
+                    text: root.restore_in_progress ? root.tr_restore_action_running_btn : root.tr_restore_action_btn;
                     enabled: !root.restore_in_progress && root.restore_shares_input != "";
                     clicked => { root.request_restore(); }
                 }
 
-                // 3. Ergebnis-Protokoll
                 if root.restore_results_log != "": VerticalBox {
                     spacing: 4px;
                     Text {
-                        text: "📋 Wiederherstellungs-Bericht:";
+                        text: root.tr_restore_log_label;
                         color: #7ee787;
                         font-size: 12px;
                         font-weight: 700;
@@ -428,13 +508,13 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // TAB 2: FORGE (Rubber-Hose Schutz)
+            // TAB 2: FORGE
             if root.active_tab == 2: VerticalBox {
                 padding: 14px;
                 spacing: 10px;
 
                 Text {
-                    text: "1. Vorhandene / beschlagnahmte Shares:";
+                    text: root.tr_forge_step1_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -443,17 +523,17 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.forge_shares_input;
-                        placeholder-text: "Bestehende .rfs-Dateien auswählen...";
+                        placeholder-text: root.tr_forge_shares_placeholder;
                         edited(val) => { root.forge_shares_input = val; }
                     }
                     Button {
-                        text: "Shares wählen...";
+                        text: root.tr_forge_select_shares_btn;
                         clicked => { root.request_select_forge_shares(); }
                     }
                 }
 
                 Text {
-                    text: "2. Vorzulegender Köder-Klartext (z. B. Urlaubsbilder, Dummy-PDF):";
+                    text: root.tr_forge_step2_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -462,17 +542,17 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.forge_decoy_input;
-                        placeholder-text: "Köderdatei auswählen...";
+                        placeholder-text: root.tr_forge_decoy_placeholder;
                         edited(val) => { root.forge_decoy_input = val; }
                     }
                     Button {
-                        text: "Köder wählen...";
+                        text: root.tr_forge_select_decoy_btn;
                         clicked => { root.request_select_forge_decoy(); }
                     }
                 }
 
                 Text {
-                    text: "3. Zielpfad für synthetisierte Gegen-Share (C_fake):";
+                    text: root.tr_forge_step3_label;
                     color: #e6edf3;
                     font-size: 13px;
                     font-weight: 600;
@@ -481,11 +561,11 @@ export component MainWindow inherits Window {
                     spacing: 8px;
                     LineEdit {
                         text: root.forge_output_path;
-                        placeholder-text: "Pfad für die Fake-Share (z. B. fake_counterpart.rfs)...";
+                        placeholder-text: root.tr_forge_output_placeholder;
                         edited(val) => { root.forge_output_path = val; }
                     }
                     Button {
-                        text: "Speicherort wählen...";
+                        text: root.tr_forge_select_output_btn;
                         clicked => { root.request_select_forge_output(); }
                     }
                 }
@@ -500,9 +580,9 @@ export component MainWindow inherits Window {
                         font-size: 13px;
                         vertical-alignment: center;
                     }
-                    Rectangle { } // Spacer
+                    Rectangle { }
                     Button {
-                        text: root.forge_in_progress ? "Synthese läuft..." : "🎭 Gegen-Share synthetisieren";
+                        text: root.forge_in_progress ? root.tr_forge_action_running_btn : root.tr_forge_action_btn;
                         enabled: !root.forge_in_progress && root.forge_shares_input != "" && root.forge_decoy_input != "" && root.forge_output_path != "";
                         clicked => { root.request_forge(); }
                     }
@@ -511,7 +591,7 @@ export component MainWindow inherits Window {
                 if root.forge_results_log != "": VerticalBox {
                     spacing: 4px;
                     Text {
-                        text: "📋 Synthese-Protokoll & Krypto-Integrität:";
+                        text: root.tr_forge_log_label;
                         color: #7ee787;
                         font-size: 12px;
                         font-weight: 700;
