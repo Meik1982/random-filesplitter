@@ -136,6 +136,9 @@ fn apply_language(window: &MainWindow, lang: Lang) {
 
     if window.get_restore_shares_input().is_empty() {
         window.set_restore_detected_info(tr.restore_detected_default.into());
+    } else {
+        let count = parse_gui_paths(&window.get_restore_shares_input()).len();
+        window.set_restore_detected_info(tr.format_gui_shares_selected(lang, count).into());
     }
     if !window.get_restore_in_progress() {
         window.set_restore_status(tr.restore_status_ready.into());
@@ -354,73 +357,31 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = window_bg.upgrade() {
+                            let cur_lang = active_lang(&w);
+                            let tr = cur_lang.tr();
                             w.set_split_in_progress(false);
                             match res {
                                 Ok(multi_res) => {
                                     w.set_split_progress(1.0);
-                                    w.set_split_status(
-                                        format!(
-                                            "✅ {} payloads split ({}-of-{})",
-                                            multi_res.payload_subsets.len(),
-                                            threshold,
-                                            parts
-                                        )
-                                        .into(),
-                                    );
-
-                                    let mut log = String::new();
-                                    log.push_str(&format!(
-                                        "=== RFS MULTI-PAYLOAD SPLIT: {} FILES -> {} SHARES ({}-OF-{}) ===\n\n",
-                                        multi_res.payload_subsets.len(),
+                                    let size_fmt =
+                                        rfs_core::telemetry::format_bytes(multi_res.share_size);
+                                    let (status, log) = tr.format_gui_multi_split_report(
+                                        cur_lang,
                                         parts,
                                         threshold,
-                                        parts
-                                    ));
-                                    log.push_str(&format!(
-                                        "Uniform share size: {}\n\n",
-                                        rfs_core::telemetry::format_bytes(multi_res.share_size)
-                                    ));
-                                    log.push_str("🔐 GENERATED ANONYMOUS SHARES:\n");
-                                    for (i, p) in multi_res.share_paths.iter().enumerate() {
-                                        log.push_str(&format!("  [Share {}] {}\n", i + 1, p.display()));
-                                    }
-
-                                    log.push_str("\n🎯 COMBINATORIAL ACCESS ALLOCATION:\n");
-                                    for (name, shares) in &multi_res.payload_subsets {
-                                        let names = shares
-                                            .iter()
-                                            .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
-                                            .collect::<Vec<_>>()
-                                            .join(", ");
-                                        log.push_str(&format!("  🎯 Payload: \"{}\"\n", name));
-                                        log.push_str(&format!(
-                                            "     Required {}-Way subset: [{}]\n\n",
-                                            shares.len(),
-                                            names
-                                        ));
-                                    }
-
-                                    if !multi_res.decoy_paths.is_empty() {
-                                        log.push_str(&format!(
-                                            "🎭 GENERATED DECOY CHAFF FILES ({}):\n",
-                                            multi_res.decoy_paths.len()
-                                        ));
-                                        for (i, p) in multi_res.decoy_paths.iter().enumerate() {
-                                            log.push_str(&format!(
-                                                "  [Decoy {}] {}\n",
-                                                i + 1,
-                                                p.display()
-                                            ));
-                                        }
-                                        log.push('\n');
-                                    }
-
-                                    log.push_str("NOTE: All subsets can be auto-discovered via 'rfs scan' or the Restore Scanner.");
+                                        &size_fmt,
+                                        &multi_res.share_paths,
+                                        &multi_res.payload_subsets,
+                                        &multi_res.decoy_paths,
+                                    );
+                                    w.set_split_status(status.into());
                                     w.set_split_results_log(log.into());
                                 }
                                 Err(e) => {
                                     w.set_split_status(format!("Error: {}", e).into());
-                                    w.set_split_results_log(format!("MULTI-SPLIT ERROR:\n{}", e).into());
+                                    w.set_split_results_log(
+                                        format!("MULTI-SPLIT ERROR:\n{}", e).into(),
+                                    );
                                 }
                             }
                         }
@@ -444,31 +405,18 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = window_bg.upgrade() {
+                            let cur_lang = active_lang(&w);
+                            let tr = cur_lang.tr();
                             w.set_split_in_progress(false);
                             match res {
                                 Ok(split_res) => {
                                     w.set_split_progress(1.0);
-                                    w.set_split_status("✅ Split completed [OK]".into());
-
-                                    let mut log = String::new();
-                                    log.push_str(&format!(
-                                        "=== RFS4 SPLIT COMPLETED (N={}, D={}) ===\n\n",
-                                        split_res.real_shares.len(),
-                                        split_res.decoy_shares.len()
-                                    ));
-                                    log.push_str("🔐 GENUINE SHARES (ALL REQUIRED FOR RECONSTRUCTION):\n");
-                                    for (i, p) in split_res.real_shares.iter().enumerate() {
-                                        log.push_str(&format!("  [Share {}] {}\n", i + 1, p.display()));
-                                    }
-
-                                    if !split_res.decoy_shares.is_empty() {
-                                        log.push_str("\n🎭 DECOY CHAFF FILES (100% CHACHA20 RANDOM NOISE):\n");
-                                        for (i, p) in split_res.decoy_shares.iter().enumerate() {
-                                            log.push_str(&format!("  [Decoy {}] {}\n", i + 1, p.display()));
-                                        }
-                                    }
-
-                                    log.push_str("\nNOTE: All files share identical 4 KiB cluster-aligned sizes and anonymous tokens.");
+                                    let (status, log) = tr.format_gui_single_split_report(
+                                        cur_lang,
+                                        &split_res.real_shares,
+                                        &split_res.decoy_shares,
+                                    );
+                                    w.set_split_status(status.into());
                                     w.set_split_results_log(log.into());
                                 }
                                 Err(e) => {
@@ -502,7 +450,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     .join(", ");
                 let count = files.len();
                 window.set_restore_shares_input(joined.into());
-                window.set_restore_detected_info(format!("{} shares selected.", count).into());
+                window.set_restore_detected_info(tr.format_gui_shares_selected(lang, count).into());
                 window.set_restore_status(tr.restore_status_ready.into());
                 window.set_restore_integrity_state(0);
                 window.set_restore_integrity_badge(tr.restore_badge_pending.into());
@@ -536,13 +484,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     let matches = rfs_core::scanner::scan_candidate_files(&candidate_files);
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = window_bg.upgrade() {
-                            let tr = active_lang(&w).tr();
+                            let cur_lang = active_lang(&w);
+                            let tr = cur_lang.tr();
                             match matches {
                                 Ok(found) if !found.is_empty() => {
-                                    w.set_restore_status(
-                                        format!("🎯 {} valid set(s) discovered!", found.len())
-                                            .into(),
-                                    );
                                     let first = &found[0];
                                     let joined = first
                                         .shares
@@ -551,44 +496,32 @@ fn main() -> Result<(), slint::PlatformError> {
                                         .collect::<Vec<_>>()
                                         .join(", ");
                                     w.set_restore_shares_input(joined.into());
-                                    let orig_name =
-                                        first.metadata.filename().unwrap_or("unnamed");
-                                    w.set_restore_detected_info(
-                                        format!(
-                                            "Set #1 preselected: \"{}\" ({} shares)",
-                                            orig_name,
-                                            first.shares.len()
-                                        )
-                                        .into(),
-                                    );
                                     w.set_restore_integrity_state(1);
                                     w.set_restore_integrity_badge(tr.restore_badge_valid.into());
 
-                                    let mut report = String::new();
-                                    report.push_str(&format!(
-                                        "=== SCAN RESULT: {} FILES INSPECTED, {} VALID SETS FOUND ===\n\n",
-                                        candidate_files.len(),
-                                        found.len()
-                                    ));
-                                    for (i, m) in found.iter().enumerate() {
-                                        let name = m.metadata.filename().unwrap_or("unnamed");
-                                        report.push_str(&format!(
-                                            "🎯 Set #{}: \"{}\" ({})\n",
-                                            i + 1,
-                                            name,
-                                            rfs_core::telemetry::format_bytes(
-                                                m.metadata.original_size()
+                                    let found_tuples: Vec<(String, String, Vec<PathBuf>)> = found
+                                        .iter()
+                                        .map(|m| {
+                                            (
+                                                m.metadata
+                                                    .filename()
+                                                    .unwrap_or("unnamed")
+                                                    .to_string(),
+                                                rfs_core::telemetry::format_bytes(
+                                                    m.metadata.original_size(),
+                                                ),
+                                                m.shares.clone(),
                                             )
-                                        ));
-                                        report.push_str(&format!(
-                                            "   Shares ({} parts):\n",
-                                            m.shares.len()
-                                        ));
-                                        for s in &m.shares {
-                                            report.push_str(&format!("     - {}\n", s.display()));
-                                        }
-                                        report.push('\n');
-                                    }
+                                        })
+                                        .collect();
+
+                                    let (status, preselected, report) = tr.format_gui_scan_report(
+                                        cur_lang,
+                                        candidate_files.len(),
+                                        &found_tuples,
+                                    );
+                                    w.set_restore_status(status.into());
+                                    w.set_restore_detected_info(preselected.into());
                                     w.set_restore_results_log(report.into());
                                 }
                                 Ok(_) => {
@@ -668,42 +601,16 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = window_bg.upgrade() {
-                            let tr = active_lang(&w).tr();
+                            let cur_lang = active_lang(&w);
+                            let tr = cur_lang.tr();
                             w.set_restore_in_progress(false);
                             match outcome {
                                 Ok(restored_list) if !restored_list.is_empty() => {
-                                    w.set_restore_status(
-                                        format!("✅ {} set(s) auto-restored!", restored_list.len())
-                                            .into(),
-                                    );
                                     w.set_restore_integrity_state(1);
                                     w.set_restore_integrity_badge(tr.restore_badge_valid.into());
-
-                                    let mut report = String::new();
-                                    report.push_str(&format!(
-                                        "=== AUTO-RESTORE: {} SETS RECONSTRUCTED ===\n\n",
-                                        restored_list.len()
-                                    ));
-                                    for (i, (orig_name, out_path, num_shares)) in
-                                        restored_list.iter().enumerate()
-                                    {
-                                        report.push_str(&format!(
-                                            "🎯 Set #{}: \"{}\"\n",
-                                            i + 1,
-                                            orig_name
-                                        ));
-                                        report.push_str(&format!(
-                                            "   Output file: {}\n",
-                                            out_path.display()
-                                        ));
-                                        report.push_str(
-                                            "   Status:      ✅ Bit-exact BLKS-384 integrity verified\n",
-                                        );
-                                        report.push_str(&format!(
-                                            "   Shares used: {} parts\n\n",
-                                            num_shares
-                                        ));
-                                    }
+                                    let (status, report) =
+                                        tr.format_gui_auto_restore_report(cur_lang, &restored_list);
+                                    w.set_restore_status(status.into());
                                     w.set_restore_results_log(report.into());
                                 }
                                 Ok(_) => {
@@ -772,34 +679,27 @@ fn main() -> Result<(), slint::PlatformError> {
 
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = window_bg.upgrade() {
-                        let tr = active_lang(&w).tr();
+                        let cur_lang = active_lang(&w);
+                        let tr = cur_lang.tr();
                         w.set_restore_in_progress(false);
                         match res {
                             Ok(Some(path)) => {
                                 w.set_restore_progress(1.0);
                                 w.set_restore_integrity_state(1);
                                 w.set_restore_integrity_badge(tr.restore_badge_valid.into());
-                                w.set_restore_status(
-                                    format!("✅ Restored: {}", path.display()).into(),
+                                let (status, log) = tr.format_gui_restore_report(
+                                    cur_lang,
+                                    &path.display().to_string(),
                                 );
-                                let mut log = String::new();
-                                log.push_str("=== RESTORATION COMPLETED ===\n\n");
-                                log.push_str(&format!(
-                                    "📁 Reconstructed file: {}\n",
-                                    path.display()
-                                ));
-                                log.push_str("🛡️ BLKS-384 Integrity Check: PASSED [OK]\n");
-                                log.push_str("Status: Bit-exact match with original plaintext.");
+                                w.set_restore_status(status.into());
                                 w.set_restore_results_log(log.into());
                             }
                             Ok(None) => {
                                 w.set_restore_progress(1.0);
                                 w.set_restore_integrity_state(1);
                                 w.set_restore_integrity_badge(tr.restore_badge_valid.into());
-                                w.set_restore_status("✅ Verification [OK]".into());
-                                w.set_restore_results_log(
-                                    "Verification completed without errors.".into(),
-                                );
+                                w.set_restore_status(tr.restore_badge_valid.into());
+                                w.set_restore_results_log(tr.restore_badge_valid.into());
                             }
                             Err(e) => {
                                 w.set_restore_integrity_state(2);
@@ -898,28 +798,18 @@ fn main() -> Result<(), slint::PlatformError> {
 
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = window_bg.upgrade() {
-                        let tr = active_lang(&w).tr();
+                        let cur_lang = active_lang(&w);
+                        let tr = cur_lang.tr();
                         w.set_forge_in_progress(false);
                         match res {
                             Ok(()) => {
                                 w.set_forge_status(tr.forge_status_done.into());
-                                let mut log = String::new();
-                                log.push_str("=== DENIABLE DECOY FORGE COMPLETED ===\n\n");
-                                log.push_str(&format!(
-                                    "🎭 Synthesized Counterpart Share: {}\n",
-                                    out_path.display()
-                                ));
-                                log.push_str(&format!(
-                                    "📄 Embedded Decoy Plaintext:     {}\n",
-                                    decoy_path.display()
-                                ));
-                                log.push_str(&format!(
-                                    "🔗 Linked Existing Shares:       {} file(s)\n\n",
-                                    share_paths.len()
-                                ));
-                                log.push_str("🛡️ Cryptographic Guarantee: Combining this fake share with the existing shares\n");
-                                log.push_str("   validates 100% BLKS-384 integrity and reconstructs the decoy plaintext bit-exact.\n");
-                                log.push_str("   Proving the existence of any other original file is mathematically impossible.");
+                                let log = tr.format_gui_forge_report(
+                                    cur_lang,
+                                    &out_path.display().to_string(),
+                                    &decoy_path.display().to_string(),
+                                    share_paths.len(),
+                                );
                                 w.set_forge_results_log(log.into());
                             }
                             Err(e) => {

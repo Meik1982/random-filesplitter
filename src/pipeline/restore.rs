@@ -360,7 +360,8 @@ pub fn restore_file(
                     let dig_str = actual.to_base64();
                     telemetry.finish(total_processed, n_parts, Some(("blks-384", &dig_str)));
                     if telemetry_mode == TelemetryMode::Interactive {
-                        eprintln!("Integrity check [OK] (BLKS-384: {})", dig_str);
+                        let lang = crate::i18n::current_lang();
+                        eprintln!("{}", lang.tr().format_cli_integrity_ok(lang, &dig_str));
                     }
                     Ok(())
                 } else {

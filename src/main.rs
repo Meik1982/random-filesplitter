@@ -253,14 +253,12 @@ fn main() {
                 eprintln!("Error during forge: {}", e);
                 process::exit(1);
             }
-            println!(
-                "Successfully forged decoy counterpart share: {}",
-                output_share.display()
-            );
-            println!(
-                "When combined with {} existing share(s), restoration reveals: \"{}\"",
+            let lang = rfs_core::i18n::current_lang();
+            lang.tr().print_cli_forge_summary(
+                lang,
+                &output_share.display().to_string(),
                 existing_shares.len(),
-                decoy_path.display()
+                &decoy_path.display().to_string(),
             );
             process::exit(0);
         }

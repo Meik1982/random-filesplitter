@@ -343,43 +343,58 @@ pub fn split_multi_payloads(
     }
 
     if telemetry_mode == TelemetryMode::Interactive {
-        println!("============================================================");
-        println!(
-            " RFS Multi-Payload Split: {} Payloads -> {} Shares ({}-of-{})",
-            k, m, t, m
-        );
-        println!("============================================================");
-        println!(
-            "Uniform share size (4 KiB cluster aligned): {}",
-            format_bytes(share_size)
-        );
-        println!("\nGenerated Anonymous Shares:");
-        for (i, p) in share_paths.iter().enumerate() {
-            println!("  Share [{}]: {}", i + 1, p.display());
-        }
-        println!("\nCombinatorial Access Allocation:");
-        for (name, shares) in &payload_subsets {
-            let names_list = shares
-                .iter()
-                .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join(", ");
-            println!("  🎯 Payload: \"{}\"", name);
+        let lang = crate::i18n::current_lang();
+        if lang == crate::i18n::Lang::En {
+            println!("============================================================");
             println!(
-                "     Required Shares ({}-Way): [{}]\n",
-                shares.len(),
-                names_list
+                " RFS Multi-Payload Split: {} Payloads -> {} Shares ({}-of-{})",
+                k, m, t, m
             );
-        }
-
-        if !decoy_paths.is_empty() {
+            println!("============================================================");
             println!(
-                "\n🎭 Generated Decoy Chaff Files ({} noise files):",
-                decoy_paths.len()
+                "Uniform share size (4 KiB cluster aligned): {}",
+                format_bytes(share_size)
             );
-            for (i, p) in decoy_paths.iter().enumerate() {
-                println!("  Decoy [{}]: {}", i + 1, p.display());
+            println!("\nGenerated Anonymous Shares:");
+            for (i, p) in share_paths.iter().enumerate() {
+                println!("  Share [{}]: {}", i + 1, p.display());
             }
+            println!("\nCombinatorial Access Allocation:");
+            for (name, shares) in &payload_subsets {
+                let names_list = shares
+                    .iter()
+                    .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                println!("  🎯 Payload: \"{}\"", name);
+                println!(
+                    "     Required Shares ({}-Way): [{}]\n",
+                    shares.len(),
+                    names_list
+                );
+            }
+
+            if !decoy_paths.is_empty() {
+                println!(
+                    "\n🎭 Generated Decoy Chaff Files ({} noise files):",
+                    decoy_paths.len()
+                );
+                for (i, p) in decoy_paths.iter().enumerate() {
+                    println!("  Decoy [{}]: {}", i + 1, p.display());
+                }
+            }
+        } else {
+            let size_fmt = format_bytes(share_size);
+            let (_, log) = lang.tr().format_gui_multi_split_report(
+                lang,
+                m,
+                t,
+                &size_fmt,
+                &share_paths,
+                &payload_subsets,
+                &decoy_paths,
+            );
+            println!("{}", log);
         }
     }
 

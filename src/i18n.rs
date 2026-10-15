@@ -642,6 +642,618 @@ impl Translations {
             Lang::Sp => format!("󱤪 󱤧 󱥳 󱥝 󱥔: {}", path_display),
         }
     }
+
+    /// Formats localized BLKS-384 integrity check message for CLI stderr.
+    pub fn format_cli_integrity_ok(&self, lang: Lang, dig_str: &str) -> String {
+        match lang {
+            Lang::En => format!("Integrity check [OK] (BLKS-384: {})", dig_str),
+            Lang::De => format!("Integritätsprüfung [OK] (BLKS-384: {})", dig_str),
+            Lang::Es => format!("Verificación de integridad [OK] (BLKS-384: {})", dig_str),
+            Lang::Fr => format!("Vérification d'intégrité [OK] (BLKS-384 : {})", dig_str),
+            Lang::Ja => format!("完全性検証 [OK] (BLKS-384: {})", dig_str),
+            Lang::Zh => format!("完整性校验 [OK] (BLKS-384: {})", dig_str),
+            Lang::Tok => format!("lukin pona [OK] (BLKS-384: {})", dig_str),
+            Lang::Sp => format!("󱤮 󱥔 [OK] (BLKS-384: {})", dig_str),
+        }
+    }
+
+    /// Prints localized CLI forge completion summary.
+    pub fn print_cli_forge_summary(
+        &self,
+        lang: Lang,
+        out_display: &str,
+        num_existing: usize,
+        decoy_display: &str,
+    ) {
+        match lang {
+            Lang::En => {
+                println!(
+                    "Successfully forged decoy counterpart share: {}",
+                    out_display
+                );
+                println!(
+                    "When combined with {} existing share(s), restoration reveals: \"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::De => {
+                println!(
+                    "Gegen-Share für Köder erfolgreich synthetisiert: {}",
+                    out_display
+                );
+                println!(
+                    "Kombiniert mit {} vorhandenen Share(s) enthüllt die Wiederherstellung: \"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::Es => {
+                println!("Parte señuelo sintetizada con éxito: {}", out_display);
+                println!(
+                    "Al combinarse con {} parte(s) existente(s), la restauración revela: \"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::Fr => {
+                println!(
+                    "Contre-part leurre synthétisée avec succès : {}",
+                    out_display
+                );
+                println!(
+                    "Combinée avec {} part(s) existante(s), la restauration révèle : \"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::Ja => {
+                println!("おとり用の偽シェアを正常に合成しました: {}", out_display);
+                println!(
+                    "既存の {} 個のシェアと結合すると、次のファイルが復元されます: \"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::Zh => {
+                println!("已成功合成诱饵对应分片：{}", out_display);
+                println!(
+                    "与现有的 {} 个分片组合时，还原将呈现：\"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::Tok => {
+                println!("kipisi powe sin li pali pona: {}", out_display);
+                println!(
+                    "wan poka kipisi lon {} la lipu ni li kama: \"{}\"",
+                    num_existing, decoy_display
+                );
+            }
+            Lang::Sp => {
+                println!("󱥻 󱦣 󱥝 󱤧 󱥉 󱥔: {}", out_display);
+                println!("󱥳 󱤬 󱥻 󱤬 {} 󱤡 󱤪 󱦣 󱤧 󱤬: \"{}\"", num_existing, decoy_display);
+            }
+        }
+    }
+
+    /// Formats localized share count status for the Restore tab.
+    pub fn format_gui_shares_selected(&self, lang: Lang, count: usize) -> String {
+        match lang {
+            Lang::En => format!("{} shares selected.", count),
+            Lang::De => format!("{} Shares ausgewählt.", count),
+            Lang::Es => format!("{} partes seleccionadas.", count),
+            Lang::Fr => format!("{} parts sélectionnées.", count),
+            Lang::Ja => format!("{} 個のシェアを選択しました。", count),
+            Lang::Zh => format!("已选择 {} 个分片。", count),
+            Lang::Tok => format!("kipisi {} li lon.", count),
+            Lang::Sp => format!("󱥻 {} 󱤧 󱤬.", count),
+        }
+    }
+
+    /// Formats localized status and log for a single-file split in the GUI.
+    pub fn format_gui_single_split_report(
+        &self,
+        lang: Lang,
+        real_shares: &[PathBuf],
+        decoy_shares: &[PathBuf],
+    ) -> (String, String) {
+        let n = real_shares.len();
+        let d = decoy_shares.len();
+        let (status, header, real_hdr, decoy_hdr, note) = match lang {
+            Lang::En => (
+                "✅ Split completed [OK]".to_string(),
+                format!("=== RFS4 SPLIT COMPLETED (N={}, D={}) ===\n\n", n, d),
+                "🔐 GENUINE SHARES (ALL REQUIRED FOR RECONSTRUCTION):\n",
+                "\n🎭 DECOY CHAFF FILES (100% CHACHA20 RANDOM NOISE):\n",
+                "\nNOTE: All files share identical 4 KiB cluster-aligned sizes and anonymous tokens.",
+            ),
+            Lang::De => (
+                "✅ Aufteilung abgeschlossen [OK]".to_string(),
+                format!("=== RFS4 AUFTEILUNG ABGESCHLOSSEN (N={}, D={}) ===\n\n", n, d),
+                "🔐 ECHTE SHARES (ALLE FÜR REKONSTRUKTION ERFORDERLICH):\n",
+                "\n🎭 KÖDERDATEIEN (100% CHACHA20 ZUFALLSRAUSCHEN):\n",
+                "\nHINWEIS: Alle Dateien besitzen identische 4-KiB-Clustergrößen und anonyme Hex-Tokens.",
+            ),
+            Lang::Es => (
+                "✅ División completada [OK]".to_string(),
+                format!("=== DIVISIÓN RFS4 COMPLETADA (N={}, D={}) ===\n\n", n, d),
+                "🔐 PARTES REALES (TODAS NECESARIAS PARA RECONSTRUIR):\n",
+                "\n🎭 ARCHIVOS SEÑUELO (100% RUIDO ALEATORIO CHACHA20):\n",
+                "\nNOTA: Todos los archivos tienen el mismo tamaño alineado a 4 KiB y tokens anónimos.",
+            ),
+            Lang::Fr => (
+                "✅ Division terminée [OK]".to_string(),
+                format!("=== DIVISION RFS4 TERMINÉE (N={}, D={}) ===\n\n", n, d),
+                "🔐 PARTS RÉELLES (TOUTES REQUISES POUR LA RECONSTRUCTION) :\n",
+                "\n🎭 FICHIERS LEURRES (100% BRUIT ALÉATOIRE CHACHA20) :\n",
+                "\nNOTE : Tous les fichiers ont une taille identique alignée sur 4 Kio et des jetons anonymes.",
+            ),
+            Lang::Ja => (
+                "✅ 分割完了 [OK]".to_string(),
+                format!("=== RFS4 分割完了 (N={}, D={}) ===\n\n", n, d),
+                "🔐 本物のシェア (復元にはすべて必要):\n",
+                "\n🎭 おとりノイズファイル (100% ChaCha20 乱数ノイズ):\n",
+                "\n注記: すべてのファイルは同一の 4 KiB アライメントサイズと匿名トークンを持ちます。",
+            ),
+            Lang::Zh => (
+                "✅ 分割完成 [OK]".to_string(),
+                format!("=== RFS4 分割完成 (N={}, D={}) ===\n\n", n, d),
+                "🔐 真实分片（还原时需全部提供）：\n",
+                "\n🎭 诱饵噪声文件（100% ChaCha20 随机噪声）：\n",
+                "\n注意：所有文件均具有相同的 4 KiB 对齐大小与匿名随机文件名。",
+            ),
+            Lang::Tok => (
+                "✅ kipisi li pini pona [OK]".to_string(),
+                format!("=== kipisi RFS4 li pini (N={}, D={}) ===\n\n", n, d),
+                "🔐 kipisi lon (ale li wile tawa wan sin):\n",
+                "\n🎭 kipisi powe (kalama nasa ChaCha20):\n",
+                "\nsona: lipu ale li jo e suli sama (4 KiB) e nimi len.",
+            ),
+            Lang::Sp => (
+                "✅ 󱥻 󱤧 󱥐 󱥔 [OK]".to_string(),
+                format!("=== 󱥻 RFS4 󱤧 󱥐 (N={}, D={}) ===\n\n", n, d),
+                "🔐 󱥻 󱤬 (󱤄 󱤧 󱥷 󱥩 󱥳 󱥝):\n",
+                "\n🎭 󱥻 󱦣 (󱤕 󱤾 ChaCha20):\n",
+                "\n󱥡: 󱤪 󱤄 󱤧 󱥖 󱤬 󱥣 (4 KiB) 󱤬 󱥂 󱤥.",
+            ),
+        };
+
+        let mut log = String::new();
+        log.push_str(&header);
+        log.push_str(real_hdr);
+        for (i, p) in real_shares.iter().enumerate() {
+            log.push_str(&format!("  [Share {}] {}\n", i + 1, p.display()));
+        }
+        if !decoy_shares.is_empty() {
+            log.push_str(decoy_hdr);
+            for (i, p) in decoy_shares.iter().enumerate() {
+                log.push_str(&format!("  [Decoy {}] {}\n", i + 1, p.display()));
+            }
+        }
+        log.push_str(note);
+        (status, log)
+    }
+
+    /// Formats localized status and log for a multi-payload split in the GUI.
+    #[allow(clippy::too_many_arguments)]
+    pub fn format_gui_multi_split_report(
+        &self,
+        lang: Lang,
+        parts: usize,
+        threshold: usize,
+        share_size_fmt: &str,
+        share_paths: &[PathBuf],
+        payload_subsets: &[(String, Vec<PathBuf>)],
+        decoy_paths: &[PathBuf],
+    ) -> (String, String) {
+        let k = payload_subsets.len();
+        let (status, header, size_line, shares_hdr, alloc_hdr, req_prefix, decoy_hdr, note) = match lang {
+            Lang::En => (
+                format!("✅ {} payloads split ({}-of-{})", k, threshold, parts),
+                format!("=== RFS MULTI-PAYLOAD SPLIT: {} FILES -> {} SHARES ({}-OF-{}) ===\n\n", k, parts, threshold, parts),
+                format!("Uniform share size: {}\n\n", share_size_fmt),
+                "🔐 GENERATED ANONYMOUS SHARES:\n",
+                "\n🎯 COMBINATORIAL ACCESS ALLOCATION:\n",
+                "Required subset",
+                "\n🎭 GENERATED DECOY CHAFF FILES:\n",
+                "NOTE: All subsets can be auto-discovered via 'rfs scan' or the Restore Scanner.",
+            ),
+            Lang::De => (
+                format!("✅ {} Dateien aufgeteilt ({}-aus-{})", k, threshold, parts),
+                format!("=== RFS MULTI-PAYLOAD-SPLIT: {} DATEIEN -> {} SHARES ({}-AUS-{}) ===\n\n", k, parts, threshold, parts),
+                format!("Einheitliche Share-Größe: {}\n\n", share_size_fmt),
+                "🔐 ERZEUGTE ANONYME SHARES:\n",
+                "\n🎯 KOMBINATORISCHE ZUGRIFFS-ZUORDNUNG:\n",
+                "Benötigte Kombination",
+                "\n🎭 ERZEUGTE KÖDERDATEIEN (DECOYS):\n",
+                "HINWEIS: Alle Sets können per 'rfs scan' oder Ordner-Scan automatisch erkannt werden.",
+            ),
+            Lang::Es => (
+                format!("✅ {} archivos divididos ({}-de-{})", k, threshold, parts),
+                format!("=== DIVISIÓN MÚLTIPLE RFS: {} ARCHIVOS -> {} PARTES ({}-DE-{}) ===\n\n", k, parts, threshold, parts),
+                format!("Tamaño uniforme de parte: {}\n\n", share_size_fmt),
+                "🔐 PARTES ANÓNIMAS GENERADAS:\n",
+                "\n🎯 ASIGNACIÓN DE ACCESO COMBINATORIO:\n",
+                "Subconjunto requerido",
+                "\n🎭 ARCHIVOS SEÑUELO GENERADOS:\n",
+                "NOTA: Todos los conjuntos pueden descubrirse automáticamente con 'rfs scan'.",
+            ),
+            Lang::Fr => (
+                format!("✅ {} fichiers divisés ({}-sur-{})", k, threshold, parts),
+                format!("=== MULTI-PARTAGE RFS : {} FICHIERS -> {} PARTS ({}-SUR-{}) ===\n\n", k, parts, threshold, parts),
+                format!("Taille uniforme des parts : {}\n\n", share_size_fmt),
+                "🔐 PARTS ANONYMES GÉNÉRÉES :\n",
+                "\n🎯 ATTRIBUTION D'ACCÈS COMBINATOIRE :\n",
+                "Sous-ensemble requis",
+                "\n🎭 FICHIERS LEURRES GÉNÉRÉS :\n",
+                "NOTE : Tous les sous-ensembles peuvent être découverts via 'rfs scan'.",
+            ),
+            Lang::Ja => (
+                format!("✅ {} 個のファイルを分割完了 ({}/{})", k, threshold, parts),
+                format!("=== RFS マルチペイロード分割: {} ファイル -> {} シェア ({}/{}) ===\n\n", k, parts, threshold, parts),
+                format!("統一シェアサイズ: {}\n\n", share_size_fmt),
+                "🔐 生成された匿名シェア:\n",
+                "\n🎯 組み合わせアクセス割り当て:\n",
+                "必要なシェア組み合わせ",
+                "\n🎭 生成されたおとりファイル:\n",
+                "注記: すべてのセットは 'rfs scan' またはフォルダスキャンで自動検出できます。",
+            ),
+            Lang::Zh => (
+                format!("✅ 已分割 {} 个文件 ({}/{})", k, threshold, parts),
+                format!("=== RFS 多载荷分割：{} 个文件 -> {} 个分片 ({}/{}) ===\n\n", k, parts, threshold, parts),
+                format!("统一分片大小：{}\n\n", share_size_fmt),
+                "🔐 已生成的匿名分片：\n",
+                "\n🎯 组合访问分配表：\n",
+                "所需分片组合",
+                "\n🎭 已生成的诱饵噪声文件：\n",
+                "注意：所有分片子集均可通过 'rfs scan' 或文件夹扫描自动识别。",
+            ),
+            Lang::Tok => (
+                format!("✅ lipu {} li kipisi pona ({} lon {})", k, threshold, parts),
+                format!("=== kipisi mute RFS: lipu {} -> kipisi {} ({} lon {}) ===\n\n", k, parts, threshold, parts),
+                format!("suli sama pi kipisi ale: {}\n\n", share_size_fmt),
+                "🔐 kipisi pi nimi len:\n",
+                "\n🎯 kulupu kipisi tawa lipu:\n",
+                "kipisi wile",
+                "\n🎭 kipisi powe (kalama nasa):\n",
+                "sona: ilo 'rfs scan' li ken alasa e kulupu ale.",
+            ),
+            Lang::Sp => (
+                format!("✅ 󱤪 {} 󱤧 󱥻 󱥔 ({} 󱤬 {})", k, threshold, parts),
+                format!("=== 󱥻 󱤼 RFS: 󱤪 {} -> 󱥻 {} ({} 󱤬 {}) ===\n\n", k, parts, threshold, parts),
+                format!("󱥣 󱥖 󱥍 󱥻 󱤄: {}\n\n", share_size_fmt),
+                "🔐 󱥻 󱥍 󱥂 󱤥:\n",
+                "\n🎯 󱤟 󱥻 󱥩 󱤪:\n",
+                "󱥻 󱥷",
+                "\n🎭 󱥻 󱦣 (󱤕 󱤾):\n",
+                "󱥡: 󱤎 'rfs scan' 󱤧 󱤘 󱤃 󱤉 󱤟 󱤄.",
+            ),
+        };
+
+        let mut log = String::new();
+        log.push_str(&header);
+        log.push_str(&size_line);
+        log.push_str(shares_hdr);
+        for (i, p) in share_paths.iter().enumerate() {
+            log.push_str(&format!("  [Share {}] {}\n", i + 1, p.display()));
+        }
+        log.push_str(alloc_hdr);
+        for (name, shares) in payload_subsets {
+            let names = shares
+                .iter()
+                .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            log.push_str(&format!("  🎯 \"{}\"\n", name));
+            log.push_str(&format!(
+                "     {} ({}): [{}]\n\n",
+                req_prefix,
+                shares.len(),
+                names
+            ));
+        }
+        if !decoy_paths.is_empty() {
+            log.push_str(decoy_hdr);
+            for (i, p) in decoy_paths.iter().enumerate() {
+                log.push_str(&format!("  [Decoy {}] {}\n", i + 1, p.display()));
+            }
+            log.push('\n');
+        }
+        log.push_str(note);
+        (status, log)
+    }
+
+    /// Formats localized status, preselection info, and report for folder scanning in the GUI.
+    pub fn format_gui_scan_report(
+        &self,
+        lang: Lang,
+        total_inspected: usize,
+        found_sets: &[(String, String, Vec<PathBuf>)],
+    ) -> (String, String, String) {
+        let count = found_sets.len();
+        let (first_name, _, first_shares) = &found_sets[0];
+        let f_len = first_shares.len();
+
+        let (status, preselected, header, shares_lbl) = match lang {
+            Lang::En => (
+                format!("🎯 {} valid set(s) discovered!", count),
+                format!("Set #1 preselected: \"{}\" ({} shares)", first_name, f_len),
+                format!(
+                    "=== SCAN RESULT: {} FILES INSPECTED, {} VALID SETS FOUND ===\n\n",
+                    total_inspected, count
+                ),
+                "Shares",
+            ),
+            Lang::De => (
+                format!("🎯 {} gültige(s) Set(s) gefunden!", count),
+                format!(
+                    "Set #1 vorausgewählt: \"{}\" ({} Shares)",
+                    first_name, f_len
+                ),
+                format!(
+                    "=== SCAN-ERGEBNIS: {} DATEIEN GEPRÜFT, {} GÜLTIGE SETS GEFUNDEN ===\n\n",
+                    total_inspected, count
+                ),
+                "Shares",
+            ),
+            Lang::Es => (
+                format!("🎯 ¡{} conjunto(s) válido(s) descubierto(s)!", count),
+                format!(
+                    "Conjunto #1 preseleccionado: \"{}\" ({} partes)",
+                    first_name, f_len
+                ),
+                format!(
+                    "=== RESULTADO DEL ESCANEO: {} ARCHIVOS, {} CONJUNTOS VÁLIDOS ===\n\n",
+                    total_inspected, count
+                ),
+                "Partes",
+            ),
+            Lang::Fr => (
+                format!("🎯 {} ensemble(s) valide(s) découvert(s) !", count),
+                format!(
+                    "Ensemble #1 présélectionné : \"{}\" ({} parts)",
+                    first_name, f_len
+                ),
+                format!(
+                    "=== RÉSULTAT DU SCAN : {} FICHIERS ANALYSÉS, {} ENSEMBLES VALIDES ===\n\n",
+                    total_inspected, count
+                ),
+                "Parts",
+            ),
+            Lang::Ja => (
+                format!("🎯 {} 個の有効なセットを検出しました！", count),
+                format!(
+                    "セット #1 を選択済み: \"{}\" ({} シェア)",
+                    first_name, f_len
+                ),
+                format!(
+                    "=== スキャン結果: {} ファイル検査、{} 個の有効セットを検出 ===\n\n",
+                    total_inspected, count
+                ),
+                "シェア",
+            ),
+            Lang::Zh => (
+                format!("🎯 发现 {} 个有效分片组合！", count),
+                format!("已预选组合 #1：\"{}\"（{} 个分片）", first_name, f_len),
+                format!(
+                    "=== 扫描结果：已检查 {} 个文件，发现 {} 个有效组合 ===\n\n",
+                    total_inspected, count
+                ),
+                "分片",
+            ),
+            Lang::Tok => (
+                format!("🎯 kulupu pona {} li lon!", count),
+                format!("kulupu #1 li lon: \"{}\" (kipisi {})", first_name, f_len),
+                format!(
+                    "=== lipu {} li lukin, kulupu pona {} li lon ===\n\n",
+                    total_inspected, count
+                ),
+                "kipisi",
+            ),
+            Lang::Sp => (
+                format!("🎯 󱤟 󱥔 {} 󱤧 󱤬!", count),
+                format!("󱤟 #1 󱤧 󱤬: \"{}\" (󱥻 {})", first_name, f_len),
+                format!("=== 󱤪 {} 󱤧 󱤮, 󱤟 󱥔 {} 󱤧 󱤬 ===\n\n", total_inspected, count),
+                "󱥻",
+            ),
+        };
+
+        let mut report = String::new();
+        report.push_str(&header);
+        for (i, (name, size_str, shares)) in found_sets.iter().enumerate() {
+            report.push_str(&format!("🎯 #{}: \"{}\" ({})\n", i + 1, name, size_str));
+            report.push_str(&format!("   {} ({}):\n", shares_lbl, shares.len()));
+            for s in shares {
+                report.push_str(&format!("     - {}\n", s.display()));
+            }
+            report.push('\n');
+        }
+        (status, preselected, report)
+    }
+
+    /// Formats localized status and report for auto-restore in the GUI.
+    pub fn format_gui_auto_restore_report(
+        &self,
+        lang: Lang,
+        restored_list: &[(String, PathBuf, usize)],
+    ) -> (String, String) {
+        let count = restored_list.len();
+        let (status, header, out_lbl, status_ok, shares_lbl) = match lang {
+            Lang::En => (
+                format!("✅ {} set(s) auto-restored!", count),
+                format!("=== AUTO-RESTORE: {} SETS RECONSTRUCTED ===\n\n", count),
+                "Output file",
+                "✅ Bit-exact BLKS-384 integrity verified",
+                "Shares used",
+            ),
+            Lang::De => (
+                format!("✅ {} Set(s) automatisch wiederhergestellt!", count),
+                format!("=== AUTO-RESTORE: {} SETS REKONSTRUIERT ===\n\n", count),
+                "Ausgabedatei",
+                "✅ Bitgenaue BLKS-384 Integrität bestätigt",
+                "Verwendete Shares",
+            ),
+            Lang::Es => (
+                format!("✅ ¡{} conjunto(s) auto-restaurado(s)!", count),
+                format!(
+                    "=== AUTO-RESTAURACIÓN: {} CONJUNTOS RECONSTRUIDOS ===\n\n",
+                    count
+                ),
+                "Archivo de salida",
+                "✅ Integridad BLKS-384 exacta verificada",
+                "Partes usadas",
+            ),
+            Lang::Fr => (
+                format!("✅ {} ensemble(s) auto-restauré(s) !", count),
+                format!(
+                    "=== AUTO-RESTAURATION : {} ENSEMBLES RECONSTRUITS ===\n\n",
+                    count
+                ),
+                "Fichier de sortie",
+                "✅ Intégrité BLKS-384 bit-à-bit vérifiée",
+                "Parts utilisées",
+            ),
+            Lang::Ja => (
+                format!("✅ {} セットを自動復元しました！", count),
+                format!("=== 自動一括復元: {} セットを復元完了 ===\n\n", count),
+                "出力ファイル",
+                "✅ BLKS-384 完全性検証済み (ビット完全一致)",
+                "使用シェア数",
+            ),
+            Lang::Zh => (
+                format!("✅ 已自动还原 {} 个组合！", count),
+                format!("=== 自动还原：已重构 {} 个分片组合 ===\n\n", count),
+                "输出文件",
+                "✅ BLKS-384 完整性校验通过（比特级精确匹配）",
+                "使用分片数",
+            ),
+            Lang::Tok => (
+                format!("✅ kulupu {} li wan sin pona!", count),
+                format!("=== wan sin ale: kulupu {} li pini pona ===\n\n", count),
+                "lipu pini",
+                "✅ pona BLKS-384 li lon",
+                "mute kipisi",
+            ),
+            Lang::Sp => (
+                format!("✅ 󱤟 {} 󱤧 󱥳 󱥝 󱥔!", count),
+                format!("=== 󱥳 󱥝 󱤄: 󱤟 {} 󱤧 󱥐 󱥔 ===\n\n", count),
+                "󱤪 󱥐",
+                "✅ 󱥔 BLKS-384 󱤧 󱤬",
+                "󱤼 󱥻",
+            ),
+        };
+
+        let mut report = String::new();
+        report.push_str(&header);
+        for (i, (orig_name, out_path, num_shares)) in restored_list.iter().enumerate() {
+            report.push_str(&format!("🎯 #{}: \"{}\"\n", i + 1, orig_name));
+            report.push_str(&format!("   {}: {}\n", out_lbl, out_path.display()));
+            report.push_str(&format!("   {}\n", status_ok));
+            report.push_str(&format!("   {}: {}\n\n", shares_lbl, num_shares));
+        }
+        (status, report)
+    }
+
+    /// Formats localized status and report for single restoration in the GUI.
+    pub fn format_gui_restore_report(&self, lang: Lang, path_display: &str) -> (String, String) {
+        match lang {
+            Lang::En => (
+                format!("✅ Restored: {}", path_display),
+                format!(
+                    "=== RESTORATION COMPLETED ===\n\n📁 Reconstructed file: {}\n🛡️ BLKS-384 Integrity Check: PASSED [OK]\nStatus: Bit-exact match with original plaintext.",
+                    path_display
+                ),
+            ),
+            Lang::De => (
+                format!("✅ Wiederhergestellt: {}", path_display),
+                format!(
+                    "=== WIEDERHERSTELLUNG ABGESCHLOSSEN ===\n\n📁 Rekonstruierte Datei: {}\n🛡️ BLKS-384 Integritätsprüfung: BESTANDEN [OK]\nStatus: Bitgenaue Übereinstimmung mit dem Original.",
+                    path_display
+                ),
+            ),
+            Lang::Es => (
+                format!("✅ Restaurado: {}", path_display),
+                format!(
+                    "=== RESTAURACIÓN COMPLETADA ===\n\n📁 Archivo reconstruido: {}\n🛡️ Verificación BLKS-384: APROBADA [OK]\nEstado: Coincidencia exacta bit a bit con el original.",
+                    path_display
+                ),
+            ),
+            Lang::Fr => (
+                format!("✅ Restauré : {}", path_display),
+                format!(
+                    "=== RESTAURATION TERMINÉE ===\n\n📁 Fichier reconstruit : {}\n🛡️ Vérification BLKS-384 : RÉUSSIE [OK]\nStatut : Correspondance exacte bit-à-bit avec l'original.",
+                    path_display
+                ),
+            ),
+            Lang::Ja => (
+                format!("✅ 復元完了: {}", path_display),
+                format!(
+                    "=== 復元完了 ===\n\n📁 復元されたファイル: {}\n🛡️ BLKS-384 完全性検証: 合格 [OK]\nステータス: 元ファイルとビット単位で完全一致しています。",
+                    path_display
+                ),
+            ),
+            Lang::Zh => (
+                format!("✅ 已还原：{}", path_display),
+                format!(
+                    "=== 还原完成 ===\n\n📁 重构文件：{}\n🛡️ BLKS-384 完整性校验：通过 [OK]\n状态：与原始明文比特级精确一致。",
+                    path_display
+                ),
+            ),
+            Lang::Tok => (
+                format!("✅ lipu sin: {}", path_display),
+                format!(
+                    "=== wan sin li pini pona ===\n\n📁 lipu sin: {}\n🛡️ lukin pona BLKS-384: pona [OK]\nni li sama ale tawa lipu open.",
+                    path_display
+                ),
+            ),
+            Lang::Sp => (
+                format!("✅ 󱤪 󱥝: {}", path_display),
+                format!(
+                    "=== 󱥳 󱥝 󱤧 󱥐 󱥔 ===\n\n📁 󱤪 󱥝: {}\n🛡️ 󱤮 󱥔 BLKS-384: 󱥔 [OK]\nlipu 󱤧 󱥖 󱤄 󱥩 󱤪 󱥇.",
+                    path_display
+                ),
+            ),
+        }
+    }
+
+    /// Formats localized report for Deniable Forge synthesis in the GUI.
+    pub fn format_gui_forge_report(
+        &self,
+        lang: Lang,
+        out_display: &str,
+        decoy_display: &str,
+        num_existing: usize,
+    ) -> String {
+        match lang {
+            Lang::En => format!(
+                "=== DENIABLE DECOY FORGE COMPLETED ===\n\n🎭 Synthesized Counterpart Share: {}\n📄 Embedded Decoy Plaintext:     {}\n🔗 Linked Existing Shares:       {} file(s)\n\n🛡️ Cryptographic Guarantee: Combining this fake share with the existing shares\n   validates 100% BLKS-384 integrity and reconstructs the decoy plaintext bit-exact.\n   Proving the existence of any other original file is mathematically impossible.",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::De => format!(
+                "=== GLAUBHAFTE ABSTREITBARKEIT (FORGE) ABGESCHLOSSEN ===\n\n🎭 Synthetisierte Gegen-Share: {}\n📄 Eingebetteter Köder-Klartext: {}\n🔗 Verknüpfte bestehende Shares: {} Datei(en)\n\n🛡️ Kryptografische Garantie: In Kombination mit den bestehenden Shares besteht diese\n   Gegen-Share die BLKS-384-Prüfung zu 100% und rekonstruiert bitgenau den Köder.\n   Der Nachweis einer anderen Originaldatei ist mathematisch unmöglich.",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::Es => format!(
+                "=== FORJA DE SEÑUELO NEGABLE COMPLETADA ===\n\n🎭 Parte falsa sintetizada:      {}\n📄 Archivo señuelo incrustado:   {}\n🔗 Partes existentes vinculadas: {} archivo(s)\n\n🛡️ Garantía criptográfica: Al combinar esta parte con las existentes se valida\n   el 100% de la integridad BLKS-384 y se reconstruye el señuelo bit a bit.\n   Demostrar la existencia de otro archivo original es matemáticamente imposible.",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::Fr => format!(
+                "=== FORGE DE LEURRE DÉNIABLE TERMINÉE ===\n\n🎭 Contre-part synthétisée :     {}\n📄 Fichier leurre intégré :      {}\n🔗 Parts existantes liées :      {} fichier(s)\n\n🛡️ Garantie cryptographique : Combiner cette part avec les parts existantes\n   valide 100% de l'intégrité BLKS-384 et reconstruit le leurre bit-à-bit.\n   Prouver l'existence d'un autre fichier original est mathématiquement impossible.",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::Ja => format!(
+                "=== おとり偽シェア合成完了 (Plausible Deniability) ===\n\n🎭 合成された偽シェア:     {}\n📄 埋め込まれたおとり平文: {}\n🔗 結合対象の既存シェア:   {} ファイル\n\n🛡️ 暗号論的保証: この偽シェアを既存のシェアと結合すると、BLKS-384 完全性検証に\n   100% 合格し、おとりファイルがビット単位で正確に復元されます。\n   他の元ファイルの存在を証明することは数学的に不可能です。",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::Zh => format!(
+                "=== 可否认诱饵伪造合成完成 ===\n\n🎭 已合成伪造分片：{}\n📄 嵌入诱饵明文：  {}\n🔗 关联现有分片：  {} 个文件\n\n🛡️ 密码学保证：将该伪造分片与现有分片组合可通过 100% BLKS-384 完整性校验，\n   并比特级精确还原出诱饵文件。在数学上无法证明任何其他原始文件的存在。",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::Tok => format!(
+                "=== pali pi kipisi powe li pini pona ===\n\n🎭 kipisi powe sin: {}\n📄 lipu powe insa:  {}\n🔗 kipisi lon poka: {}\n\n🛡️ sona nanpa: kipisi powe ni en kipisi lon li kama wan la,\n   lukin BLKS-384 li pona ale li pana e lipu powe taso.\n   jan ala li ken sona e lipu len ante.",
+                out_display, decoy_display, num_existing
+            ),
+            Lang::Sp => format!(
+                "=== 󱥉 󱥍 󱥻 󱦣 󱤧 󱥐 󱥔 ===\n\n🎭 󱥻 󱦣 󱥝: {}\n📄 󱤪 󱦣:    {}\n🔗 󱥻 󱤬:    {}\n\n🛡️ 󱥡 󱤽: 󱥻 󱦣 󱤬 󱥻 󱤬 󱤡 󱤮 BLKS-384 󱤧 󱥔 󱤄 󱤧 󱥳 󱥝 󱤉 󱤪 󱦣 󱥨.\n   󱤑 󱤂 󱤧 󱤘 󱥡 󱤉 󱤪 󱤥 󱤆.",
+                out_display, decoy_display, num_existing
+            ),
+        }
+    }
 }
 
 pub const TR_EN: Translations = Translations {
@@ -1199,6 +1811,15 @@ mod tests {
 
     #[test]
     fn test_all_eight_languages_have_non_empty_strings() {
+        let dummy_paths = vec![PathBuf::from("a.rfs"), PathBuf::from("b.rfs")];
+        let dummy_subsets = vec![("secret.bin".to_string(), dummy_paths.clone())];
+        let dummy_scan = vec![(
+            "secret.bin".to_string(),
+            "4.0 KB".to_string(),
+            dummy_paths.clone(),
+        )];
+        let dummy_auto = vec![("secret.bin".to_string(), PathBuf::from("secret.bin"), 2)];
+
         for lang in Lang::ALL {
             let tr = lang.tr();
             assert!(!tr.subtitle.is_empty());
@@ -1210,6 +1831,29 @@ mod tests {
             assert!(!tr.forge_action_btn.is_empty());
             let hint = tr.format_info_hint(lang, 3, 4, 5, 2, 4);
             assert!(!hint.is_empty());
+
+            let (s1, l1) = tr.format_gui_single_split_report(lang, &dummy_paths, &dummy_paths);
+            assert!(!s1.is_empty() && !l1.is_empty());
+            let (s2, l2) = tr.format_gui_multi_split_report(
+                lang,
+                3,
+                2,
+                "4.0 KB",
+                &dummy_paths,
+                &dummy_subsets,
+                &dummy_paths,
+            );
+            assert!(!s2.is_empty() && !l2.is_empty());
+            let (s3, p3, l3) = tr.format_gui_scan_report(lang, 4, &dummy_scan);
+            assert!(!s3.is_empty() && !p3.is_empty() && !l3.is_empty());
+            let (s4, l4) = tr.format_gui_auto_restore_report(lang, &dummy_auto);
+            assert!(!s4.is_empty() && !l4.is_empty());
+            let (s5, l5) = tr.format_gui_restore_report(lang, "restored.bin");
+            assert!(!s5.is_empty() && !l5.is_empty());
+            let l6 = tr.format_gui_forge_report(lang, "fake.rfs", "decoy.pdf", 2);
+            assert!(!l6.is_empty());
+            assert!(!tr.format_cli_integrity_ok(lang, "HASH").is_empty());
+            assert!(!tr.format_cli_restored(lang, "out.bin").is_empty());
         }
     }
 
