@@ -78,7 +78,22 @@ rfs split -n 3 confidential.kdbx --decoy-reveal harmless_recipe.txt -o /media/ba
 rfs split -n 3 data.iso -d 3
 ```
 
-### 2. Auto-Discovery & Assembly (`rfs scan`)
+### 2. Symmetric Multi-Payload Splitting (General Access LSSS over GF(2))
+Simultaneously and symmetrically embeds $N$ arbitrary plaintext files into $M$ shares with threshold $T$ (e.g. 3-out-of-5). Each authorized combination reconstructs its assigned file bit-exact; unauthorized subsets yield pure thermal noise.
+
+```bash
+# Split 3 files symmetrically into 5 shares (3-out-of-5 threshold):
+rfs split vault.kdbx vacation.pdf invoice.xlsx -n 5 -T 3 -o ./shares/
+
+# Auto-discover and restore all 3 files:
+rfs scan ./shares/*.rfs -r -o ./recovered/
+```
+
+> **📌 Information-Theoretic Bound ($M \ge N + 1$):**  
+> Under Shannon's theorem for linear secret sharing over $\mathbb{F}_2$, embedding $N$ distinct plaintext files strictly requires **at least $M \ge N + 1$ shares**.  
+> The additional $+1$ share provides the mathematically necessary dimension for the uncorrelated ChaCha20 random noise basis (One-Time-Pad). Without this dimension, zero entropy basis would remain and plaintexts would be unmasked.
+
+### 3. Auto-Discovery & Assembly (`rfs scan`)
 ```bash
 # Inspect all .rfs files in a directory and print discovered sets in milliseconds
 rfs scan /media/usb/*.rfs
@@ -87,7 +102,7 @@ rfs scan /media/usb/*.rfs
 rfs scan /media/usb/*.rfs -r -o ./restored/
 ```
 
-### 3. Plausible Deniability Decoy Forge (`rfs forge`)
+### 4. Plausible Deniability Decoy Forge (`rfs forge`)
 ```bash
 # Seized share 'share1.rfs' + harmless decoy 'vacation.pdf' -> generates 'fake_share2.rfs'
 rfs forge share1.rfs --reveal-as vacation.pdf -o fake_share2.rfs
@@ -96,7 +111,7 @@ rfs forge share1.rfs --reveal-as vacation.pdf -o fake_share2.rfs
 rfs restore share1.rfs fake_share2.rfs
 ```
 
-### 4. Unix Streaming Pipes
+### 5. Unix Streaming Pipes
 ```bash
 # Stream stdin directly into 4 shares on disk
 tar -czf - /data | rfs split -n 4 - -o backup
@@ -105,7 +120,7 @@ tar -czf - /data | rfs split -n 4 - -o backup
 rfs restore backup.*.rfs -o - | tar -xzf -
 ```
 
-### 5. Integrity Verification (Zero Disk Writes)
+### 6. Integrity Verification (Zero Disk Writes)
 ```bash
 # Verify BLKS-384 Post-Quantum integrity in RAM
 rfs verify share1.rfs share2.rfs share3.rfs

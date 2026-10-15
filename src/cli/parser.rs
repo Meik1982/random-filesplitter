@@ -410,6 +410,7 @@ where
     let mut mlock = false;
     let mut token_mode = false;
     let mut num_parts: usize = 2;
+    let mut num_parts_explicit = false;
     let mut num_decoys: usize = 0;
     let mut decoy_reveal: Option<PathBuf> = None;
     let mut decoy_count: usize = 1;
@@ -454,7 +455,10 @@ where
                 return Err(format!("Error: Option {} requires a count argument.", arg));
             }
             match args[i].parse::<usize>() {
-                Ok(n) if (2..=64).contains(&n) => num_parts = n,
+                Ok(n) if (2..=64).contains(&n) => {
+                    num_parts = n;
+                    num_parts_explicit = true;
+                }
                 Ok(n) => {
                     return Err(format!(
                         "Error: Part count ({}) must be between 2 and 64.",
@@ -606,9 +610,25 @@ where
                 || (threshold.is_some() && positionals.len() > 1);
 
             if is_multi_split {
+                let n_files = positionals.len();
+                let min_required_shares = n_files + 1;
+
+                if num_parts_explicit && num_parts < min_required_shares {
+                    return Err(format!(
+                        "Error: Specified share count -n {} is too small for {} files.\n\n\
+                         Information-Theoretic Rule (Shannon Secrecy over GF(2)):\n\
+                         Embedding N files requires at least M >= N + 1 shares.\n\
+                         At least 1 share dimension must serve as a ChaCha20 random noise basis.\n\
+                         For {} files, specify at least: -n {}",
+                        num_parts, n_files, n_files, min_required_shares
+                    ));
+                }
+
+                let final_shares = num_parts.max(min_required_shares);
+
                 return Ok(CliCommand::MultiSplit {
                     payloads: positionals.iter().map(PathBuf::from).collect(),
-                    num_shares: num_parts.max(positionals.len()),
+                    num_shares: final_shares,
                     threshold,
                     output_dir: output_path.map(PathBuf::from),
                     block_size,

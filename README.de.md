@@ -78,7 +78,22 @@ rfs split -n 3 geheimnis.kdbx --decoy-reveal rezept.txt -o /media/backup/
 rfs split -n 3 daten.iso -d 3
 ```
 
-### 2. Auto-Discovery & Rekonstruktion (`rfs scan`)
+### 2. Symmetrisches Multi-Klartext-Splitting (General Access LSSS über GF(2))
+Ermöglicht das gleichzeitige, symmetrische Einbetten von $N$ beliebigen Klartextdateien in $M$ Shares mit Schwellenwert $T$ (z. B. 3 aus 5). Jede autorisierte Kombination rekonstruiert bitgenau ihre zugewiesene Datei; unberechtigte Kombinationen ergeben reines Rauschen.
+
+```bash
+# 3 Dateien symmetrisch auf 5 Shares aufteilen (3-aus-5 Schwellenwert):
+rfs split tresor.kdbx urlaub.pdf rechnung.xlsx -n 5 -T 3 -o ./shares/
+
+# Alle 3 Dateien vollautomatisch scannen und bitgenau entpacken:
+rfs scan ./shares/*.rfs -r -o ./wiederhergestellt/
+```
+
+> **📌 Informationstheoretische Schranke ($M \ge N + 1$):**  
+> Nach dem Shannon-Theorem für lineare Geheimnisteilung über $\mathbb{F}_2$ werden für $N$ Klartextdateien **mindestens $M \ge N + 1$ Shares** benötigt.  
+> Der zusätzliche $+1$ Share liefert die mathematisch notwendige Dimension für das unkorrelierte ChaCha20-Zufallsrauschen (One-Time-Pad). Ohne diese Dimension gäbe es keine Entropiebasis und die Dateien lägen unmaskiert vor.
+
+### 3. Auto-Discovery & Rekonstruktion (`rfs scan`)
 ```bash
 # Analysiert alle .rfs-Dateien in einem Ordner und listet gefundene Sets in Millisekunden auf
 rfs scan /media/usb/*.rfs
@@ -87,7 +102,7 @@ rfs scan /media/usb/*.rfs
 rfs scan /media/usb/*.rfs -r -o ./wiederhergestellt/
 ```
 
-### 3. Glaubhafte Abstreitbarkeit & Köder-Synthese (`rfs forge`)
+### 4. Glaubhafte Abstreitbarkeit & Köder-Synthese (`rfs forge`)
 ```bash
 # Beschlagnahmte Share 'share1.rfs' + harmloser Köder 'urlaub.pdf' -> erzeugt 'fake_share2.rfs'
 rfs forge share1.rfs --reveal-as urlaub.pdf -o fake_share2.rfs
@@ -96,7 +111,7 @@ rfs forge share1.rfs --reveal-as urlaub.pdf -o fake_share2.rfs
 rfs restore share1.rfs fake_share2.rfs
 ```
 
-### 4. Unix-Streaming-Pipes
+### 5. Unix-Streaming-Pipes
 ```bash
 # Stdin direkt in 4 Shares auf die Festplatte streamen
 tar -czf - /daten | rfs split -n 4 - -o backup
@@ -105,7 +120,7 @@ tar -czf - /daten | rfs split -n 4 - -o backup
 rfs restore backup.*.rfs -o - | tar -xzf -
 ```
 
-### 5. Integritätsprüfung (ohne Festplattenzugriff)
+### 6. Integritätsprüfung (ohne Festplattenzugriff)
 ```bash
 # BLKS-384 Post-Quantum Integrität im RAM prüfen
 rfs verify share1.rfs share2.rfs share3.rfs

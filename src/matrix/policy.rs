@@ -68,10 +68,13 @@ impl MatrixPolicy {
                 threshold, num_shares
             ));
         }
-        if k > num_shares {
+        if num_shares < k + 1 {
             return Err(format!(
-                "Cannot embed {} payloads into {} shares over GF(2) (maximum is M = {})",
-                k, num_shares, num_shares
+                "Information-Theoretic Constraint (Shannon Secrecy over GF(2)):\n\
+                 Cannot embed {} payloads into {} shares.\n\
+                 At least M >= N + 1 shares are mathematically required (for {} files: minimum M = {} shares).\n\
+                 At least 1 share dimension must remain unconstrained as a pure ChaCha20 random noise basis.",
+                k, num_shares, k, k + 1
             ));
         }
 

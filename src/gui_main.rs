@@ -25,7 +25,8 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     window.set_split_file_path(joined_paths.into());
 
-                    if files.len() == 1 {
+                    let n_files = files.len();
+                    if n_files == 1 {
                         let file = &files[0];
                         let file_name =
                             file.file_name().and_then(|n| n.to_str()).unwrap_or("Datei");
@@ -35,11 +36,28 @@ fn main() -> Result<(), slint::PlatformError> {
                         window.set_split_file_info(
                             format!("Ausgewählt: {} ({})", file_name, size_str).into(),
                         );
+                        window.set_split_min_parts(2);
+                        window.set_split_info_hint("".into());
                     } else {
+                        let min_m = n_files + 1;
+                        window.set_split_min_parts(min_m as i32);
+                        if (window.get_split_num_parts() as usize) < min_m {
+                            window.set_split_num_parts(min_m as i32);
+                        }
+                        if (window.get_split_threshold() as usize) > min_m {
+                            window.set_split_threshold(min_m as i32);
+                        }
                         window.set_split_file_info(
                             format!(
                                 "{} Payloads ausgewählt (Symmetrisches Multi-Splitting über GF(2))",
-                                files.len()
+                                n_files
+                            )
+                            .into(),
+                        );
+                        window.set_split_info_hint(
+                            format!(
+                                "ℹ️ Informationstheorie: Für {} Dateien werden mindestens {} Shares benötigt (M ≥ N + 1).\nMindestens 1 Share dient als ChaCha20-Zufallsentropiebasis für Shannon Perfect Secrecy.",
+                                n_files, min_m
                             )
                             .into(),
                         );

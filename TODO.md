@@ -186,6 +186,10 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Multi-File-Streaming (`src/pipeline/multi_split.rs`) mit einheitlicher Bytegröße (4-KiB-Padding) und simultaner BLKS-384 Hashing-Integrität.
   - Vollständige Integration in CLI (`rfs split <f1> <f2>... -n <M> -T <T>`) und Desktop-GUI (Multi-File-Auswahl).
   - End-to-End validiert in `tests/multi_payload_tests.rs`: bitgenaue Rekonstruktion aller $K$ Dateien und automatische Entdeckung durch `rfs scan`.
+- [x] **Informationstheoretische Schranken & Usability-Transparenz ($M \ge N + 1$)**
+  - Strenge Durchsetzung des Shannon-Theorems für lineare Geheimnisteilung über $\mathbb{F}_2$: Zum Verstecken von $N$ Klartexten sind mindestens $M \ge N + 1$ Shares erforderlich (mindestens 1 Dimension für die unkorrelierte ChaCha20-Zufallsbasis).
+  - Klare, konstruktive Fehlermeldungen in der CLI bei zu geringer Share-Anzahl (`-n`).
+  - Desktop-GUI: Dynamische Begrenzung des Share-Sliders auf mindestens $N + 1$ und informatives Hinweisfeld mit Erklärung zur Informationstheorie.
 
 ---
 

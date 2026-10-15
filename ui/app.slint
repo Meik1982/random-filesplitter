@@ -17,7 +17,9 @@ export component MainWindow inherits Window {
     in-out property <string> split_file_info: "Wählen Sie eine oder mehrere Dateien aus.";
     in-out property <string> split_target_dir: "";
     in-out property <int> split_num_parts: 3;
+    in-out property <int> split_min_parts: 2;
     in-out property <int> split_threshold: 2;
+    in-out property <string> split_info_hint: "";
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
     in-out property <string> split_status: "Bereit zum Aufteilen";
@@ -172,6 +174,21 @@ export component MainWindow inherits Window {
                     color: #8b949e;
                     font-size: 12px;
                 }
+                if root.split_info_hint != "": Rectangle {
+                    background: #0d1117;
+                    border-width: 1px;
+                    border-color: #388bfd;
+                    border-radius: 6px;
+                    HorizontalLayout {
+                        padding: 8px;
+                        Text {
+                            text: root.split_info_hint;
+                            color: #79c0ff;
+                            font-size: 11px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
 
                 // 2. Zielordner
                 Text {
@@ -205,8 +222,8 @@ export component MainWindow inherits Window {
                         min-width: 160px;
                     }
                     Slider {
-                        minimum: 2;
-                        maximum: 16;
+                        minimum: root.split_min_parts;
+                        maximum: 32;
                         value: root.split_num_parts;
                         changed(val) => {
                             root.split_num_parts = Math.round(val);
