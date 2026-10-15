@@ -20,8 +20,6 @@ export component MainWindow inherits Window {
     in-out property <int> split_threshold: 2;
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
-    in-out property <bool> split_enable_plaintext_decoy: false;
-    in-out property <string> split_plaintext_decoy_path: "";
     in-out property <string> split_status: "Bereit zum Aufteilen";
     in-out property <float> split_progress: 0.0;
     in-out property <bool> split_in_progress: false;
@@ -48,7 +46,6 @@ export component MainWindow inherits Window {
     // Callbacks to Rust
     callback request_select_file();
     callback request_select_split_target_dir();
-    callback request_select_split_decoy();
     callback request_split();
     callback request_select_shares();
     callback request_scan_folder();
@@ -255,27 +252,6 @@ export component MainWindow inherits Window {
                             maximum: 16;
                             value: root.split_num_decoys;
                             changed(val) => { root.split_num_decoys = Math.round(val); }
-                        }
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: 12px;
-                    CheckBox {
-                        text: "Echten Klartext-Köder einbinden (Decoy Reveal)";
-                        checked: root.split_enable_plaintext_decoy;
-                        toggled => { root.split_enable_plaintext_decoy = !root.split_enable_plaintext_decoy; }
-                    }
-                    if root.split_enable_plaintext_decoy: HorizontalLayout {
-                        spacing: 8px;
-                        LineEdit {
-                            text: root.split_plaintext_decoy_path;
-                            placeholder-text: "Köderdatei (z. B. urlaub.pdf) auswählen...";
-                            edited(val) => { root.split_plaintext_decoy_path = val; }
-                        }
-                        Button {
-                            text: "Köder wählen...";
-                            clicked => { root.request_select_split_decoy(); }
                         }
                     }
                 }
