@@ -448,34 +448,17 @@ pub fn split_stream_or_file(
     }
 
     if telemetry_mode == TelemetryMode::Interactive {
-        eprintln!(
-            "Successfully split into {} shares (N-Way OTP, RFS4):",
-            n_parts
+        let lang = crate::i18n::current_lang();
+        lang.tr().print_cli_split_summary(
+            lang,
+            n_parts,
+            original_filename,
+            total_processed,
+            share_size,
+            &BlksDigest(digest).to_base64(),
+            &out_paths,
+            &decoy_paths,
         );
-        eprintln!("  Embedded name: {}", original_filename);
-        eprintln!("  Original size: {} bytes", total_processed);
-        eprintln!("  Share size (4 KiB cluster padding): {} bytes", share_size);
-        eprintln!("  BLKS-384: {}", BlksDigest(digest).to_base64());
-
-        if !decoy_paths.is_empty() {
-            eprintln!("\nReal shares (N={}, randomized across set):", n_parts);
-            for (i, p) in out_paths.iter().enumerate() {
-                eprintln!("  Share {}: {}", i + 1, p.display());
-            }
-
-            eprintln!(
-                "\nDecoy chaff files (D={}, 100% ChaCha20 random noise):",
-                decoy_paths.len()
-            );
-            for (i, p) in decoy_paths.iter().enumerate() {
-                eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
-            }
-        } else {
-            eprintln!("\nGenerated shares:");
-            for (i, p) in out_paths.iter().enumerate() {
-                eprintln!("  Share {}: {}", i + 1, p.display());
-            }
-        }
     }
 
     Ok(SplitResult {

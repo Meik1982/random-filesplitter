@@ -23,6 +23,8 @@ where
 /// Displays full CLI usage instructions on stdout.
 pub fn display_help() {
     display_version();
+    let lang = crate::i18n::current_lang();
+    lang.tr().print_cli_localized_help(lang);
     println!("\nUsage:");
     println!(
         "  rfs split [options] <source|-> [shares...]     (Split file or stdin into 2 or N shares)"
@@ -327,7 +329,51 @@ where
     I: IntoIterator<Item = T>,
     T: Into<String>,
 {
-    let args: Vec<String> = args_iter.into_iter().map(Into::into).collect();
+    let raw_args: Vec<String> = args_iter.into_iter().map(Into::into).collect();
+    crate::i18n::set_active_lang(crate::i18n::Lang::from_env());
+
+    // Pre-pass: extract global `-l, --lang <CODE>` or `--lang=<CODE>` anywhere in the command line
+    // so that `rfs -l es`, `rfs -l de split file`, and `rfs split file -l de` all work identically.
+    let mut args: Vec<String> = Vec::with_capacity(raw_args.len());
+    if !raw_args.is_empty() {
+        args.push(raw_args[0].clone());
+    }
+    let mut idx = 1;
+    while idx < raw_args.len() {
+        let arg = &raw_args[idx];
+        if arg == "-l" || arg == "--lang" {
+            idx += 1;
+            if idx >= raw_args.len() {
+                return Err(format!(
+                    "Error: Option {} requires a language code (en, de, es, fr, ja, zh, tok, sp).",
+                    arg
+                ));
+            }
+            match crate::i18n::Lang::from_code(&raw_args[idx]) {
+                Some(lang) => crate::i18n::set_active_lang(lang),
+                None => {
+                    return Err(format!(
+                        "Error: Unsupported language '{}'. Supported codes: en, de, es, fr, ja, zh, tok, sp.",
+                        raw_args[idx]
+                    ));
+                }
+            }
+        } else if let Some(code) = arg.strip_prefix("--lang=") {
+            match crate::i18n::Lang::from_code(code) {
+                Some(lang) => crate::i18n::set_active_lang(lang),
+                None => {
+                    return Err(format!(
+                        "Error: Unsupported language '{}'. Supported codes: en, de, es, fr, ja, zh, tok, sp.",
+                        code
+                    ));
+                }
+            }
+        } else {
+            args.push(arg.clone());
+        }
+        idx += 1;
+    }
+
     if args.len() <= 1 {
         return Ok(CliCommand::Help(None));
     }

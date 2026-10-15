@@ -1,27 +1,59 @@
 //! Lightweight, zero-allocation internationalization (i18n) engine for RFS CLI and Desktop GUI.
 //! Default language is English (`en`), with built-in support for German (`de`), Spanish (`es`),
-//! French (`fr`), Japanese (`ja`), Simplified Chinese (`zh`), and Toki Pona (`tok`).
+//! French (`fr`), Japanese (`ja`), Simplified Chinese (`zh`), Toki Pona (`tok`), and Sitelen Pona (`sp`).
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// Global active language state for CLI and background threads (`0xFF` = uninitialized, read from env).
+static ACTIVE_LANG: AtomicU8 = AtomicU8::new(0xFF);
+
+/// Sets the globally active language for CLI output.
+pub fn set_active_lang(lang: Lang) {
+    ACTIVE_LANG.store(lang as u8, Ordering::Relaxed);
+}
+
+/// Returns the currently active language (from `-l/--lang`, `RFS_LANG`, or `Lang::En` default).
+pub fn current_lang() -> Lang {
+    match ACTIVE_LANG.load(Ordering::Relaxed) {
+        0 => Lang::En,
+        1 => Lang::De,
+        2 => Lang::Es,
+        3 => Lang::Fr,
+        4 => Lang::Ja,
+        5 => Lang::Zh,
+        6 => Lang::Tok,
+        7 => Lang::Sp,
+        _ => Lang::from_env(),
+    }
+}
+
+/// Returns the static translation table for the currently active language.
+pub fn tr() -> &'static Translations {
+    current_lang().tr()
+}
 
 /// Supported languages in RFS.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Lang {
     /// English (Default)
     #[default]
-    En,
+    En = 0,
     /// German (Deutsch)
-    De,
+    De = 1,
     /// Spanish (Español)
-    Es,
+    Es = 2,
     /// French (Français)
-    Fr,
+    Fr = 3,
     /// Japanese (日本語)
-    Ja,
+    Ja = 4,
     /// Simplified Chinese (简体中文)
-    Zh,
+    Zh = 5,
     /// Toki Pona in Latin script (sitelen Lasina)
-    Tok,
+    Tok = 6,
     /// Toki Pona in hieroglyphic script (sitelen pona / UCSUR)
-    Sp,
+    Sp = 7,
 }
 
 impl Lang {
@@ -258,6 +290,356 @@ impl Translations {
                 Lang::Tok => format!("lipu {} li lon (kipisi mute lon nasin GF(2))", n_files),
                 Lang::Sp => format!("󱤪 {} 󱤧 󱤬 (󱥻 󱤼 󱤬 󱤿 GF(2))", n_files),
             }
+        }
+    }
+
+    /// Prints localized CLI split completion report to stderr.
+    #[allow(clippy::too_many_arguments)]
+    pub fn print_cli_split_summary(
+        &self,
+        lang: Lang,
+        n_parts: usize,
+        original_filename: &str,
+        total_processed: u64,
+        share_size: u64,
+        blks_b64: &str,
+        out_paths: &[PathBuf],
+        decoy_paths: &[PathBuf],
+    ) {
+        match lang {
+            Lang::En => {
+                eprintln!(
+                    "Successfully split into {} shares (N-Way OTP, RFS4):",
+                    n_parts
+                );
+                eprintln!("  Embedded name: {}", original_filename);
+                eprintln!("  Original size: {} bytes", total_processed);
+                eprintln!("  Share size (4 KiB cluster padding): {} bytes", share_size);
+                eprintln!("  BLKS-384: {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\nReal shares (N={}, randomized across set):", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\nDecoy chaff files (D={}, 100% ChaCha20 random noise):",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\nGenerated shares:");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::De => {
+                eprintln!(
+                    "Erfolgreich in {} Shares aufgeteilt (N-Way OTP, RFS4):",
+                    n_parts
+                );
+                eprintln!("  Eingebetteter Name: {}", original_filename);
+                eprintln!("  Originalgröße:      {} Bytes", total_processed);
+                eprintln!(
+                    "  Share-Größe (4 KiB Cluster-Padding): {} Bytes",
+                    share_size
+                );
+                eprintln!("  BLKS-384: {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\nEchte Shares (N={}, zufällig gemischt):", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\nKöderdateien (D={}, 100% ChaCha20 Rauschen):",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} Bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\nErzeugte Shares:");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::Es => {
+                eprintln!(
+                    "Dividido con éxito en {} partes (N-Way OTP, RFS4):",
+                    n_parts
+                );
+                eprintln!("  Nombre incrustado: {}", original_filename);
+                eprintln!("  Tamaño original:   {} bytes", total_processed);
+                eprintln!("  Tamaño de parte (relleno 4 KiB): {} bytes", share_size);
+                eprintln!("  BLKS-384: {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\nPartes reales (N={}, mezcladas aleatoriamente):", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\nArchivos señuelo (D={}, 100% ruido ChaCha20):",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\nPartes generadas:");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::Fr => {
+                eprintln!(
+                    "Divisé avec succès en {} parts (N-Way OTP, RFS4) :",
+                    n_parts
+                );
+                eprintln!("  Nom intégré :      {}", original_filename);
+                eprintln!("  Taille originale : {} octets", total_processed);
+                eprintln!(
+                    "  Taille de part (alignement 4 Kio) : {} octets",
+                    share_size
+                );
+                eprintln!("  BLKS-384 : {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\nParts réelles (N={}, mélangées aléatoirement) :", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\nFichiers leurres (D={}, 100% bruit ChaCha20) :",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} octets)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\nParts générées :");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::Ja => {
+                eprintln!(
+                    "{} 個のシェアに正常に分割されました (N-Way OTP, RFS4):",
+                    n_parts
+                );
+                eprintln!("  埋め込みファイル名: {}", original_filename);
+                eprintln!("  元サイズ:           {} バイト", total_processed);
+                eprintln!("  シェアサイズ (4 KiB パディング): {} バイト", share_size);
+                eprintln!("  BLKS-384: {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\n本物のシェア (N={}, ランダム配置):", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\nおとりファイル (D={}, 100% ChaCha20 乱数ノイズ):",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\n生成されたシェア:");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::Zh => {
+                eprintln!("成功分割为 {} 个分片 (N-Way OTP, RFS4)：", n_parts);
+                eprintln!("  嵌入文件名：{}", original_filename);
+                eprintln!("  原始大小：  {} 字节", total_processed);
+                eprintln!("  分片大小 (4 KiB 簇对齐)：{} 字节", share_size);
+                eprintln!("  BLKS-384：{}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\n真实分片 (N={}，已随机混洗)：", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\n诱饵噪声文件 (D={}，100% ChaCha20 随机噪声)：",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\n已生成的分片：");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::Tok => {
+                eprintln!(
+                    "lipu li kipisi pona tawa kipisi {} (N-Way OTP, RFS4):",
+                    n_parts
+                );
+                eprintln!("  nimi insa:   {}", original_filename);
+                eprintln!("  suli open:   {} bytes", total_processed);
+                eprintln!("  suli kipisi: {} bytes (4 KiB)", share_size);
+                eprintln!("  BLKS-384:    {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\nkipisi lon (N={}):", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!(
+                        "\nkipisi powe (D={}, kalama nasa ChaCha20):",
+                        decoy_paths.len()
+                    );
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\nkipisi pali:");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+            Lang::Sp => {
+                eprintln!("󱤪 󱤧 󱥻 󱥔 󱥩 󱥻 {} (N-Way OTP, RFS4):", n_parts);
+                eprintln!("  󱥂 󱥇:   {}", original_filename);
+                eprintln!("  󱥣 󱥇:   {} bytes", total_processed);
+                eprintln!("  󱥣 󱥻:   {} bytes (4 KiB)", share_size);
+                eprintln!("  BLKS-384: {}", blks_b64);
+                if !decoy_paths.is_empty() {
+                    eprintln!("\n󱥻 󱤬 (N={}):", n_parts);
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                    eprintln!("\n󱥻 󱦣 (D={}, 󱤕 󱤾 ChaCha20):", decoy_paths.len());
+                    for (i, p) in decoy_paths.iter().enumerate() {
+                        eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), share_size);
+                    }
+                } else {
+                    eprintln!("\n󱥻 󱥉:");
+                    for (i, p) in out_paths.iter().enumerate() {
+                        eprintln!("  Share {}: {}", i + 1, p.display());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Prints a localized CLI summary banner when `rfs --help` or `rfs -l <code>` is called.
+    pub fn print_cli_localized_help(&self, lang: Lang) {
+        if lang == Lang::En {
+            return;
+        }
+        println!("\n------------------------------------------------------------");
+        println!(" [{}] {}", lang.code().to_ascii_uppercase(), self.subtitle);
+        println!("------------------------------------------------------------");
+        match lang {
+            Lang::De => {
+                println!(" Hauptbefehle:");
+                println!("   rfs split [Optionen] <Datei|->          (Datei in 2 oder N Shares aufteilen)");
+                println!("   rfs restore [Optionen] <Shares...>      (Originaldatei aus N Shares wiederherstellen)");
+                println!("   rfs verify [Optionen] <Shares...>       (BLKS-384 Integrität im RAM prüfen)");
+                println!("   rfs scan [Optionen] <Dateien...>        (Gültige Share-Sets automatisch finden)");
+                println!("   rfs forge <Shares...> --reveal-as <D> -o <Out> (Gegen-Share für Köder erzeugen)");
+                println!(
+                    "   rfs decoy [-t <Vorlage>] [-s <Größe>]   (ChaCha20-Rauschdateien erzeugen)"
+                );
+            }
+            Lang::Es => {
+                println!(" Comandos principales:");
+                println!(
+                    "   rfs split [opciones] <archivo|->        (Dividir archivo en 2 o N partes)"
+                );
+                println!("   rfs restore [opciones] <partes...>      (Reconstruir archivo desde N partes)");
+                println!("   rfs verify [opciones] <partes...>       (Verificar integridad BLKS-384 en RAM)");
+                println!("   rfs scan [opciones] <archivos...>       (Auto-descubrir conjuntos OTP válidos)");
+                println!(
+                    "   rfs forge <partes...> --reveal-as <D> -o <Out> (Sintetizar parte señuelo)"
+                );
+                println!("   rfs decoy [-t <plantilla>] [-s <tam>]   (Generar archivos de ruido ChaCha20)");
+            }
+            Lang::Fr => {
+                println!(" Commandes principales :");
+                println!("   rfs split [options] <fichier|->         (Diviser un fichier en 2 ou N parts)");
+                println!("   rfs restore [options] <parts...>        (Reconstruire le fichier depuis N parts)");
+                println!("   rfs verify [options] <parts...>         (Vérifier l'intégrité BLKS-384 en RAM)");
+                println!("   rfs scan [options] <fichiers...>        (Découvrir automatiquement les ensembles OTP)");
+                println!("   rfs forge <parts...> --reveal-as <D> -o <Out> (Synthétiser une contre-part leurre)");
+                println!("   rfs decoy [-t <modèle>] [-s <taille>]   (Générer des fichiers de bruit ChaCha20)");
+            }
+            Lang::Ja => {
+                println!(" 主なコマンド:");
+                println!("   rfs split [options] <file|->            (ファイルを 2 または N 個のシェアに分割)");
+                println!(
+                    "   rfs restore [options] <shares...>       (N 個のシェアから元ファイルを復元)"
+                );
+                println!("   rfs verify [options] <shares...>        (RAM 上で BLKS-384 完全性を高速検証)");
+                println!("   rfs scan [options] <files...>           (有効な OTP シェアの組み合わせを自動検出)");
+                println!(
+                    "   rfs forge <shares...> --reveal-as <D> -o <Out> (おとり用の偽シェアを合成)"
+                );
+                println!("   rfs decoy [-t <template>] [-s <size>]   (ChaCha20 乱数ノイズファイルを生成)");
+            }
+            Lang::Zh => {
+                println!(" 核心命令：");
+                println!(
+                    "   rfs split [选项] <文件|->               (将文件或流分割为 2 或 N 个分片)"
+                );
+                println!("   rfs restore [选项] <分片...>            (从 N 个分片重构原始文件)");
+                println!(
+                    "   rfs verify [选项] <分片...>             (在内存中快速验证 BLKS-384 完整性)"
+                );
+                println!("   rfs scan [选项] <候选文件...>           (自动扫描并发现有效的 OTP 分片组合)");
+                println!(
+                    "   rfs forge <分片...> --reveal-as <D> -o <Out> (合成可否认的诱饵对应分片)"
+                );
+                println!(
+                    "   rfs decoy [-t <模板>] [-s <大小>]       (生成纯 ChaCha20 随机噪声诱饵文件)"
+                );
+            }
+            Lang::Tok => {
+                println!(" nasin pali suli:");
+                println!("   rfs split [nasin] <lipu|->              (o kipisi e lipu tawa kipisi 2 anu N)");
+                println!("   rfs restore [nasin] <kipisi...>         (o wan sin e lipu open tan kipisi N)");
+                println!("   rfs verify [nasin] <kipisi...>          (o lukin e pona BLKS-384)");
+                println!(
+                    "   rfs scan [nasin] <lipu...>              (o alasa e kulupu kipisi pona)"
+                );
+                println!(
+                    "   rfs forge <kipisi...> --reveal-as <D> -o <Out> (o pali e kipisi powe)"
+                );
+                println!("   rfs decoy [-t <lipu>] [-s <suli>]       (o pali e lipu pi kalama nasa ChaCha20)");
+            }
+            Lang::Sp => {
+                println!(" 󱤿 󱥉 󱥣:");
+                println!("   rfs split [󱤿] <󱤪|->                   (󱥄 󱥻 󱤉 󱤪 󱥩 󱥻 2 󱤇 N)");
+                println!("   rfs restore [󱤿] <󱥻...>                 (󱥄 󱥳 󱥝 󱤉 󱤪 󱥇 󱤬 󱥻 N)");
+                println!("   rfs verify [󱤿] <󱥻...>                  (󱥄 󱤮 󱤉 󱥔 BLKS-384)");
+                println!("   rfs scan [󱤿] <󱤪...>                   (󱥄 󱤃 󱤉 󱤟 󱥻 󱥔)");
+                println!("   rfs forge <󱥻...> --reveal-as <D> -o <Out> (󱥄 󱥉 󱤉 󱥻 󱦣)");
+                println!("   rfs decoy [-t <󱤪>] [-s <󱥣>]           (󱥄 󱥉 󱤉 󱤪 󱥍 󱤕 󱤾 ChaCha20)");
+            }
+            Lang::En => {}
+        }
+    }
+
+    /// Formats localized restoration success message.
+    pub fn format_cli_restored(&self, lang: Lang, path_display: &str) -> String {
+        match lang {
+            Lang::En => format!("Successfully restored: {}", path_display),
+            Lang::De => format!("Erfolgreich wiederhergestellt: {}", path_display),
+            Lang::Es => format!("Restaurado con éxito: {}", path_display),
+            Lang::Fr => format!("Restauré avec succès : {}", path_display),
+            Lang::Ja => format!("正常に復元されました: {}", path_display),
+            Lang::Zh => format!("成功还原：{}", path_display),
+            Lang::Tok => format!("lipu li wan sin pona: {}", path_display),
+            Lang::Sp => format!("󱤪 󱤧 󱥳 󱥝 󱥔: {}", path_display),
         }
     }
 }
@@ -829,5 +1211,22 @@ mod tests {
             let hint = tr.format_info_hint(lang, 3, 4, 5, 2, 4);
             assert!(!hint.is_empty());
         }
+    }
+
+    #[test]
+    fn test_cli_lang_flag_before_and_after_subcommand() {
+        let cmd1 = crate::cli::parse_cli_args(["rfs", "-l", "es", "split", "test.bin"]).unwrap();
+        assert_eq!(current_lang(), Lang::Es);
+        assert!(matches!(cmd1, crate::cli::CliCommand::Split { .. }));
+
+        let cmd2 = crate::cli::parse_cli_args(["rfs", "split", "test.bin", "-l", "de"]).unwrap();
+        assert_eq!(current_lang(), Lang::De);
+        assert!(matches!(cmd2, crate::cli::CliCommand::Split { .. }));
+
+        let cmd3 = crate::cli::parse_cli_args(["rfs", "-l", "tok"]).unwrap();
+        assert_eq!(current_lang(), Lang::Tok);
+        assert_eq!(cmd3, crate::cli::CliCommand::Help(None));
+
+        set_active_lang(Lang::En);
     }
 }

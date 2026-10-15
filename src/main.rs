@@ -139,7 +139,12 @@ fn main() {
                 Ok(restored_path_opt) => {
                     if telemetry_mode == telemetry::TelemetryMode::Interactive {
                         if let Some(restored) = restored_path_opt {
-                            println!("Successfully restored: {}", restored.display());
+                            let lang = rfs_core::i18n::current_lang();
+                            println!(
+                                "{}",
+                                lang.tr()
+                                    .format_cli_restored(lang, &restored.display().to_string())
+                            );
                         }
                     }
                     process::exit(0);
