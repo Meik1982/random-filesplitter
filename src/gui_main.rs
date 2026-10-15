@@ -143,12 +143,6 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(window) = window_handle.upgrade() {
             let path_str = window.get_split_file_path().to_string();
             let target_dir_str = window.get_split_target_dir().to_string();
-            let target_prefix = if target_dir_str.trim().is_empty() {
-                None
-            } else {
-                Some(target_dir_str.trim().to_string())
-            };
-
             let path_entries: Vec<PathBuf> = path_str
                 .split(',')
                 .map(|s| s.trim())
@@ -160,6 +154,15 @@ fn main() -> Result<(), slint::PlatformError> {
                 window.set_split_status("Bitte mindestens eine Datei auswählen!".into());
                 return;
             }
+
+            let target_prefix = if target_dir_str.trim().is_empty() {
+                path_entries[0]
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(|p| p.to_string_lossy().to_string())
+            } else {
+                Some(target_dir_str.trim().to_string())
+            };
 
             let parts = (window.get_split_num_parts() as usize).max(path_entries.len());
             let threshold = (window.get_split_threshold() as usize).max(2).min(parts);
@@ -193,6 +196,7 @@ fn main() -> Result<(), slint::PlatformError> {
                         &path_entries,
                         parts,
                         Some(threshold),
+                        decoys,
                         target_prefix.as_deref().map(std::path::Path::new),
                         rfs_core::types::DEFAULT_BLOCK_SIZE,
                         rfs_core::telemetry::TelemetryMode::Silent,
@@ -246,6 +250,22 @@ fn main() -> Result<(), slint::PlatformError> {
                                             names
                                         ));
                                     }
+
+                                    if !multi_res.decoy_paths.is_empty() {
+                                        log.push_str(&format!(
+                                            "🎭 ERZEUGTE RAUSCH-KÖDER ({} CHAFF-DATEIEN):\n",
+                                            multi_res.decoy_paths.len()
+                                        ));
+                                        for (i, p) in multi_res.decoy_paths.iter().enumerate() {
+                                            log.push_str(&format!(
+                                                "  [Köder {}] {}\n",
+                                                i + 1,
+                                                p.display()
+                                            ));
+                                        }
+                                        log.push_str("\n");
+                                    }
+
                                     log.push_str("HINWEIS: Alle Kombinationen können via 'rfs scan' oder den Scanner-Tab auto-entdeckt werden.");
                                     w.set_split_results_log(log.into());
                                 }

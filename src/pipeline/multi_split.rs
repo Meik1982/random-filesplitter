@@ -24,14 +24,15 @@ pub struct MultiSplitResult {
     pub share_paths: Vec<PathBuf>,
     pub payload_subsets: Vec<(String, Vec<PathBuf>)>,
     pub share_size: u64,
+    pub decoy_paths: Vec<PathBuf>,
 }
 
-/// Splits multiple plaintext files into M shares with threshold T over GF(2).
 #[allow(clippy::too_many_arguments)]
 pub fn split_multi_payloads(
     payload_paths: &[PathBuf],
     num_shares: usize,
     threshold: Option<usize>,
+    num_decoys: usize,
     output_dir: Option<&Path>,
     block_size: usize,
     telemetry_mode: TelemetryMode,
@@ -108,7 +109,12 @@ pub fn split_multi_payloads(
     let solved = solve_matrix_policy(&policy)?;
 
     // 4. Generate destination share paths (<token6>.rfs)
-    let out_dir = output_dir.unwrap_or_else(|| Path::new("."));
+    let default_parent = payload_paths[0]
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty());
+    let out_dir = output_dir
+        .or(default_parent)
+        .unwrap_or_else(|| Path::new("."));
     if !out_dir.exists() {
         fs::create_dir_all(out_dir)
             .map_err(|e| format!("Cannot create output dir '{}': {}", out_dir.display(), e))?;
@@ -261,6 +267,23 @@ pub fn split_multi_payloads(
         buf.zeroize();
     }
 
+    // 10b. Generate Chaff Decoys (if requested)
+    let decoy_paths = if num_decoys > 0 {
+        crate::decoy::generate_decoy_files(
+            share_size,
+            num_decoys,
+            true,
+            Some(&out_dir.to_string_lossy()),
+            None,
+            block_size,
+            telemetry_mode,
+            force,
+            false,
+        )?
+    } else {
+        Vec::new()
+    };
+
     // 11. Prepare return data & user-facing report
     let mut payload_subsets: Vec<(String, Vec<PathBuf>)> = Vec::new();
     for (i, comb) in subsets.iter().enumerate() {
@@ -298,11 +321,22 @@ pub fn split_multi_payloads(
                 names_list
             );
         }
+
+        if !decoy_paths.is_empty() {
+            println!(
+                "\n🎭 Generated Decoy Chaff Files ({} Rauschdateien):",
+                decoy_paths.len()
+            );
+            for (i, p) in decoy_paths.iter().enumerate() {
+                println!("  Decoy [{}]: {}", i + 1, p.display());
+            }
+        }
     }
 
     Ok(MultiSplitResult {
         share_paths,
         payload_subsets,
         share_size,
+        decoy_paths,
     })
 }
