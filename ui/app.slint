@@ -1,4 +1,5 @@
 import { Button, Slider, CheckBox, LineEdit, TextEdit, ProgressIndicator, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import "../assets/nasin-nanpa.otf";
 
 component LangPill inherits Rectangle {
     in property <string> code;
@@ -6,7 +7,7 @@ component LangPill inherits Rectangle {
     in property <string> active_code;
     callback clicked_lang(string);
 
-    width: 38px;
+    min-width: 36px;
     height: 24px;
     border-radius: 4px;
     border-width: 1px;
@@ -17,25 +18,30 @@ component LangPill inherits Rectangle {
         clicked => { root.clicked_lang(root.code); }
     }
 
-    Text {
-        text: root.label;
-        font-size: 11px;
-        font-weight: root.code == root.active_code ? 700 : 400;
-        color: root.code == root.active_code ? #58a6ff : #8b949e;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        Text {
+            text: root.label;
+            font-family: root.code == "sp" ? "nasin-nanpa" : "sans-serif";
+            font-size: 11px;
+            font-weight: root.code == root.active_code ? 700 : 400;
+            color: root.code == root.active_code ? #58a6ff : #8b949e;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
     }
 }
 
 export component MainWindow inherits Window {
     title: "RFS - Random File Splitter (v3.1.0 Desktop)";
     icon: @image-url("../assets/icon.png");
-    preferred-width: 840px;
+    preferred-width: 860px;
     preferred-height: 690px;
-    min-width: 720px;
+    min-width: 740px;
     min-height: 580px;
     background: #14161b;
-    default-font-family: "sans-serif";
+    default-font-family: root.current_lang == "sp" ? "nasin-nanpa" : "sans-serif";
 
     in-out property <int> active_tab: 0;
     in-out property <string> current_lang: "en";
@@ -177,6 +183,7 @@ export component MainWindow inherits Window {
                 LangPill { code: "ja"; label: "JA"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
                 LangPill { code: "zh"; label: "ZH"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
                 LangPill { code: "tok"; label: "TOK"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
+                LangPill { code: "sp"; label: "󱥠 SP"; active_code: root.current_lang; clicked_lang(c) => { root.request_set_lang(c); } }
             }
         }
 

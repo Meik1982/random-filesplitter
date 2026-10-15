@@ -86,7 +86,7 @@ pub fn display_help() {
         "  -f, --force                                   Overwrite existing destination files"
     );
     println!("  -q, --quiet, --silent                         Suppress interactive progress (errors only)");
-    println!("  -l, --lang <CODE>                             Language code (en [default], de, es, fr, ja, zh, tok)");
+    println!("  -l, --lang <CODE>                             Language code (en [default], de, es, fr, ja, zh, tok, sp)");
     println!("\nTip: Run 'rfs <subcommand> --help' for detailed options on a specific command.\n");
 }
 
@@ -562,20 +562,20 @@ where
             i += 1;
             if i >= args.len() {
                 return Err(format!(
-                    "Error: Option {} requires a language code (en, de, es, fr, ja, zh, tok).",
+                    "Error: Option {} requires a language code (en, de, es, fr, ja, zh, tok, sp).",
                     arg
                 ));
             }
             if crate::i18n::Lang::from_code(&args[i]).is_none() {
                 return Err(format!(
-                    "Error: Unsupported language '{}'. Supported codes: en, de, es, fr, ja, zh, tok.",
+                    "Error: Unsupported language '{}'. Supported codes: en, de, es, fr, ja, zh, tok, sp.",
                     args[i]
                 ));
             }
         } else if let Some(code) = arg.strip_prefix("--lang=") {
             if crate::i18n::Lang::from_code(code).is_none() {
                 return Err(format!(
-                    "Error: Unsupported language '{}'. Supported codes: en, de, es, fr, ja, zh, tok.",
+                    "Error: Unsupported language '{}'. Supported codes: en, de, es, fr, ja, zh, tok, sp.",
                     code
                 ));
             }

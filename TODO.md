@@ -195,10 +195,11 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - **Multi-Split OPSEC-Parität (`multi_split.rs`):** Gemeinsames Vorab-Slot-Shuffling für echte Shares und Decoys (identische Inode-/Timestamp-Verteilung), Aktivierung von `--mlock` (`lock_memory`/`unlock_memory`), `--direct` (`fadvise`) und Live-/JSON-Telemetrie.
   - **Block-CSPRNG & Unbiased Shuffling:** Vektorisiertes `rng.fill_bytes` statt Einzelbyte-Schleifen in `format.rs`/`trailer.rs`, Rejection-Sampling gegen Modulo-Bias in `shuffle_paths` und echte Jitter-Laufzeitmessung in `harvester.rs`.
   - **Deduplizierung & GUI-Pfad-Resilienz:** Einbindung von `rfs_core` in `src/main.rs` ohne doppelte Modul-Kompilierung sowie kommasicheres Dateipfad-Parsing (`parse_gui_paths`) in `src/gui_main.rs`.
-- [x] **7-Sprachen i18n-Engine & Live-GUI-Sprachumschaltung (`src/i18n.rs`, `ui/app.slint`)**
-  - **Compile-Time-verifizierte Übersetzungen (`Translations`):** Zero-Allocation-Sprachtabellen mit Englisch (`en`) als Standard sowie Deutsch (`de`), Spanisch (`es`), Französisch (`fr`), Japanisch (`ja`), Vereinfachtem Chinesisch (`zh`) und **Toki Pona (`tok`)**.
-  - **Live-Sprachwähler in Slint-GUI:** Interaktive Sprach-Pills (`EN | DE | ES | FR | JA | ZH | TOK`) in der Header-Bar mit sofortiger Umschaltung aller Tabs, Labels, Platzhalter und Informationstheorie-Hinweise.
-  - **CLI & Env-Support:** Unterstützung für `-l, --lang <CODE>` und Umgebungsvariable `RFS_LANG`.
+- [x] **8-Sprachen i18n-Engine inkl. Toki Pona Lautschrift & Sitelen-Pona-Hieroglyphen (`src/i18n.rs`, `ui/app.slint`, `assets/nasin-nanpa.otf`)**
+  - **Compile-Time-verifizierte Übersetzungen (`Translations`):** Zero-Allocation-Sprachtabellen mit Englisch (`en`) als Standard sowie Deutsch (`de`), Spanisch (`es`), Französisch (`fr`), Japanisch (`ja`), Vereinfachtem Chinesisch (`zh`), **Toki Pona Lautschrift (`tok` / sitelen Lasina)** und **Toki Pona Hieroglyphen-Schriftsatz (`sp` / sitelen pona UCSUR `U+F1900..U+F19A3`)**.
+  - **Eingebettete Sitelen-Pona-Schriftart (`assets/nasin-nanpa.otf`):** Direkt ins Slint-Binary kompiliert – rendert echte sitelen-pona-Glyphen out-of-the-box ohne externe System-Font-Abhängigkeit.
+  - **Live-Sprachwähler in Slint-GUI:** Interaktive Sprach-Pills (`EN | DE | ES | FR | JA | ZH | TOK | 󱥠 SP`) in der Header-Bar mit sofortiger Umschaltung aller Tabs, Labels, Platzhalter, Schriftarten und Informationstheorie-Hinweise.
+  - **CLI & Env-Support:** Unterstützung für `-l, --lang <CODE>` (`en`, `de`, `es`, `fr`, `ja`, `zh`, `tok`, `sp`) und Umgebungsvariable `RFS_LANG`.
 
 ---
 

@@ -18,13 +18,15 @@ pub enum Lang {
     Ja,
     /// Simplified Chinese (简体中文)
     Zh,
-    /// Toki Pona (toki pona)
+    /// Toki Pona in Latin script (sitelen Lasina)
     Tok,
+    /// Toki Pona in hieroglyphic script (sitelen pona / UCSUR)
+    Sp,
 }
 
 impl Lang {
     /// All supported languages in display order.
-    pub const ALL: [Lang; 7] = [
+    pub const ALL: [Lang; 8] = [
         Lang::En,
         Lang::De,
         Lang::Es,
@@ -32,6 +34,7 @@ impl Lang {
         Lang::Ja,
         Lang::Zh,
         Lang::Tok,
+        Lang::Sp,
     ];
 
     /// Returns the canonical short ISO/BCP-47 code for this language.
@@ -44,12 +47,20 @@ impl Lang {
             Lang::Ja => "ja",
             Lang::Zh => "zh",
             Lang::Tok => "tok",
+            Lang::Sp => "sp",
         }
     }
 
     /// Parses a language code (case-insensitive, supports locale prefixes like `de_DE.UTF-8`).
     pub fn from_code(raw: &str) -> Option<Self> {
         let cleaned = raw.trim().to_ascii_lowercase();
+        if cleaned == "tok-sp"
+            || cleaned == "tok_sp"
+            || cleaned == "sitelen-pona"
+            || cleaned == "sitelen_pona"
+        {
+            return Some(Lang::Sp);
+        }
         let prefix = cleaned.split(['_', '-', '.']).next().unwrap_or("");
         match prefix {
             "en" | "eng" | "c" | "posix" => Some(Lang::En),
@@ -59,6 +70,7 @@ impl Lang {
             "ja" | "jp" | "jpn" => Some(Lang::Ja),
             "zh" | "zho" | "chi" | "cn" => Some(Lang::Zh),
             "tok" | "tp" | "tokipona" => Some(Lang::Tok),
+            "sp" | "sitelen" | "ucsur" => Some(Lang::Sp),
             _ => None,
         }
     }
@@ -83,6 +95,7 @@ impl Lang {
             Lang::Ja => &TR_JA,
             Lang::Zh => &TR_ZH,
             Lang::Tok => &TR_TOK,
+            Lang::Sp => &TR_SP,
         }
     }
 }
@@ -197,6 +210,10 @@ impl Translations {
                 "ℹ️ sona nanpa: lipu {} li wile e kipisi {} anu mute (M ≥ N + 1).\nkipisi 1 li kalama nasa ChaCha20 tawa len pona.\nnanpa kipisi wile (T) lon kipisi {}: {}..={}",
                 n_files, min_m, m, min_t, max_t
             ),
+            Lang::Sp => format!(
+                "ℹ️ 󱥡 󱤽: 󱤪 {} 󱤧 󱥷 󱤉 󱥻 {} 󱤇 󱤼 (M >= N + 1).\n󱥻 1 󱤧 󱤕 󱤾 ChaCha20 󱥩 󱤥 󱥔.\n󱤽 󱥻 󱥷 (T) 󱤬 󱥻 {}: {}..={}",
+                n_files, min_m, m, min_t, max_t
+            ),
         }
     }
 
@@ -216,6 +233,7 @@ impl Translations {
                 Lang::Ja => format!("選択済み: {} ({})", name, size),
                 Lang::Zh => format!("已选择：{} ({})", name, size),
                 Lang::Tok => format!("lipu wile: {} ({})", name, size),
+                Lang::Sp => format!("󱤪 󱥷: {} ({})", name, size),
             }
         } else {
             match lang {
@@ -238,6 +256,7 @@ impl Translations {
                 Lang::Ja => format!("{} 個のペイロードを選択 (GF(2) 対称マルチ分割)", n_files),
                 Lang::Zh => format!("已选择 {} 个载荷文件（GF(2) 对称多文件分割）", n_files),
                 Lang::Tok => format!("lipu {} li lon (kipisi mute lon nasin GF(2))", n_files),
+                Lang::Sp => format!("󱤪 {} 󱤧 󱤬 (󱥻 󱤼 󱤬 󱤿 GF(2))", n_files),
             }
         }
     }
@@ -707,6 +726,73 @@ pub const TR_TOK: Translations = Translations {
     forge_log_label: "📋 lipu sona pi pali powe:",
 };
 
+/// Toki Pona in sitelen pona hieroglyphic script (UCSUR U+F1900..U+F19A3).
+pub const TR_SP: Translations = Translations {
+    subtitle: "󱤎 RFS - 󱥻 󱤪 󱥍 󱤥 󱥔 (󱥡 󱤽 & 󱤕 󱤾)",
+    tab_split: " 📦 󱥻 (Split) ",
+    tab_restore: " 🔓 󱥳 󱥝 (Restore) ",
+    tab_forge: " 🎭 󱥉 󱦣 (Forge) ",
+
+    split_step1_label: "1. 󱤪 󱥇 󱥩 󱥻 󱤥 (󱤪 󱥳 󱤇 󱤪 󱤼):",
+    split_file_placeholder: "󱥄 󱤇 󱤉 󱤪 󱥳 󱤇 󱤪 󱤼...",
+    split_select_files_btn: "󱥄 󱤇 󱤉 󱤪...",
+    split_file_info_default: "󱥄 󱤇 󱤉 󱤪 󱥩 󱥻.",
+    split_step2_label: "2. 󱥓 󱤪 󱥐 (󱥓 USB 󱤇 󱤰 󱤪):",
+    split_target_placeholder: "󱤿 󱥇: 󱥓 󱥖 󱥍 󱤪 󱥇",
+    split_select_dir_btn: "󱥄 󱤇 󱤉 󱥓...",
+    split_total_shares_prefix: "󱥻 󱤄 (M = ",
+    split_threshold_prefix: "󱥻 󱥷 (T = ",
+    split_threshold_of: " 󱤬 ",
+    split_enable_decoys_label: "󱥄 󱥉 󱤉 󱥻 󱦣 (󱤕 󱤾)",
+    split_decoy_count_prefix: "󱤼 󱥍 󱥻 󱦣 (D = ",
+    split_status_ready: "󱤎 󱤧 󱤘 󱥻",
+    split_status_running: "󱤎 󱤧 󱥻 󱤙 ChaCha20 & SIMD-XOR...",
+    split_status_select_at_least_one: "󱥄 󱤇 󱤉 󱤪 󱥳 󱤇 󱤼!",
+    split_action_btn: "🚀 󱥄 󱥻 󱥔 󱤉 󱤪",
+    split_action_running_btn: "󱤎 󱤧 󱥻...",
+    split_log_label: "📋 󱤪 󱥡 󱥍 󱥻 󱤄 (󱥣 󱥩 󱥳 󱥝):",
+
+    restore_step1_label: "1. 󱥻 RFS (󱥻 2 󱤇 󱤼):",
+    restore_shares_placeholder: "󱥄 󱤇 󱤉 󱥻 .rfs 󱤇 󱥄 󱤃 󱤬 󱥓...",
+    restore_select_shares_btn: "󱥄 󱤇 󱤉 󱥻...",
+    restore_scan_folder_btn: "🔍 󱥄 󱤃 󱤬 󱥓...",
+    restore_auto_restore_btn: "⚡ 󱥄 󱥳 󱥝 󱤄...",
+    restore_detected_default: "󱥄 󱤇 󱤉 󱥻 .rfs 2 󱤇 󱤼.",
+    restore_step2_label: "2. 󱥓 󱥐 󱥩 󱤪 󱥝 (󱤘):",
+    restore_target_placeholder: "󱤿 󱥇: 󱥂 󱥇 󱤬 󱥐 RFS4",
+    restore_target_btn: "󱥓 󱥐...",
+    restore_integrity_label: "󱤮 󱥔 BLKS-384:",
+    restore_badge_pending: "󱤈",
+    restore_badge_valid: "󱥔 [OK]",
+    restore_badge_mismatch: "󱥈 [󱥖 󱤂]",
+    restore_status_ready: "󱤎 󱤧 󱤘 󱥳 󱥝",
+    restore_status_need_2: "󱥻 2 󱤇 󱤼 󱤧 󱥷!",
+    restore_status_running: "󱤎 󱤧 󱥳 󱥝 󱤧 󱤮 󱤉 󱥔 BLKS-384...",
+    restore_status_scanning: "󱤎 󱤧 󱤃 󱤉 󱤟 󱥻 󱥔 󱤬 󱥓...",
+    restore_status_no_sets: "󱤟 󱥻 󱥔 󱤧 󱤬 󱤂.",
+    restore_detected_all_noise: "󱤪 󱤄 󱤧 󱤕 󱤾 󱥨.",
+    restore_action_btn: "🔓 󱥄 󱥳 󱥝 󱤉 󱤪 󱥇",
+    restore_action_running_btn: "󱤎 󱤧 󱥳 󱥝...",
+    restore_log_label: "📋 󱤪 󱥡 󱥍 󱥳 󱥝:",
+
+    forge_step1_label: "1. 󱥻 󱤬 (󱥻 󱥍 󱤑 󱤆):",
+    forge_shares_placeholder: "󱥄 󱤇 󱤉 󱥻 .rfs 󱤬...",
+    forge_select_shares_btn: "󱥄 󱤇 󱤉 󱥻...",
+    forge_step2_label: "2. 󱤪 󱦣 󱥔 (󱥠 󱤻 󱤇 󱤪 󱤨):",
+    forge_decoy_placeholder: "󱥄 󱤇 󱤉 󱤪 󱦣...",
+    forge_select_decoy_btn: "󱥄 󱤇 󱤉 󱤪 󱦣...",
+    forge_step3_label: "3. 󱥂 󱥍 󱥻 󱦣 󱥝 (C_fake):",
+    forge_output_placeholder: "󱥂 󱥍 󱥻 󱦣 (counterpart_fake.rfs)...",
+    forge_select_output_btn: "󱥄 󱤈 󱤬...",
+    forge_status_ready: "󱤎 󱤧 󱤘 󱥉 󱦣",
+    forge_status_need_1: "󱥻 󱤬 1 󱤇 󱤼 󱤧 󱥷!",
+    forge_status_running: "󱤎 󱤧 󱥉 󱤉 󱥻 󱦣...",
+    forge_status_done: "󱥻 󱦣 󱤧 󱤬 [OK]",
+    forge_action_btn: "🎭 󱥄 󱥉 󱤉 󱥻 󱦣",
+    forge_action_running_btn: "󱤎 󱤧 󱥉...",
+    forge_log_label: "📋 󱤪 󱥡 󱥍 󱥉 󱦣:",
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,11 +809,14 @@ mod tests {
         assert_eq!(Lang::from_code("jp"), Some(Lang::Ja));
         assert_eq!(Lang::from_code("zh-CN"), Some(Lang::Zh));
         assert_eq!(Lang::from_code("tok"), Some(Lang::Tok));
+        assert_eq!(Lang::from_code("sp"), Some(Lang::Sp));
+        assert_eq!(Lang::from_code("tok-sp"), Some(Lang::Sp));
+        assert_eq!(Lang::from_code("sitelen-pona"), Some(Lang::Sp));
         assert_eq!(Lang::from_code("unknown"), None);
     }
 
     #[test]
-    fn test_all_seven_languages_have_non_empty_strings() {
+    fn test_all_eight_languages_have_non_empty_strings() {
         for lang in Lang::ALL {
             let tr = lang.tr();
             assert!(!tr.subtitle.is_empty());
