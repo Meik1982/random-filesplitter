@@ -8,12 +8,13 @@ use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
 use crate::crypto::{xor_in_place, ChaChaRng};
+use crate::decoy::write_decoy_files_to_paths;
 use crate::entropy::UniversalEntropyHarvester;
 use crate::matrix::policy::MatrixPolicy;
 use crate::matrix::solver::solve_matrix_policy;
 use crate::matrix::trailer::{synthesize_multi_target_trailers, TargetPayloadMeta};
-use crate::naming::generate_unique_hex_tokens;
-use crate::telemetry::{format_bytes, TelemetryMode};
+use crate::naming::{generate_unique_hex_tokens, shuffle_paths};
+use crate::telemetry::{format_bytes, Telemetry, TelemetryMode};
 use crate::types::{RFS4_ALIGN_BLOCK_SIZE, RFS4_TRAILER_SIZE};
 use blks_core::BlksHasher;
 
@@ -37,8 +38,8 @@ pub fn split_multi_payloads(
     block_size: usize,
     telemetry_mode: TelemetryMode,
     force: bool,
-    _direct_io: bool,
-    _mlock: bool,
+    direct_io: bool,
+    mlock: bool,
 ) -> Result<MultiSplitResult, String> {
     if payload_paths.is_empty() {
         return Err("At least 1 payload file required for split".to_string());
@@ -120,14 +121,22 @@ pub fn split_multi_payloads(
             .map_err(|e| format!("Cannot create output dir '{}': {}", out_dir.display(), e))?;
     }
 
-    let tokens = generate_unique_hex_tokens(m);
-    let mut share_paths = Vec::new();
-    for tok in tokens {
-        share_paths.push(out_dir.join(format!("{}.rfs", tok)));
+    let total_files = m + num_decoys;
+    let tokens = generate_unique_hex_tokens(total_files);
+    let mut all_paths: Vec<PathBuf> = tokens
+        .into_iter()
+        .map(|tok| out_dir.join(format!("{}.rfs", tok)))
+        .collect();
+
+    if num_decoys > 0 {
+        shuffle_paths(&mut all_paths);
     }
 
+    let share_paths = all_paths[0..m].to_vec();
+    let decoy_paths = all_paths[m..total_files].to_vec();
+
     if !force {
-        for path in &share_paths {
+        for path in share_paths.iter().chain(decoy_paths.iter()) {
             if path.exists() {
                 return Err(format!(
                     "Output file '{}' already exists. Use --force to overwrite.",
@@ -146,6 +155,7 @@ pub fn split_multi_payloads(
             .truncate(true)
             .open(path)
             .map_err(|e| format!("Cannot open share '{}': {}", path.display(), e))?;
+        crate::fadvise::advise_sequential(&file);
         share_writers.push(BufWriter::with_capacity(block_size.min(1024 * 1024), file));
     }
 
@@ -155,12 +165,15 @@ pub fn split_multi_payloads(
     for path in payload_paths {
         let f = File::open(path)
             .map_err(|e| format!("Cannot open input '{}': {}", path.display(), e))?;
+        crate::fadvise::advise_sequential(&f);
         payload_readers.push(BufReader::with_capacity(block_size.min(1024 * 1024), f));
         hashers.push(BlksHasher::new());
     }
 
-    let (rng_key, rng_nonce) = UniversalEntropyHarvester::harvest_seed();
+    let (mut rng_key, mut rng_nonce) = UniversalEntropyHarvester::harvest_seed();
     let mut csprng = ChaChaRng::new(&rng_key, &rng_nonce);
+    rng_key.zeroize();
+    rng_nonce.zeroize();
 
     let num_bases = solved.num_random_bases;
     let mut bytes_processed = 0u64;
@@ -168,6 +181,30 @@ pub fn split_multi_payloads(
     let mut chunk_p = vec![vec![0u8; block_size]; k];
     let mut chunk_b = vec![vec![0u8; block_size]; num_bases];
     let mut chunk_c = vec![vec![0u8; block_size]; m];
+
+    if mlock {
+        let mut locked_count = 0usize;
+        for buf in chunk_p.iter().chain(chunk_b.iter()).chain(chunk_c.iter()) {
+            if crate::memlock::lock_memory(buf) {
+                locked_count += 1;
+            }
+        }
+        if telemetry_mode == TelemetryMode::Interactive {
+            if locked_count > 0 {
+                eprintln!(
+                    "[OPSEC] Memory locking active: {} matrix buffers locked in RAM ({}) - swap paging protected.",
+                    locked_count,
+                    format_bytes((locked_count * block_size) as u64)
+                );
+            } else {
+                eprintln!(
+                    "[WARNING] mlock denied (check ulimit -l). Continuing without swap locking."
+                );
+            }
+        }
+    }
+
+    let mut telemetry = Telemetry::new(telemetry_mode, "MultiSplit", Some(payload_stream_size));
 
     // 7. Stream payload blocks and compute matrix shares
     while bytes_processed < payload_stream_size {
@@ -220,10 +257,20 @@ pub fn split_multi_payloads(
             share_writers[i]
                 .write_all(out_slice)
                 .map_err(|e| format!("Write error to '{}': {}", share_paths[i].display(), e))?;
+            if direct_io {
+                crate::fadvise::advise_drop_cache(
+                    share_writers[i].get_ref(),
+                    bytes_processed as i64,
+                    chunk_len as i64,
+                );
+            }
         }
 
         bytes_processed += chunk_len as u64;
+        telemetry.update(bytes_processed);
     }
+
+    telemetry.finish(bytes_processed, m, None);
 
     // 8. Finalize BLKS-384 digests and prepare target trailer specifications
     let mut target_specs = Vec::new();
@@ -259,30 +306,33 @@ pub fn split_multi_payloads(
     // Cleanup buffers
     for buf in &mut chunk_p {
         buf.zeroize();
+        if mlock {
+            crate::memlock::unlock_memory(buf);
+        }
     }
     for buf in &mut chunk_b {
         buf.zeroize();
+        if mlock {
+            crate::memlock::unlock_memory(buf);
+        }
     }
     for buf in &mut chunk_c {
         buf.zeroize();
+        if mlock {
+            crate::memlock::unlock_memory(buf);
+        }
     }
 
-    // 10b. Generate Chaff Decoys (if requested)
-    let decoy_paths = if num_decoys > 0 {
-        crate::decoy::generate_decoy_files(
+    // 10b. Write Chaff Decoys to pre-shuffled paths (if requested)
+    if !decoy_paths.is_empty() {
+        write_decoy_files_to_paths(
+            &decoy_paths,
             share_size,
-            num_decoys,
-            true,
-            Some(&out_dir.to_string_lossy()),
-            None,
             block_size,
             telemetry_mode,
-            force,
-            false,
-        )?
-    } else {
-        Vec::new()
-    };
+            direct_io,
+        )?;
+    }
 
     // 11. Prepare return data & user-facing report
     let mut payload_subsets: Vec<(String, Vec<PathBuf>)> = Vec::new();
@@ -316,7 +366,7 @@ pub fn split_multi_payloads(
                 .join(", ");
             println!("  🎯 Payload: \"{}\"", name);
             println!(
-                "     Benötigte Shares ({}-Way): [{}]\n",
+                "     Required Shares ({}-Way): [{}]\n",
                 shares.len(),
                 names_list
             );
@@ -324,7 +374,7 @@ pub fn split_multi_payloads(
 
         if !decoy_paths.is_empty() {
             println!(
-                "\n🎭 Generated Decoy Chaff Files ({} Rauschdateien):",
+                "\n🎭 Generated Decoy Chaff Files ({} noise files):",
                 decoy_paths.len()
             );
             for (i, p) in decoy_paths.iter().enumerate() {

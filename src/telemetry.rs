@@ -40,13 +40,13 @@ impl Telemetry {
         }
     }
 
-    /// Liefert den aktiven Telemetrie-Modus
+    /// Returns the active telemetry mode.
     #[allow(dead_code)]
     pub fn mode(&self) -> TelemetryMode {
         self.mode
     }
 
-    /// Aktualisiert den Fortschritt (zeitlich gedrosselt auf max. 10 Hz / 100ms)
+    /// Updates progress (throttled to max 10 Hz / 100ms).
     pub fn update(&mut self, processed_bytes: u64) {
         if self.mode == TelemetryMode::Silent {
             return;
@@ -76,7 +76,7 @@ impl Telemetry {
         }
     }
 
-    /// Schließt den Vorgang ab und gibt Zusammenfassung / Abschluss-Event aus
+    /// Completes the operation and emits summary / completion event.
     pub fn finish(&self, processed_bytes: u64, num_parts: usize, checksum: Option<(&str, &str)>) {
         if self.mode == TelemetryMode::Silent {
             return;
@@ -109,7 +109,7 @@ impl Telemetry {
         }
     }
 
-    /// Gibt ein standardisiertes JSON-Fehler-Event aus (nur im JSON-Modus)
+    /// Emits a standardized JSON error event (JSON mode only).
     pub fn error(&self, message: &str) {
         if self.mode == TelemetryMode::Json {
             let escaped = message.replace('"', "\\\"").replace('\n', " ");
@@ -211,7 +211,7 @@ impl Telemetry {
             }
         } else {
             format!(
-                "[RFS {} Stream] {} übertragen  {:>10}",
+                "[RFS {} Stream] {} transferred  {:>10}",
                 self.action,
                 format_bytes(processed),
                 speed_str
@@ -231,7 +231,7 @@ impl Telemetry {
     }
 }
 
-/// Zeichnet einen 24-Zeichen breiten ANSI-Fortschrittsbalken
+/// Renders a 24-character wide ANSI progress bar.
 fn render_ansi_bar(ratio: f64, width: usize) -> String {
     let filled = (ratio * width as f64).round() as usize;
     let filled = filled.min(width);
@@ -250,7 +250,7 @@ fn render_ansi_bar(ratio: f64, width: usize) -> String {
     bar
 }
 
-/// Formatiert Bytes menschenlesbar (z. B. "12.4 MB", "1.25 GB")
+/// Formats byte counts into human-readable units (e.g., "12.4 MB", "1.25 GB").
 pub fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
@@ -271,7 +271,7 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Formatiert Durchsatz (z. B. "1.85 GB/s")
+/// Formats throughput in bytes/second (e.g., "1.85 GB/s").
 fn format_speed(speed_bps: f64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
@@ -288,7 +288,7 @@ fn format_speed(speed_bps: f64) -> String {
     }
 }
 
-/// Formatiert die verbleibende Zeit (z. B. "12s", "1m 30s")
+/// Formats remaining time (e.g., "12s", "1m30s").
 fn format_eta(eta_s: f64) -> String {
     if eta_s <= 0.0 {
         return "0s".to_string();

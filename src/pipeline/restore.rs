@@ -15,9 +15,7 @@ use crate::crypto::xor_in_place;
 use crate::format::{decode_footer_n_way, RfsMetadata};
 use crate::naming::{check_destination_collision, deduce_restore_target};
 use crate::telemetry::{Telemetry, TelemetryMode};
-use crate::types::{
-    BLKS_DIGEST_SIZE, RFS2_FOOTER_SIZE, RFS3_FOOTER_SIZE, RFS4_MAGIC, RFS4_TRAILER_SIZE,
-};
+use crate::types::{RFS2_FOOTER_SIZE, RFS3_FOOTER_SIZE, RFS4_TRAILER_SIZE};
 
 /// Performs cryptographic reconstruction or integrity verification of N share files.
 ///
@@ -65,73 +63,24 @@ pub fn restore_file(
     }
 
     let len1 = file_len.unwrap();
-    let trailer_len = RFS4_TRAILER_SIZE;
-    if len1 < trailer_len as u64 {
-        return Err("File size smaller than RFS trailer.".to_string());
+    if len1 < RFS2_FOOTER_SIZE as u64 {
+        return Err("File size smaller than minimum RFS footer.".to_string());
     }
 
-    // 1. Read last 64 bytes of all N files
+    // 1. Read trailing footer window (up to 4 KiB + 64B trailer) of all N files and decode metadata
+    let tail_len = (len1 as usize).min(RFS4_TRAILER_SIZE + 4096);
     let mut trailers: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
     for (idx, f) in files.iter_mut().enumerate() {
-        f.seek(SeekFrom::End(-(trailer_len as i64)))
+        f.seek(SeekFrom::End(-(tail_len as i64)))
             .map_err(|e| format!("Seek share {}: {}", idx + 1, e))?;
-        let mut t = vec![0u8; trailer_len];
+        let mut t = vec![0u8; tail_len];
         f.read_exact(&mut t)
             .map_err(|e| format!("Read tail share {}: {}", idx + 1, e))?;
         trailers.push(t);
     }
 
-    // XOR the last 64 bytes
-    let mut xor64 = [0u8; RFS4_TRAILER_SIZE];
-    xor64.copy_from_slice(&trailers[0]);
-    for t in &trailers[1..] {
-        for i in 0..RFS4_TRAILER_SIZE {
-            xor64[i] ^= t[i];
-        }
-    }
-
-    let meta = if xor64[0..4] == RFS4_MAGIC {
-        let size = u64::from_le_bytes(xor64[6..14].try_into().unwrap());
-        let mut blks = [0u8; BLKS_DIGEST_SIZE];
-        blks.copy_from_slice(&xor64[14..62]);
-        let fn_len = u16::from_le_bytes(xor64[62..64].try_into().unwrap()) as usize;
-
-        let filename = if fn_len > 0 {
-            if len1 < (trailer_len + fn_len) as u64 {
-                return Err("File size too small for embedded RFS4 filename.".to_string());
-            }
-            let mut fn_tails: Vec<Vec<u8>> = Vec::with_capacity(n_parts);
-            for (idx, f) in files.iter_mut().enumerate() {
-                f.seek(SeekFrom::End(-((trailer_len + fn_len) as i64)))
-                    .map_err(|e| format!("Seek filename share {}: {}", idx + 1, e))?;
-                let mut fn_buf = vec![0u8; fn_len];
-                f.read_exact(&mut fn_buf)
-                    .map_err(|e| format!("Read filename share {}: {}", idx + 1, e))?;
-                fn_tails.push(fn_buf);
-            }
-            let mut xor_fn = fn_tails[0].clone();
-            for t in &fn_tails[1..] {
-                for i in 0..fn_len {
-                    xor_fn[i] ^= t[i];
-                }
-            }
-            String::from_utf8(xor_fn).unwrap_or_else(|_| "restored.bin".to_string())
-        } else {
-            "restored.bin".to_string()
-        };
-
-        xor64.zeroize();
-        RfsMetadata::Rfs4 {
-            expected_blks: blks,
-            original_size: size,
-            filename,
-            filename_len: fn_len as u16,
-        }
-    } else {
-        xor64.zeroize();
-        let tail_refs: Vec<&[u8]> = trailers.iter().map(|t| t.as_slice()).collect();
-        decode_footer_n_way(&tail_refs)?
-    };
+    let tail_refs: Vec<&[u8]> = trailers.iter().map(|t| t.as_slice()).collect();
+    let meta = decode_footer_n_way(&tail_refs)?;
 
     let original_size = meta.original_size();
     let min_needed_len = match meta {

@@ -3,7 +3,48 @@
 
 slint::include_modules!();
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Parses a comma-separated list of file paths from a GUI input field while preserving
+/// filenames that legitimately contain commas (by checking filesystem existence greedily).
+fn parse_gui_paths(raw: &str) -> Vec<PathBuf> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if Path::new(trimmed).exists() {
+        return vec![PathBuf::from(trimmed)];
+    }
+
+    let raw_parts: Vec<&str> = trimmed.split(',').collect();
+    let mut results = Vec::new();
+    let mut i = 0;
+
+    while i < raw_parts.len() {
+        let mut candidate = raw_parts[i].trim().to_string();
+        if candidate.is_empty() {
+            i += 1;
+            continue;
+        }
+        let mut matched_end = i;
+        if !Path::new(&candidate).exists() {
+            let mut acc = candidate.clone();
+            for (j, part) in raw_parts.iter().enumerate().skip(i + 1) {
+                acc.push(',');
+                acc.push_str(part);
+                if Path::new(acc.trim()).exists() {
+                    candidate = acc.trim().to_string();
+                    matched_end = j;
+                    break;
+                }
+            }
+        }
+        results.push(PathBuf::from(candidate));
+        i = matched_end + 1;
+    }
+
+    results
+}
 
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
@@ -84,11 +125,7 @@ fn main() -> Result<(), slint::PlatformError> {
     main_window.on_request_shares_changed(move |m_parts| {
         if let Some(window) = window_handle.upgrade() {
             let path_str = window.get_split_file_path().to_string();
-            let n_files = path_str
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .count();
+            let n_files = parse_gui_paths(&path_str).len();
 
             let m = m_parts as usize;
             if n_files > 1 {
@@ -143,12 +180,7 @@ fn main() -> Result<(), slint::PlatformError> {
         if let Some(window) = window_handle.upgrade() {
             let path_str = window.get_split_file_path().to_string();
             let target_dir_str = window.get_split_target_dir().to_string();
-            let path_entries: Vec<PathBuf> = path_str
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(PathBuf::from)
-                .collect();
+            let path_entries: Vec<PathBuf> = parse_gui_paths(&path_str);
 
             if path_entries.is_empty() {
                 window.set_split_status("Bitte mindestens eine Datei auswählen!".into());
@@ -263,7 +295,7 @@ fn main() -> Result<(), slint::PlatformError> {
                                                 p.display()
                                             ));
                                         }
-                                        log.push_str("\n");
+                                        log.push('\n');
                                     }
 
                                     log.push_str("HINWEIS: Alle Kombinationen können via 'rfs scan' oder den Scanner-Tab auto-entdeckt werden.");
@@ -279,8 +311,9 @@ fn main() -> Result<(), slint::PlatformError> {
                         }
                     });
                 } else {
+                    let single_source = path_entries[0].to_string_lossy().to_string();
                     let res = rfs_core::pipeline::split_stream_or_file(
-                        &path_str,
+                        &single_source,
                         None,
                         parts,
                         decoys,
@@ -598,11 +631,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 Some(target_dir_str.trim().to_string())
             };
 
-            let part_paths: Vec<PathBuf> = input_str
-                .split(',')
-                .map(|s| PathBuf::from(s.trim()))
-                .filter(|p| !p.as_os_str().is_empty())
-                .collect();
+            let part_paths: Vec<PathBuf> = parse_gui_paths(&input_str);
 
             if part_paths.len() < 2 {
                 window.set_restore_status("Mindestens 2 Shares erforderlich!".into());
@@ -726,11 +755,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let decoy_str = window.get_forge_decoy_input().to_string();
             let out_str = window.get_forge_output_path().to_string();
 
-            let share_paths: Vec<PathBuf> = shares_str
-                .split(',')
-                .map(|s| PathBuf::from(s.trim()))
-                .filter(|p| !p.as_os_str().is_empty())
-                .collect();
+            let share_paths: Vec<PathBuf> = parse_gui_paths(&shares_str);
             let decoy_path = PathBuf::from(decoy_str.trim());
             let out_path = PathBuf::from(out_str.trim());
 

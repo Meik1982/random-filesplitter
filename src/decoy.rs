@@ -5,7 +5,7 @@ use zeroize::Zeroize;
 
 use crate::crypto::ChaChaRng;
 use crate::entropy::UniversalEntropyHarvester;
-use crate::naming::generate_unique_hex_tokens;
+use crate::naming::{generate_unique_hex_tokens, strip_rfs_suffix};
 use crate::telemetry::{Telemetry, TelemetryMode};
 use crate::types::{self, RFS4_ALIGN_BLOCK_SIZE, RFS4_TRAILER_SIZE};
 
@@ -38,16 +38,7 @@ pub fn determine_decoy_size(
         let file_size = meta.len();
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        let is_rfs = if file_name.ends_with(".rfs")
-            || (file_name.contains(".part") && file_name.ends_with(".rfs"))
-        {
-            true
-        } else if let Some(idx) = file_name.rfind(".rfs") {
-            let suffix = &file_name[idx + 4..];
-            !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit())
-        } else {
-            false
-        };
+        let is_rfs = strip_rfs_suffix(file_name).is_some();
 
         let (target_size, rfs_detected) = if is_rfs {
             (file_size, true)
@@ -88,35 +79,7 @@ pub fn determine_decoy_size(
             }
         }
 
-        let base_name = if is_rfs {
-            if let Some(idx) = file_name.rfind(".rfs") {
-                let suffix = &file_name[idx + 4..];
-                if suffix.chars().all(|c| c.is_ascii_digit()) {
-                    file_name[..idx].to_string()
-                } else if let Some(before) = file_name.strip_suffix(".rfs") {
-                    if let Some(dot_idx) = before.rfind('.') {
-                        let tok = &before[dot_idx + 1..];
-                        if (tok.len() == 4 || tok.len() == 6)
-                            && tok.chars().all(|c| c.is_ascii_hexdigit())
-                            || tok.starts_with("part")
-                            || tok.starts_with("decoy")
-                        {
-                            before[..dot_idx].to_string()
-                        } else {
-                            before.to_string()
-                        }
-                    } else {
-                        before.to_string()
-                    }
-                } else {
-                    file_name.to_string()
-                }
-            } else {
-                file_name.to_string()
-            }
-        } else {
-            file_name.to_string()
-        };
+        let base_name = strip_rfs_suffix(file_name).unwrap_or(file_name).to_string();
 
         return Ok((target_size, Some(base_name)));
     }

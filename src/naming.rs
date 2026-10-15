@@ -25,7 +25,7 @@ pub fn generate_unique_hex_tokens(count: usize) -> Vec<String> {
     tokens
 }
 
-/// Shuffles paths in-place via ChaCha20 Fisher-Yates shuffle.
+/// Shuffles paths in-place via unbiased ChaCha20 Fisher-Yates shuffle (rejection sampling).
 pub fn shuffle_paths(paths: &mut [PathBuf]) {
     if paths.len() <= 1 {
         return;
@@ -36,10 +36,35 @@ pub fn shuffle_paths(paths: &mut [PathBuf]) {
     nonce.zeroize();
 
     for i in (1..paths.len()).rev() {
-        let mut rnd_u32 = [0u8; 4];
-        rng.fill_bytes(&mut rnd_u32);
-        let j = (u32::from_le_bytes(rnd_u32) as usize) % (i + 1);
+        let bound = (i + 1) as u32;
+        let threshold = u32::MAX - (u32::MAX % bound);
+        let j = loop {
+            let mut rnd_u32 = [0u8; 4];
+            rng.fill_bytes(&mut rnd_u32);
+            let val = u32::from_le_bytes(rnd_u32);
+            if val < threshold {
+                break (val % bound) as usize;
+            }
+        };
         paths.swap(i, j);
+    }
+}
+
+/// Sanitizes an embedded filename from an RFS4 footer to prevent path traversal (`../`, `/`, `\`)
+/// or control-character injection when restoring files without an explicit `-o` target.
+pub fn sanitize_embedded_filename(raw: &str) -> String {
+    // Normalise Windows and Unix separators to '/' and take the last non-empty segment
+    let cleaned: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let basename = cleaned
+        .rsplit(['/', '\\'])
+        .find(|seg| !seg.is_empty() && *seg != "." && *seg != "..")
+        .unwrap_or("restored.bin")
+        .trim();
+
+    if basename.is_empty() || basename == "." || basename == ".." {
+        "restored.bin".to_string()
+    } else {
+        basename.to_string()
     }
 }
 
@@ -97,6 +122,31 @@ pub fn determine_split_paths(
     }
 }
 
+/// Strips known RFS suffixes (`.rfs`, `.rfs<N>`, `.<hex6>.rfs`, `.part<N>.rfs`, `.decoy<N>.rfs`)
+/// from a filename or path string and returns the base stem if an RFS suffix was matched.
+pub fn strip_rfs_suffix(p_str: &str) -> Option<&str> {
+    if let Some(idx) = p_str.rfind(".rfs") {
+        let suffix = &p_str[idx + 4..];
+        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+            return Some(&p_str[..idx]);
+        }
+        if let Some(before) = p_str.strip_suffix(".rfs") {
+            if let Some(dot_idx) = before.rfind('.') {
+                let tok = &before[dot_idx + 1..];
+                let is_hex_token = (tok.len() == 4 || tok.len() == 6)
+                    && tok.chars().all(|c| c.is_ascii_hexdigit());
+                let is_part_token =
+                    tok.starts_with("part") || tok.starts_with("rfs") || tok.starts_with("decoy");
+                if is_hex_token || is_part_token {
+                    return Some(&before[..dot_idx]);
+                }
+            }
+            return Some(before);
+        }
+    }
+    p_str.strip_suffix(".part1.rfs")
+}
+
 /// Deduces target output path for restoration (`restore`).
 pub fn deduce_restore_target(
     part_paths: &[PathBuf],
@@ -110,42 +160,18 @@ pub fn deduce_restore_target(
     } else if let Some(p) = output_target {
         Some(PathBuf::from(p))
     } else if let Some(meta_fn) = filename_from_meta {
+        let safe_fn = sanitize_embedded_filename(meta_fn);
         let parent = part_paths[0].parent().unwrap_or(Path::new(""));
         if parent.as_os_str().is_empty() {
-            Some(PathBuf::from(meta_fn))
+            Some(PathBuf::from(safe_fn))
         } else {
-            Some(parent.join(meta_fn))
+            Some(parent.join(safe_fn))
         }
     } else {
         let p_str = part_paths[0].to_str().unwrap_or("restored.bin");
-        let deduced = if let Some(idx) = p_str.rfind(".rfs") {
-            let suffix = &p_str[idx + 4..];
-            if suffix.chars().all(|c| c.is_ascii_digit()) {
-                PathBuf::from(&p_str[..idx])
-            } else if let Some(before) = p_str.strip_suffix(".rfs") {
-                if let Some(dot_idx) = before.rfind('.') {
-                    let token_candidate = &before[dot_idx + 1..];
-                    let is_hex_token = (token_candidate.len() == 4 || token_candidate.len() == 6)
-                        && token_candidate.chars().all(|c| c.is_ascii_hexdigit());
-                    let is_part_token = token_candidate.starts_with("part")
-                        || token_candidate.starts_with("rfs")
-                        || token_candidate.starts_with("decoy");
-                    if is_hex_token || is_part_token {
-                        PathBuf::from(&before[..dot_idx])
-                    } else {
-                        PathBuf::from(before)
-                    }
-                } else {
-                    PathBuf::from(before)
-                }
-            } else {
-                PathBuf::from(format!("{}.restored", p_str))
-            }
-        } else if let Some(stripped) = p_str.strip_suffix(".part1.rfs") {
-            PathBuf::from(stripped)
-        } else {
-            PathBuf::from(format!("{}.restored", p_str))
-        };
+        let deduced = strip_rfs_suffix(p_str)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(format!("{}.restored", p_str)));
         Some(deduced)
     }
 }
@@ -197,5 +223,31 @@ mod tests {
         let parts = vec![PathBuf::from("a.rfs"), PathBuf::from("b.rfs")];
         assert!(check_destination_collision(Path::new("a.rfs"), &parts).is_err());
         assert!(check_destination_collision(Path::new("c.bin"), &parts).is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_embedded_filename_prevents_path_traversal() {
+        assert_eq!(sanitize_embedded_filename("document.pdf"), "document.pdf");
+        assert_eq!(sanitize_embedded_filename("../../etc/passwd"), "passwd");
+        assert_eq!(
+            sanitize_embedded_filename("/tmp/evil/payload.sh"),
+            "payload.sh"
+        );
+        assert_eq!(
+            sanitize_embedded_filename("..\\..\\Windows\\System32\\cmd.exe"),
+            "cmd.exe"
+        );
+        assert_eq!(sanitize_embedded_filename("../../.."), "restored.bin");
+        assert_eq!(sanitize_embedded_filename("."), "restored.bin");
+        assert_eq!(sanitize_embedded_filename(""), "restored.bin");
+        assert_eq!(sanitize_embedded_filename("///"), "restored.bin");
+
+        let parts = vec![
+            PathBuf::from("/safe/dir/a1b2c3.rfs"),
+            PathBuf::from("/safe/dir/d4e5f6.rfs"),
+        ];
+        let target =
+            deduce_restore_target(&parts, None, Some("../../../etc/shadow"), false, false).unwrap();
+        assert_eq!(target, PathBuf::from("/safe/dir/shadow"));
     }
 }

@@ -88,18 +88,19 @@ fn test_fuzz_pathological_size_and_integer_overflows() {
     // Append 10 bytes of filename
     let mut full = vec![0x78u8; 10];
     full.extend_from_slice(&pathological);
+    let zero_share = vec![0u8; full.len()];
 
-    let refs: [&[u8]; 1] = [&full];
+    let refs: [&[u8]; 2] = [&full, &zero_share];
     let res = decode_footer_n_way(&refs);
 
-    // Parsing succeeds, but inspect original_size
-    if let Ok(meta) = res {
-        assert_eq!(meta.original_size(), u64::MAX);
-    }
+    // Parsing succeeds, and inspect original_size
+    let meta = res.expect("Valid 2-share trailer with u64::MAX size should parse metadata");
+    assert_eq!(meta.original_size(), u64::MAX);
 
-    // Now test with filename length u16::MAX but payload slice smaller
+    // Now test with filename length u16::MAX but payload slice smaller (64 bytes)
     pathological[62..64].copy_from_slice(&u16::MAX.to_le_bytes());
-    let refs_truncated: [&[u8]; 1] = [&pathological];
+    let zero_64 = vec![0u8; RFS4_TRAILER_SIZE];
+    let refs_truncated: [&[u8]; 2] = [&pathological, &zero_64];
     let res_truncated = decode_footer_n_way(&refs_truncated);
     assert!(
         res_truncated.is_err(),

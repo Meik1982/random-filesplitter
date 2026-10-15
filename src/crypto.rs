@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_simd_xor_correctness() {
-        let mut dest = vec![0xAAu8; 127]; // Ungerade Länge zur Prüfung aller Ränder
+        let mut dest = vec![0xAAu8; 127]; // Odd length to exercise all scalar/vector boundaries
         let src = vec![0x55u8; 127];
 
         xor_in_place(&mut dest, &src);
@@ -140,7 +140,7 @@ mod tests {
         // 0xAA ^ 0x55 == 0xFF
         assert_eq!(dest, vec![0xFFu8; 127]);
 
-        // Nochmal xor mit src -> muss wieder 0xAA ergeben
+        // Second XOR with src must restore 0xAA
         xor_in_place(&mut dest, &src);
         assert_eq!(dest, vec![0xAAu8; 127]);
     }
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_simd_xor_all_lengths_and_offsets() {
-        // Prüft Längen von 0 bis 512 Bytes (deckt 0, 1..31 Skalarreste, 32/64 Vektorblöcke ab)
+        // Test lengths from 0 to 512 bytes (covers 0, 1..31 scalar remainders, 32/64 vector blocks)
         for len in 0..=512 {
             let mut dest = vec![0u8; len];
             let src: Vec<u8> = (0..len).map(|i| (i * 17 + 5) as u8).collect();
@@ -170,15 +170,15 @@ mod tests {
                 assert_eq!(
                     dest[i],
                     orig[i] ^ src[i],
-                    "Fehler bei Länge {} an Index {}",
+                    "Mismatch at length {} index {}",
                     len,
                     i
                 );
             }
 
-            // Zweites XOR muss exakt orig wiederherstellen
+            // Second XOR must restore exact original
             xor_in_place(&mut dest, &src);
-            assert_eq!(dest, orig, "Inversion fehlgeschlagen bei Länge {}", len);
+            assert_eq!(dest, orig, "Inversion failed at length {}", len);
         }
     }
 }

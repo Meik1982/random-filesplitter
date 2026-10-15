@@ -3,26 +3,11 @@
 
 #![warn(missing_docs)]
 
-mod benchmark;
-mod cli;
-mod crypto;
-mod decoy;
-mod entropy;
-mod fadvise;
-mod forge;
-mod format;
-mod matrix;
-mod memlock;
-mod naming;
-mod pipeline;
-mod scanner;
-mod telemetry;
-mod types;
-
 use std::env;
 use std::process;
 
-use cli::{display_help, display_version, parse_cli_args, CliCommand};
+use rfs_core::cli::{display_help, display_version, parse_cli_args, CliCommand};
+use rfs_core::{benchmark, cli, decoy, entropy, forge, pipeline, scanner, telemetry};
 
 fn main() {
     let args: Vec<String> = env::args().collect();

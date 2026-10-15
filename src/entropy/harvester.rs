@@ -1,6 +1,6 @@
 //! Hardware-level entropy harvesting with a 2 MB Sattolo cache-line permutation pool.
 
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// 32K elements * 64 bytes (1 cache line) = 2 MB buffer
 /// Exceeds L1 and L2 caches to generate genuine hardware and bus latency
@@ -38,10 +38,15 @@ impl UniversalEntropyHarvester {
         getrandom::getrandom(key.as_mut_slice()).expect("OS CSPRNG error for key");
         getrandom::getrandom(nonce.as_mut_slice()).expect("OS CSPRNG error for nonce");
 
-        // 2. Defense-in-depth: Mix in CPU jitter and high-resolution timer
-        let now = Instant::now();
-        let nanos = now.elapsed().as_nanos();
+        // 2. Defense-in-depth: Mix in CPU jitter and high-resolution timers
+        let start = Instant::now();
         let jitter = Self::sample_cpu_jitter();
+        let elapsed_nanos = start.elapsed().as_nanos();
+        let wall_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let nanos = elapsed_nanos ^ wall_nanos.rotate_left(17);
 
         for (i, b) in key.iter_mut().enumerate() {
             *b ^= ((nanos >> (i * 2)) as u8) ^ jitter[i % jitter.len()];

@@ -63,9 +63,7 @@ pub fn synthesize_multi_target_trailers(
     for t in targets {
         let mut tail = vec![0u8; full_tail_len];
         // Fill prefix with random noise
-        for b in &mut tail[..max_fn_len] {
-            *b = rng.next_u8();
-        }
+        rng.fill_bytes(&mut tail[..max_fn_len]);
 
         let trailer_64 = t.build_plaintext_trailer()?;
         tail[full_tail_len - RFS4_TRAILER_SIZE..full_tail_len].copy_from_slice(&trailer_64);

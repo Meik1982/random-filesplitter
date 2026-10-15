@@ -190,6 +190,11 @@ Kryptografisch sicheres Datei-Splitting- und Rekonstruktionswerkzeug mit plausib
   - Strenge Durchsetzung des Shannon-Theorems für lineare Geheimnisteilung über $\mathbb{F}_2$: Zum Verstecken von $N$ Klartexten sind mindestens $M \ge N + 1$ Shares erforderlich (mindestens 1 Dimension für die unkorrelierte ChaCha20-Zufallsbasis).
   - Klare, konstruktive Fehlermeldungen in der CLI bei zu geringer Share-Anzahl (`-n`).
   - Desktop-GUI: Dynamische Begrenzung des Share-Sliders auf mindestens $N + 1$ und informatives Hinweisfeld mit Erklärung zur Informationstheorie.
+- [x] **Code-Audit & Zero-Flaw Hardening (Stufe 8.5)**
+  - **Path-Traversal-Schutz (`sanitize_embedded_filename`):** Strikte Bereinigung eingebetteter RFS4-Dateinamen gegen `../`, `/`, `\` und Steuerzeichen in `naming.rs`, `format.rs`, `restore.rs` und `scanner.rs`.
+  - **Multi-Split OPSEC-Parität (`multi_split.rs`):** Gemeinsames Vorab-Slot-Shuffling für echte Shares und Decoys (identische Inode-/Timestamp-Verteilung), Aktivierung von `--mlock` (`lock_memory`/`unlock_memory`), `--direct` (`fadvise`) und Live-/JSON-Telemetrie.
+  - **Block-CSPRNG & Unbiased Shuffling:** Vektorisiertes `rng.fill_bytes` statt Einzelbyte-Schleifen in `format.rs`/`trailer.rs`, Rejection-Sampling gegen Modulo-Bias in `shuffle_paths` und echte Jitter-Laufzeitmessung in `harvester.rs`.
+  - **Deduplizierung & GUI-Pfad-Resilienz:** Einbindung von `rfs_core` in `src/main.rs` ohne doppelte Modul-Kompilierung sowie kommasicheres Dateipfad-Parsing (`parse_gui_paths`) in `src/gui_main.rs`.
 
 ---
 

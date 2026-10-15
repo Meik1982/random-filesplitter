@@ -115,9 +115,7 @@ pub fn encode_rfs4_footer_n_way(
 
     // 4. Assemble plaintext tail area (padding + filename + trailer)
     let mut plain_tail = vec![0u8; tail_len];
-    for b in &mut plain_tail[0..padding_len] {
-        *b = rng.next_u8();
-    }
+    rng.fill_bytes(&mut plain_tail[0..padding_len]);
     plain_tail[padding_len..padding_len + filename_len].copy_from_slice(filename_bytes);
     plain_tail[padding_len + filename_len..tail_len].copy_from_slice(&plain_trailer);
 
@@ -127,9 +125,7 @@ pub fn encode_rfs4_footer_n_way(
 
     for _ in 1..num_parts {
         let mut part_k = vec![0u8; tail_len];
-        for b in part_k.iter_mut() {
-            *b = rng.next_u8();
-        }
+        rng.fill_bytes(&mut part_k);
         xor_in_place(&mut part1, &part_k);
         footers.push(part_k);
     }
@@ -162,9 +158,7 @@ pub fn encode_rfs3_footer_n_way(
     // Generate random footers for shares 2..N
     for _ in 1..num_parts {
         let mut part_k = [0u8; RFS3_FOOTER_SIZE];
-        for b in part_k.iter_mut() {
-            *b = rng.next_u8();
-        }
+        rng.fill_bytes(&mut part_k);
         for i in 0..RFS3_FOOTER_SIZE {
             part1[i] ^= part_k[i];
         }
@@ -232,7 +226,7 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
         }
     }
 
-    // 1. Prüfe RFS4 (64 Bytes Trailer + variabler Dateiname)
+    // 1. Check RFS4 (64-byte trailer + variable-length filename)
     if first_len >= RFS4_TRAILER_SIZE {
         let offset = first_len - RFS4_TRAILER_SIZE;
         let mut xor64 = [0u8; RFS4_TRAILER_SIZE];
@@ -250,7 +244,13 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
             blks.copy_from_slice(&xor64[14..62]);
             let fn_len = u16::from_le_bytes(xor64[62..64].try_into().unwrap()) as usize;
 
-            let filename = if fn_len > 0 && offset >= fn_len {
+            let filename = if fn_len > 0 {
+                if offset < fn_len {
+                    xor64.zeroize();
+                    return Err(
+                        "File tail is too short for declared RFS4 filename length".to_string()
+                    );
+                }
                 let fn_offset = offset - fn_len;
                 let mut xor_fn = vec![0u8; fn_len];
                 xor_fn.copy_from_slice(&tails[0][fn_offset..fn_offset + fn_len]);
@@ -259,7 +259,9 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
                         xor_fn[i] ^= tail[fn_offset + i];
                     }
                 }
-                String::from_utf8(xor_fn).unwrap_or_else(|_| "restored.bin".to_string())
+                let raw_name =
+                    String::from_utf8(xor_fn).unwrap_or_else(|_| "restored.bin".to_string());
+                crate::naming::sanitize_embedded_filename(&raw_name)
             } else {
                 "restored.bin".to_string()
             };
@@ -275,7 +277,7 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
         xor64.zeroize();
     }
 
-    // 2. Prüfe RFS3 (60 Bytes)
+    // 2. Check RFS3 (60 bytes)
     if first_len >= RFS3_FOOTER_SIZE {
         let offset = first_len - RFS3_FOOTER_SIZE;
         let mut xor60 = [0u8; RFS3_FOOTER_SIZE];
@@ -304,7 +306,7 @@ pub fn decode_footer_n_way(tails: &[&[u8]]) -> Result<RfsMetadata, String> {
         xor60.zeroize();
     }
 
-    // 2. Prüfe RFS2 (44 Bytes Legacy)
+    // 3. Check RFS2 (44 bytes legacy)
     let offset = first_len - RFS2_FOOTER_SIZE;
     let mut xor44 = [0u8; RFS2_FOOTER_SIZE];
     xor44.copy_from_slice(&tails[0][offset..offset + RFS2_FOOTER_SIZE]);

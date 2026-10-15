@@ -125,8 +125,12 @@ fn test_combinations(
                 let valid_fn = if let Some(fn_str) = meta.filename() {
                     !fn_str.is_empty()
                         && fn_str.len() <= 255
+                        && fn_str != "."
+                        && fn_str != ".."
                         && !fn_str.chars().any(|c| {
                             c.is_control()
+                                || c == '/'
+                                || c == '\\'
                                 || c == '?'
                                 || c == '<'
                                 || c == '>'
@@ -207,19 +211,19 @@ pub fn run_cli_scan(
     let matches = scan_candidate_files(paths)?;
 
     if matches.is_empty() {
-        println!("\n[Result] Keine passenden RFS-Kombinationen gefunden.");
-        println!("Alle geprüften Dateien verhalten sich wie unkorreliertes Rauschen oder unvollständige Sets.");
+        println!("\n[Result] No matching RFS combinations found.");
+        println!("All inspected files behave as uncorrelated noise or incomplete sets.");
         return Ok(0);
     }
 
     println!(
-        "\n🎯 Gefundene Payloads ({} gültige Sets entdeckt):\n",
+        "\n🎯 Discovered Payloads ({} valid sets detected):\n",
         matches.len()
     );
 
     for (idx, m) in matches.iter().enumerate() {
         println!("------------------------------------------------------------");
-        let orig_name = m.metadata.filename().unwrap_or("unbenannt");
+        let orig_name = m.metadata.filename().unwrap_or("unnamed");
         println!(
             " Set #{}: Original: \"{}\" ({})",
             idx + 1,
@@ -227,7 +231,7 @@ pub fn run_cli_scan(
             format_bytes(m.metadata.original_size())
         );
         println!(
-            "       Share-Größe: {} (4 KiB Cluster-Padding)",
+            "       Share size:  {} (4 KiB cluster padding)",
             format_bytes(m.share_size)
         );
         match &m.metadata {
@@ -247,13 +251,13 @@ pub fn run_cli_scan(
                 println!("       SHA-256:     {}", hex_str);
             }
         }
-        println!("       Gültige Shares ({} Teile):", m.shares.len());
+        println!("       Valid shares ({} parts):", m.shares.len());
         for (si, sp) in m.shares.iter().enumerate() {
             println!("         [{}] {}", si + 1, sp.display());
         }
 
         if restore {
-            println!("\n       Rekonstruiere Set #{}...", idx + 1);
+            println!("\n       Reconstructing Set #{}...", idx + 1);
             let out_target = output_dir.map(|d| d.join(orig_name));
             let out_target_str = out_target.as_ref().map(|p| p.to_string_lossy().to_string());
 
@@ -268,16 +272,13 @@ pub fn run_cli_scan(
                 false,
             ) {
                 Ok(Some(restored)) => {
-                    println!(
-                        "       ✅ Erfolgreich wiederhergestellt: {}",
-                        restored.display()
-                    );
+                    println!("       ✅ Successfully restored: {}", restored.display());
                 }
                 Ok(None) => {
-                    println!("       ✅ Verifikation erfolgreich.");
+                    println!("       ✅ Verification successful.");
                 }
                 Err(e) => {
-                    eprintln!("       ❌ Fehler bei der Wiederherstellung: {}", e);
+                    eprintln!("       ❌ Restoration error: {}", e);
                 }
             }
         }
