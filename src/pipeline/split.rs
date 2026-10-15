@@ -103,6 +103,11 @@ pub fn split_stream_or_file(
     // 3. Open output files
     let mut files: Vec<File> = Vec::with_capacity(n_parts);
     for (idx, p) in out_paths.iter().enumerate() {
+        if let Some(parent) = p.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
         let f = OpenOptions::new()
             .write(true)
             .create(true)

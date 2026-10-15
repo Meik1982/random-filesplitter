@@ -180,6 +180,11 @@ pub fn restore_file(
         Some(Box::new(BufWriter::with_capacity(block_size, io::stdout())))
     } else {
         let target = target_out_path.as_ref().unwrap();
+        if let Some(parent) = target.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
         let file = OpenOptions::new()
             .write(true)
             .create(true)

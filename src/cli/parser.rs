@@ -95,12 +95,18 @@ pub fn display_subcommand_help(subcommand: &str) {
     match subcommand {
         "split" => {
             println!("\nSubcommand: rfs split");
-            println!("Splits a file or stream into N One-Time-Pad shares with ChaCha20 entropy and RFS4 cluster padding.\n");
+            println!("Splits one or multiple files into One-Time-Pad shares with ChaCha20 entropy and RFS4 cluster padding.\n");
             println!("Usage:");
             println!("  rfs split [options] <source|-> [shares...]");
+            println!(
+                "  rfs split <file1> <file2> [file3...] -n <SHARES> [-T <THRESHOLD>] -o <DIR>"
+            );
             println!("\nOptions:");
             println!(
                 "  -n, --parts <COUNT>       Number of shares to generate (2..64, default: 2)"
+            );
+            println!(
+                "  -T, --threshold <COUNT>   Subset threshold for Multi-Payload LSSS over GF(2) (default: N-1)"
             );
             println!("  -d, --decoys <COUNT>      Generate additional decoy chaff files with random noise");
             println!("  --decoy-reveal <FILE>     Embed an authentic plaintext decoy (simultaneous multi-payload)");
@@ -124,6 +130,7 @@ pub fn display_subcommand_help(subcommand: &str) {
             println!("  -q, --quiet               Suppress interactive progress bar");
             println!("\nExamples:");
             println!("  rfs split confidential.pdf");
+            println!("  rfs split vault.kdbx vacation.pdf invoice.xlsx -n 5 -T 3 -o ./shares/");
             println!("  rfs split -n 3 database.kdbx -o /media/usb/");
             println!("  rfs split secret.iso -n 3 --decoy-reveal harmless.pdf -o shares/");
             println!("  tar -czf - /data | rfs split -n 4 - -o backup");
