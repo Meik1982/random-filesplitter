@@ -19,6 +19,8 @@ export component MainWindow inherits Window {
     in-out property <int> split_num_parts: 3;
     in-out property <int> split_min_parts: 2;
     in-out property <int> split_threshold: 2;
+    in-out property <int> split_min_threshold: 2;
+    in-out property <int> split_max_threshold: 2;
     in-out property <string> split_info_hint: "";
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
@@ -47,6 +49,7 @@ export component MainWindow inherits Window {
 
     // Callbacks to Rust
     callback request_select_file();
+    callback request_shares_changed(int);
     callback request_select_split_target_dir();
     callback request_split();
     callback request_select_shares();
@@ -227,9 +230,7 @@ export component MainWindow inherits Window {
                         value: root.split_num_parts;
                         changed(val) => {
                             root.split_num_parts = Math.round(val);
-                            if root.split_threshold > root.split_num_parts {
-                                root.split_threshold = root.split_num_parts;
-                            }
+                            root.request_shares_changed(root.split_num_parts);
                         }
                     }
                 }
@@ -237,14 +238,14 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     spacing: 12px;
                     Text {
-                        text: "Kombinationsgröße (T = " + root.split_threshold + "):";
+                        text: "Kombination (T = " + root.split_threshold + " aus " + root.split_num_parts + "):";
                         color: #58a6ff;
                         vertical-alignment: center;
                         min-width: 160px;
                     }
                     Slider {
-                        minimum: 2;
-                        maximum: root.split_num_parts;
+                        minimum: root.split_min_threshold;
+                        maximum: root.split_max_threshold;
                         value: root.split_threshold;
                         changed(val) => { root.split_threshold = Math.round(val); }
                     }

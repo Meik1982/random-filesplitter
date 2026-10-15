@@ -626,6 +626,25 @@ where
 
                 let final_shares = num_parts.max(min_required_shares);
 
+                if let Some(t) = threshold {
+                    let (min_t, max_t) = crate::matrix::policy::calculate_valid_threshold_range(
+                        n_files,
+                        final_shares,
+                    );
+                    if t < min_t || t > max_t {
+                        let count = crate::matrix::policy::binomial_coefficient(final_shares, t);
+                        return Err(format!(
+                            "Error: Threshold -T {} is impossible for {} files on {} shares.\n\n\
+                             Combinatorial Rule:\n\
+                             Subsets of size {} on {} shares yield only {} combination(s) (C({}, {}) = {}), but {} files must be assigned.\n\
+                             Valid threshold range for {} files on {} shares is: -T {}..={}",
+                            t, n_files, final_shares,
+                            t, final_shares, count, final_shares, t, count, n_files,
+                            n_files, final_shares, min_t, max_t
+                        ));
+                    }
+                }
+
                 return Ok(CliCommand::MultiSplit {
                     payloads: positionals.iter().map(PathBuf::from).collect(),
                     num_shares: final_shares,

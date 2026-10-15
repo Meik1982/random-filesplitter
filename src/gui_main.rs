@@ -37,6 +37,9 @@ fn main() -> Result<(), slint::PlatformError> {
                             format!("Ausgewählt: {} ({})", file_name, size_str).into(),
                         );
                         window.set_split_min_parts(2);
+                        window.set_split_min_threshold(2);
+                        let m = window.get_split_num_parts() as usize;
+                        window.set_split_max_threshold(m as i32);
                         window.set_split_info_hint("".into());
                     } else {
                         let min_m = n_files + 1;
@@ -44,8 +47,16 @@ fn main() -> Result<(), slint::PlatformError> {
                         if (window.get_split_num_parts() as usize) < min_m {
                             window.set_split_num_parts(min_m as i32);
                         }
-                        if (window.get_split_threshold() as usize) > min_m {
-                            window.set_split_threshold(min_m as i32);
+                        let m = window.get_split_num_parts() as usize;
+                        let (min_t, max_t) =
+                            rfs_core::matrix::policy::calculate_valid_threshold_range(n_files, m);
+                        window.set_split_min_threshold(min_t as i32);
+                        window.set_split_max_threshold(max_t as i32);
+                        let cur_t = window.get_split_threshold() as usize;
+                        if cur_t < min_t {
+                            window.set_split_threshold(min_t as i32);
+                        } else if cur_t > max_t {
+                            window.set_split_threshold(max_t as i32);
                         }
                         window.set_split_file_info(
                             format!(
@@ -56,13 +67,58 @@ fn main() -> Result<(), slint::PlatformError> {
                         );
                         window.set_split_info_hint(
                             format!(
-                                "ℹ️ Informationstheorie: Für {} Dateien werden mindestens {} Shares benötigt (M ≥ N + 1).\nMindestens 1 Share dient als ChaCha20-Zufallsentropiebasis für Shannon Perfect Secrecy.",
-                                n_files, min_m
+                                "ℹ️ Informationstheorie: Für {} Dateien werden mindestens {} Shares benötigt (M ≥ N + 1).\nMindestens 1 Share dient als ChaCha20-Zufallsentropiebasis für Shannon Perfect Secrecy.\nZulässiger Schwellenwert-Bereich für {} Dateien auf {} Shares: T in {}..={}",
+                                n_files, min_m, n_files, m, min_t, max_t
                             )
                             .into(),
                         );
                     }
                     window.set_split_status("Bereit zum Aufteilen".into());
+                }
+            }
+        }
+    });
+
+    // 1b. Callback: Gesamt-Shares geändert -> Schwellenwert-Grenzen live anpassen
+    let window_handle = main_window.as_weak();
+    main_window.on_request_shares_changed(move |m_parts| {
+        if let Some(window) = window_handle.upgrade() {
+            let path_str = window.get_split_file_path().to_string();
+            let n_files = path_str
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .count();
+
+            let m = m_parts as usize;
+            if n_files > 1 {
+                let (min_t, max_t) =
+                    rfs_core::matrix::policy::calculate_valid_threshold_range(n_files, m);
+                window.set_split_min_threshold(min_t as i32);
+                window.set_split_max_threshold(max_t as i32);
+                let cur_t = window.get_split_threshold() as usize;
+                if cur_t < min_t {
+                    window.set_split_threshold(min_t as i32);
+                } else if cur_t > max_t {
+                    window.set_split_threshold(max_t as i32);
+                }
+                window.set_split_info_hint(
+                    format!(
+                        "ℹ️ Informationstheorie: Für {} Dateien werden mindestens {} Shares benötigt (M ≥ N + 1).\nMindestens 1 Share dient als ChaCha20-Zufallsentropiebasis für Shannon Perfect Secrecy.\nZulässiger Schwellenwert-Bereich für {} Dateien auf {} Shares: T in {}..={}",
+                        n_files,
+                        n_files + 1,
+                        n_files,
+                        m,
+                        min_t,
+                        max_t
+                    )
+                    .into(),
+                );
+            } else {
+                window.set_split_min_threshold(2);
+                window.set_split_max_threshold(m as i32);
+                if (window.get_split_threshold() as usize) > m {
+                    window.set_split_threshold(m as i32);
                 }
             }
         }

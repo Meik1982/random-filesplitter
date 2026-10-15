@@ -78,6 +78,20 @@ impl MatrixPolicy {
             ));
         }
 
+        let (min_valid_t, max_valid_t) = calculate_valid_threshold_range(k, num_shares);
+        if threshold < min_valid_t || threshold > max_valid_t {
+            let count = binomial_coefficient(num_shares, threshold);
+            return Err(format!(
+                "Combinatorial Constraint:\n\
+                 Threshold T = {} is impossible for {} files on {} shares.\n\
+                 Subsets of size {} on {} shares yield only {} combination(s) (C({}, {}) = {}), but {} files must be assigned.\n\
+                 Mathematically valid threshold range for {} files on {} shares: T in {}..={}.",
+                threshold, k, num_shares,
+                threshold, num_shares, count, num_shares, threshold, count, k,
+                k, num_shares, min_valid_t, max_valid_t
+            ));
+        }
+
         // Generate candidate combinations of size T
         let all_combinations = generate_combinations(num_shares, threshold);
 
@@ -164,6 +178,51 @@ fn combinations_recurse(
         combinations_recurse(i + 1, n, k, current, result);
         current.pop();
     }
+}
+
+/// Calculates the binomial coefficient C(n, k) = n! / (k! * (n - k)!).
+pub fn binomial_coefficient(n: usize, k: usize) -> usize {
+    if k > n {
+        return 0;
+    }
+    if k == 0 || k == n {
+        return 1;
+    }
+    let k = k.min(n - k);
+    let mut c = 1usize;
+    for i in 0..k {
+        c = c.saturating_mul(n - i) / (i + 1);
+    }
+    c
+}
+
+/// Calculates the mathematically valid [min_T, max_T] threshold range
+/// such that C(M, T) >= N files and linear secret sharing over GF(2) is feasible.
+pub fn calculate_valid_threshold_range(n_files: usize, m_shares: usize) -> (usize, usize) {
+    if n_files <= 1 {
+        return (2, m_shares);
+    }
+    if m_shares < n_files + 1 {
+        return (2, 2);
+    }
+
+    let mut min_t = 2;
+    for t in 2..m_shares {
+        if binomial_coefficient(m_shares, t) >= n_files {
+            min_t = t;
+            break;
+        }
+    }
+
+    let mut max_t = (m_shares - 1).max(2);
+    for t in (min_t..m_shares).rev() {
+        if binomial_coefficient(m_shares, t) >= n_files {
+            max_t = t;
+            break;
+        }
+    }
+
+    (min_t.min(max_t), max_t)
 }
 
 #[cfg(test)]
