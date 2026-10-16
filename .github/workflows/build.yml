@@ -12,9 +12,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  RUST_FONTCONFIG_DLOPEN: "on"
-
 jobs:
   test:
     name: Run Unit Tests & Diagnostics
