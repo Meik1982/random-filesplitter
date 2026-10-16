@@ -47,6 +47,20 @@ fn parse_gui_paths(raw: &str) -> Vec<PathBuf> {
     results
 }
 
+/// Returns the localized error prefix for the given language.
+fn error_prefix(lang: Lang) -> &'static str {
+    match lang {
+        Lang::En => "❌ Error",
+        Lang::De => "❌ Fehler",
+        Lang::Es => "❌ Error",
+        Lang::Fr => "❌ Erreur",
+        Lang::Ja => "❌ エラー",
+        Lang::Zh => "❌ 错误",
+        Lang::Tok => "❌ pakala",
+        Lang::Sp => "❌ 󱥈",
+    }
+}
+
 /// Returns the currently selected language from the MainWindow.
 fn active_lang(window: &MainWindow) -> Lang {
     Lang::from_code(window.get_current_lang().as_str()).unwrap_or(Lang::En)
@@ -105,8 +119,12 @@ fn apply_language(window: &MainWindow, lang: Lang) {
 
     // Update dynamic status / hint fields according to current selection state
     let files = parse_gui_paths(&window.get_split_file_path());
+    let m = window.get_split_num_parts() as usize;
     if files.is_empty() {
         window.set_split_file_info(tr.split_file_info_default.into());
+        window.set_split_min_threshold(m as i32);
+        window.set_split_max_threshold(m as i32);
+        window.set_split_threshold(m as i32);
         window.set_split_info_hint("".into());
     } else if files.len() == 1 {
         let f = &files[0];
@@ -118,10 +136,12 @@ fn apply_language(window: &MainWindow, lang: Lang) {
             tr.format_selected_files(lang, 1, Some((name, &size)))
                 .into(),
         );
+        window.set_split_min_threshold(m as i32);
+        window.set_split_max_threshold(m as i32);
+        window.set_split_threshold(m as i32);
         window.set_split_info_hint("".into());
     } else {
         let n_files = files.len();
-        let m = window.get_split_num_parts() as usize;
         let (min_t, max_t) = rfs_core::matrix::policy::calculate_valid_threshold_range(n_files, m);
         window.set_split_file_info(tr.format_selected_files(lang, n_files, None).into());
         window.set_split_info_hint(
@@ -218,9 +238,10 @@ fn main() -> Result<(), slint::PlatformError> {
                                 .into(),
                         );
                         window.set_split_min_parts(2);
-                        window.set_split_min_threshold(2);
                         let m = window.get_split_num_parts() as usize;
+                        window.set_split_min_threshold(m as i32);
                         window.set_split_max_threshold(m as i32);
+                        window.set_split_threshold(m as i32);
                         window.set_split_info_hint("".into());
                     } else {
                         let min_m = n_files + 1;
@@ -279,11 +300,10 @@ fn main() -> Result<(), slint::PlatformError> {
                         .into(),
                 );
             } else {
-                window.set_split_min_threshold(2);
+                window.set_split_min_threshold(m as i32);
                 window.set_split_max_threshold(m as i32);
-                if (window.get_split_threshold() as usize) > m {
-                    window.set_split_threshold(m as i32);
-                }
+                window.set_split_threshold(m as i32);
+                window.set_split_info_hint("".into());
             }
         }
     });
@@ -335,6 +355,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 0
             };
 
+            window.set_split_progress(0.0);
             window.set_split_in_progress(true);
             window.set_split_status(tr.split_status_running.into());
             window.set_split_results_log("".into());
@@ -378,10 +399,9 @@ fn main() -> Result<(), slint::PlatformError> {
                                     w.set_split_results_log(log.into());
                                 }
                                 Err(e) => {
-                                    w.set_split_status(format!("Error: {}", e).into());
-                                    w.set_split_results_log(
-                                        format!("MULTI-SPLIT ERROR:\n{}", e).into(),
-                                    );
+                                    let pfx = error_prefix(cur_lang);
+                                    w.set_split_status(format!("{}: {}", pfx, e).into());
+                                    w.set_split_results_log(format!("{}:\n{}", pfx, e).into());
                                 }
                             }
                         }
@@ -420,8 +440,9 @@ fn main() -> Result<(), slint::PlatformError> {
                                     w.set_split_results_log(log.into());
                                 }
                                 Err(e) => {
-                                    w.set_split_status(format!("Error: {}", e).into());
-                                    w.set_split_results_log(format!("SPLIT ERROR:\n{}", e).into());
+                                    let pfx = error_prefix(cur_lang);
+                                    w.set_split_status(format!("{}: {}", pfx, e).into());
+                                    w.set_split_results_log(format!("{}:\n{}", pfx, e).into());
                                 }
                             }
                         }
@@ -532,7 +553,8 @@ fn main() -> Result<(), slint::PlatformError> {
                                     w.set_restore_results_log(tr.restore_status_no_sets.into());
                                 }
                                 Err(e) => {
-                                    w.set_restore_status(format!("Scan error: {}", e).into());
+                                    let pfx = error_prefix(cur_lang);
+                                    w.set_restore_status(format!("{}: {}", pfx, e).into());
                                 }
                             }
                         }
@@ -551,6 +573,7 @@ fn main() -> Result<(), slint::PlatformError> {
         {
             if let Some(window) = window_handle.upgrade() {
                 let tr = active_lang(&window).tr();
+                window.set_restore_progress(0.0);
                 window.set_restore_in_progress(true);
                 window.set_restore_status(tr.restore_status_scanning.into());
                 window.set_restore_results_log("".into());
@@ -585,7 +608,7 @@ fn main() -> Result<(), slint::PlatformError> {
                             let restored = rfs_core::pipeline::restore_file(
                                 &m.shares,
                                 out_target_str.as_deref(),
-                                true,
+                                false,
                                 rfs_core::telemetry::TelemetryMode::Silent,
                                 false,
                                 rfs_core::types::DEFAULT_BLOCK_SIZE,
@@ -606,6 +629,7 @@ fn main() -> Result<(), slint::PlatformError> {
                             w.set_restore_in_progress(false);
                             match outcome {
                                 Ok(restored_list) if !restored_list.is_empty() => {
+                                    w.set_restore_progress(1.0);
                                     w.set_restore_integrity_state(1);
                                     w.set_restore_integrity_badge(tr.restore_badge_valid.into());
                                     let (status, report) =
@@ -617,7 +641,9 @@ fn main() -> Result<(), slint::PlatformError> {
                                     w.set_restore_status(tr.restore_status_no_sets.into());
                                 }
                                 Err(e) => {
-                                    w.set_restore_status(format!("Restore error: {}", e).into());
+                                    let pfx = error_prefix(cur_lang);
+                                    w.set_restore_status(format!("{}: {}", pfx, e).into());
+                                    w.set_restore_results_log(format!("{}:\n{}", pfx, e).into());
                                 }
                             }
                         }
@@ -660,6 +686,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
+            window.set_restore_progress(0.0);
             window.set_restore_in_progress(true);
             window.set_restore_status(tr.restore_status_running.into());
             window.set_restore_results_log("".into());
@@ -702,12 +729,11 @@ fn main() -> Result<(), slint::PlatformError> {
                                 w.set_restore_results_log(tr.restore_badge_valid.into());
                             }
                             Err(e) => {
+                                let pfx = error_prefix(cur_lang);
                                 w.set_restore_integrity_state(2);
                                 w.set_restore_integrity_badge(tr.restore_badge_mismatch.into());
-                                w.set_restore_status(format!("Restore error: {}", e).into());
-                                w.set_restore_results_log(
-                                    format!("RESTORATION ERROR:\n{}", e).into(),
-                                );
+                                w.set_restore_status(format!("{}: {}", pfx, e).into());
+                                w.set_restore_results_log(format!("{}:\n{}", pfx, e).into());
                             }
                         }
                     }
@@ -813,8 +839,9 @@ fn main() -> Result<(), slint::PlatformError> {
                                 w.set_forge_results_log(log.into());
                             }
                             Err(e) => {
-                                w.set_forge_status(format!("Forge error: {}", e).into());
-                                w.set_forge_results_log(format!("FORGE ERROR:\n{}", e).into());
+                                let pfx = error_prefix(cur_lang);
+                                w.set_forge_status(format!("{}: {}", pfx, e).into());
+                                w.set_forge_results_log(format!("{}:\n{}", pfx, e).into());
                             }
                         }
                     }

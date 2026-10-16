@@ -99,9 +99,9 @@ export component MainWindow inherits Window {
     in-out property <string> split_target_dir: "";
     in-out property <int> split_num_parts: 3;
     in-out property <int> split_min_parts: 2;
-    in-out property <int> split_threshold: 2;
-    in-out property <int> split_min_threshold: 2;
-    in-out property <int> split_max_threshold: 2;
+    in-out property <int> split_threshold: 3;
+    in-out property <int> split_min_threshold: 3;
+    in-out property <int> split_max_threshold: 3;
     in-out property <string> split_info_hint: "";
     in-out property <bool> split_enable_decoys: false;
     in-out property <int> split_num_decoys: 3;
@@ -261,7 +261,10 @@ export component MainWindow inherits Window {
                     LineEdit {
                         text: root.split_file_path;
                         placeholder-text: root.tr_split_file_placeholder;
-                        edited(val) => { root.split_file_path = val; }
+                        edited(val) => {
+                            root.split_file_path = val;
+                            root.request_shares_changed(root.split_num_parts);
+                        }
                     }
                     Button {
                         text: root.tr_split_select_files_btn;

@@ -227,7 +227,8 @@ fn main() {
             paths,
             restore,
             output_dir,
-        } => match scanner::run_cli_scan(&paths, restore, output_dir.as_deref()) {
+            force,
+        } => match scanner::run_cli_scan(&paths, restore, output_dir.as_deref(), force) {
             Ok(code) => process::exit(code),
             Err(e) => {
                 eprintln!("Error during scan: {}", e);

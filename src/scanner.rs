@@ -30,15 +30,38 @@ struct Candidate {
     tail: Vec<u8>,
 }
 
-/// Scans a list of candidate files, tests combinations, and returns all validated matches.
+/// Expands any directory paths in `input_paths` into their direct regular file entries,
+/// while keeping explicit file paths intact.
+pub fn expand_candidate_paths(input_paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut expanded = Vec::new();
+    for p in input_paths {
+        if p.is_dir() {
+            if let Ok(entries) = fs::read_dir(p) {
+                let mut dir_files: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|ep| ep.is_file())
+                    .collect();
+                dir_files.sort();
+                expanded.extend(dir_files);
+            }
+        } else if p.is_file() {
+            expanded.push(p.clone());
+        }
+    }
+    expanded
+}
+
+/// Scans a list of candidate files (or directories), tests combinations, and returns all validated matches.
 pub fn scan_candidate_files(candidate_paths: &[PathBuf]) -> Result<Vec<DiscoveredMatch>, String> {
-    if candidate_paths.len() < 2 {
+    let expanded_paths = expand_candidate_paths(candidate_paths);
+    if expanded_paths.len() < 2 {
         return Err("At least 2 candidate files required for scanning.".to_string());
     }
 
     // 1. Ingest tails: Read only the last 1024 bytes of each file
-    let mut candidates: Vec<Candidate> = Vec::with_capacity(candidate_paths.len());
-    for p in candidate_paths {
+    let mut candidates: Vec<Candidate> = Vec::with_capacity(expanded_paths.len());
+    for p in &expanded_paths {
         if !p.is_file() {
             continue;
         }
@@ -120,8 +143,8 @@ fn test_combinations(
             .collect();
 
         if let Ok(meta) = decode_footer_n_way(&tails) {
-            // Verify sanity: Original size must not exceed share size
-            if meta.original_size() > 0 && meta.original_size() <= share_size {
+            // Verify sanity: Original size must not exceed share size (0-byte files are valid)
+            if meta.original_size() <= share_size {
                 let valid_fn = if let Some(fn_str) = meta.filename() {
                     !fn_str.is_empty()
                         && fn_str.len() <= 255
@@ -199,10 +222,12 @@ pub fn run_cli_scan(
     paths: &[PathBuf],
     restore: bool,
     output_dir: Option<&Path>,
+    force: bool,
 ) -> Result<i32, String> {
     let lang = crate::i18n::current_lang();
     let tr = lang.tr();
-    let n_cand = paths.len();
+    let expanded = expand_candidate_paths(paths);
+    let n_cand = expanded.len();
 
     println!("============================================================");
     match lang {
@@ -450,7 +475,7 @@ pub fn run_cli_scan(
             match crate::pipeline::restore_file(
                 &m.shares,
                 out_target_str.as_deref(),
-                true,
+                force,
                 crate::telemetry::TelemetryMode::Silent,
                 false,
                 crate::types::DEFAULT_BLOCK_SIZE,
@@ -524,5 +549,64 @@ mod tests {
         );
         assert_eq!(discovered[0].metadata.filename(), Some("secret.txt"));
         assert_eq!(discovered[0].metadata.original_size(), 42);
+    }
+
+    #[test]
+    fn test_scanner_accepts_directory_path_and_zero_byte_payload() {
+        let dir = tempdir().unwrap();
+        let empty_file = dir.path().join("empty_marker.dat");
+        fs::write(&empty_file, b"").unwrap();
+
+        let shares_dir = dir.path().join("shares_out");
+        fs::create_dir_all(&shares_dir).unwrap();
+
+        let split_res = crate::pipeline::split_stream_or_file(
+            empty_file.to_str().unwrap(),
+            None,
+            2,
+            1,
+            None,
+            None,
+            Some(shares_dir.to_str().unwrap()),
+            crate::types::MIN_BLOCK_SIZE,
+            crate::telemetry::TelemetryMode::Silent,
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(split_res.real_shares.len(), 2);
+
+        // Pass the directory path itself (not expanded glob files) to scan_candidate_files
+        let discovered = scan_candidate_files(&[shares_dir]).unwrap();
+        assert_eq!(
+            discovered.len(),
+            1,
+            "Scanner must expand directory and discover 0-byte payload"
+        );
+        assert_eq!(discovered[0].metadata.filename(), Some("empty_marker.dat"));
+        assert_eq!(discovered[0].metadata.original_size(), 0);
+    }
+
+    #[test]
+    fn test_single_file_split_rejects_mismatched_threshold() {
+        let dir = tempdir().unwrap();
+        let f = dir.path().join("single.bin");
+        fs::write(&f, b"hello").unwrap();
+
+        let res = crate::cli::parser::parse_args([
+            "rfs",
+            "split",
+            f.to_str().unwrap(),
+            "-n",
+            "5",
+            "-T",
+            "3",
+        ]);
+        assert!(
+            res.is_err(),
+            "Single-file split with -T 3 != -n 5 must return an error instead of silently creating a 5-of-5 split"
+        );
     }
 }

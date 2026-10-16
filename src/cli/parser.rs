@@ -37,9 +37,9 @@ pub fn display_subcommand_help(subcommand: &str) {
     display_version();
     match subcommand {
         "split" => {
-            println!("\nSubcommand: rfs split");
-            println!("Splits one or multiple files into One-Time-Pad shares with ChaCha20 entropy and RFS4 cluster padding.\n");
-            println!("Usage:");
+            println!("Subcommand: rfs split");
+            println!("Splits a file or stream into N cryptographically random One-Time-Pad shares");
+            println!("using ChaCha20 and embeds a 384-bit post-quantum BLKS checksum in the RFS4 footer.\n");
             println!("  rfs split [options] <source|-> [shares...]");
             println!(
                 "  rfs split <file1> <file2> [file3...] -n <SHARES> [-T <THRESHOLD>] -o <DIR>"
@@ -246,11 +246,12 @@ pub enum CliCommand {
         force: bool,
         direct_io: bool,
     },
-    /// Combinatorial scan & auto-assembly
+    /// Combinatorial scanner for auto-discovery & assembly of matching share sets
     Scan {
         paths: Vec<PathBuf>,
         restore: bool,
         output_dir: Option<PathBuf>,
+        force: bool,
     },
     /// Plausible deniability decoy forge (Rubber-Hose defense)
     Forge {
@@ -668,6 +669,17 @@ where
                 });
             }
 
+            if let Some(t) = threshold {
+                if t != num_parts {
+                    return Err(format!(
+                        "Error: Threshold -T {} cannot differ from share count -n {} when splitting a single file.\n\
+                         N-Way One-Time-Pad on a single file requires all {} real shares for reconstruction.\n\
+                         Hint: Use -d <COUNT> to add extra decoy chaff shares, or pass multiple input files for combinatorial T-of-M splitting.",
+                        t, num_parts, num_parts
+                    ));
+                }
+            }
+
             let input = positionals[0].clone();
             let parts: Option<Vec<PathBuf>> = if positionals.len() > 1 {
                 Some(positionals[1..].iter().map(PathBuf::from).collect())
@@ -749,9 +761,9 @@ where
             })
         }
         "scan" => {
-            if positionals.len() < 2 {
+            if positionals.is_empty() {
                 return Err(
-                    "Error: At least 2 candidate files required for 'scan'.\n\nUsage: rfs scan [options] <candidate_files...>\n\nExamples:\n  rfs scan *.rfs\n  rfs scan /media/backup/*.rfs -r -o ./recovered\n\nOptions:\n  -r, --restore          Auto-reconstruct all discovered sets\n  -o, --output <DIR>     Destination directory for restored files\n  -f, --force            Overwrite existing files"
+                    "Error: Please specify a directory or at least 2 candidate files for 'scan'.\n\nUsage: rfs scan [options] <dir_or_files...>\n\nExamples:\n  rfs scan ./shares/\n  rfs scan *.rfs\n  rfs scan /media/backup/ -r -o ./recovered\n\nOptions:\n  -r, --restore          Auto-reconstruct all discovered sets\n  -o, --output <DIR>     Destination directory for restored files\n  -f, --force            Overwrite existing files"
                         .to_string(),
                 );
             }
@@ -759,6 +771,7 @@ where
                 paths: positionals.iter().map(PathBuf::from).collect(),
                 restore: scan_restore,
                 output_dir: output_path.map(PathBuf::from),
+                force,
             })
         }
         "forge" => {
