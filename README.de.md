@@ -26,8 +26,9 @@ Eine Datei wird in $N$ Teile ($N \ge 2$) zerlegt, wobei jede einzelne Share math
 * **Simultane Klartext-Köder beim Splitten (`rfs split --decoy-reveal <DATEI>`):**
   * Webt direkt bei der Erstellung einen echten Klartext-Köder ein.
   * Echte Teilmengen rekonstruieren das Originalgeheimnis; die Köder-Teilmenge rekonstruiert die harmlose Köderdatei.
-* **Moderne Slint Desktop-GUI (`rfs-gui`):**
-  * Native, GPU-beschleunigte Desktop-Oberfläche mit 3 Reitern: `📦 Aufteilen (Split)`, `🔓 Wiederherstellen & Scanner (Restore)` und `🎭 Täuschung (Forge)`.
+* **Moderne Slint Desktop-GUI (`rfs-gui`) & 8-Sprachen-i18n-Engine:**
+  * Native, GPU-beschleunigte Desktop-Oberfläche mit 3 Reitern: `📦 Aufteilen (Split)`, `🔓 Wiederherstellen (Restore)` und `🎭 Täuschung (Forge)`.
+  * Integrierte Zero-Allocation-Mehrsprachigkeit mit Live-Umschalter im Header: **Englisch (`en`, Standard)**, **Deutsch (`de`)**, **Spanisch (`es`)**, **Französisch (`fr`)**, **Japanisch (`ja`)**, **Vereinfachtes Chinesisch (`zh`)**, **Toki Pona (`tok`, lateinische Lautschrift)** sowie **Sitelen Pona (`sp`, Toki-Pona-Hieroglyphenschrift)** mit direkt eingebetteter `nasin-nanpa`-Schriftart.
   * Ausgeliefert mit transparentem Kristall-Icon und vollständiger `.desktop`-Systemintegration.
 * **Post-Quantum Stealth Footer (RFS4):**
   * Nutzt **BLKS-384** (384-Bit Post-Quantum Merkle-Tree Hashing) statt veraltetem SHA-256 und eliminiert Prüfsummen-Engpässe (**3,3x schneller als SHA-256**).
@@ -126,10 +127,18 @@ rfs restore backup.*.rfs -o - | tar -xzf -
 rfs verify share1.rfs share2.rfs share3.rfs
 ```
 
-### 6. Desktop-GUI
+### 7. Desktop-GUI & Mehrsprachige CLI (`-l / --lang`)
 ```bash
-# Startet die native Slint Desktop-Oberfläche
+# Startet die native Slint Desktop-Oberfläche (Standard: Englisch; live umschaltbar via EN | DE | ES | FR | JA | ZH | TOK | 󱥠 SP)
 rfs-gui
+
+# GUI direkt auf Deutsch oder in Toki-Pona-Hieroglyphenschrift (sitelen pona) starten
+rfs-gui -l de
+rfs-gui -l sp
+
+# CLI-Befehle mit lokalisierter Konsolenausgabe ausführen (en, de, es, fr, ja, zh, tok, sp)
+rfs -l de split daten.iso
+rfs -l es
 ```
 
 ---

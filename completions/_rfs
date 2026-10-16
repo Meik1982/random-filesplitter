@@ -8,14 +8,15 @@ _rfs() {
 
     local -a common_opts
     common_opts=(
-        '(-h --help)'{-h,--help}'[Hilfe anzeigen]'
-        '(-V --version)'{-V,--version}'[Version anzeigen]'
-        '(-f --force)'{-f,--force}'[Existierende Zieldateien überschreiben]'
-        '(-q --quiet --silent)'{-q,--quiet,--silent}'[Stummschalten (nur Fehler)]'
-        '--json[Maschinenlesbare NDJSON-Telemetrie auf stderr]'
-        '--direct[Direct I/O: Kernel Page-Cache umgehen]'
-        '--mlock[Pufferspeicher im physischen RAM sperren (Swap-Resilienz)]'
-        '(--token --rnd)'{--token,--rnd}'[Anti-Forensik: Hex-Tokens (.<rnd>.rfs) statt Nummern]'
+        '(-h --help)'{-h,--help}'[Display help message]'
+        '(-V --version)'{-V,--version}'[Display version information]'
+        '(-f --force)'{-f,--force}'[Overwrite existing destination files]'
+        '(-q --quiet --silent)'{-q,--quiet,--silent}'[Suppress interactive progress (errors only)]'
+        '(-l --lang)'{-l,--lang}'[Select output language]:language:(en de es fr ja zh tok sp)'
+        '--json[Machine-readable NDJSON telemetry on stderr]'
+        '--direct[Direct I/O: Bypass OS page cache]'
+        '--mlock[Lock buffer memory in physical RAM (swap resilience)]'
+        '(--token --rnd)'{--token,--rnd}'[Anti-forensics: Uncorrelated hex tokens (.<rnd>.rfs)]'
     )
 
     _arguments -C \
@@ -48,13 +49,14 @@ _rfs() {
                 split)
                     _arguments \
                         $common_opts \
-                        '(-n --parts)'{-n,--parts}'[Anzahl der Teile (2..64)]:Anzahl:(2 3 4 5 8 16)' \
-                        '(-d --decoys)'{-d,--decoys}'[Anzahl zusätzlicher Köderdateien]:Anzahl:(1 2 3 4 5)' \
-                        '--decoy-reveal[Klartext-Köder zur simultanen Täuschung einbinden]:Köderdatei:_files' \
-                        '--pad-to[Auf exakte Bytegröße aufblähen]:Größe:(64K 1M 10M 100M 1G 10G)' \
-                        '(-B --block-size)'{-B,--block-size}'[Puffergröße]:Größe:(64K 256K 1M 4M 8M 16M)' \
-                        '(-o --output)'{-o,--output}'[Präfix oder Pfad]:Datei:_files' \
-                        '*:Eingabe- und Ausgabedateien:_files'
+                        '(-n --parts)'{-n,--parts}'[Number of shares (2..64)]:count:(2 3 4 5 8 16)' \
+                        '(-T --threshold)'{-T,--threshold}'[Threshold T for symmetric multi-payload splitting]:threshold:(2 3 4 5 8)' \
+                        '(-d --decoys)'{-d,--decoys}'[Number of additional decoy chaff files]:count:(1 2 3 4 5)' \
+                        '--decoy-reveal[Embed authentic plaintext decoy into shares]:decoy file:_files' \
+                        '--pad-to[Pad shares to exact target byte size]:size:(64K 1M 10M 100M 1G 10G)' \
+                        '(-B --block-size)'{-B,--block-size}'[I/O buffer block size]:size:(64K 256K 1M 4M 8M 16M)' \
+                        '(-o --output)'{-o,--output}'[Output prefix or directory]:path:_files' \
+                        '*:Input and output files:_files'
                     ;;
                 decoy)
                     _arguments \

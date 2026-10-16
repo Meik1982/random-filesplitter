@@ -5,8 +5,8 @@ _rfs_completions() {
     _init_completion || return
 
     local subcommands="split restore verify decoy scan forge benchmark entropy analyze"
-    local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct --mlock --token --rnd"
-    local split_opts="-n --parts -d --decoys --decoy-reveal --pad-to -B --block-size -o --output"
+    local common_opts="-h --help -V --version -f --force -q --quiet --silent --json --direct --mlock --token --rnd -l --lang"
+    local split_opts="-n --parts -T --threshold -d --decoys --decoy-reveal --pad-to -B --block-size -o --output"
     local restore_opts="-o --output -B --block-size"
     local decoy_opts="-c --count -s --size -t --template -o --output -B --block-size"
     local scan_opts="-r --restore -o --output"
@@ -24,7 +24,11 @@ _rfs_completions() {
     local subcommand="${words[1]}"
 
     case "$prev" in
-        -n|--parts|-d|--decoys|-c|--count)
+        -l|--lang)
+            COMPREPLY=( $(compgen -W "en de es fr ja zh tok sp" -- "$cur") )
+            return 0
+            ;;
+        -n|--parts|-T|--threshold|-d|--decoys|-c|--count)
             COMPREPLY=( $(compgen -W "1 2 3 4 5 8 16" -- "$cur") )
             return 0
             ;;

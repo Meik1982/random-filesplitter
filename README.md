@@ -26,8 +26,9 @@ A file is split into $N$ parts ($N \ge 2$), where each individual share is mathe
 * **Simultaneous Multi-Payload Decoys (`rfs split --decoy-reveal <FILE>`):**
   * Embeds an authentic plaintext decoy directly during the initial split.
   * Real shares reconstruct the true secret; the decoy counterpart reconstructs the harmless decoy file.
-* **Modern Slint Desktop GUI (`rfs-gui`):**
-  * Native, GPU-accelerated desktop interface with 3 tabs: `📦 Aufteilen (Split)`, `🔓 Wiederherstellen & Scanner (Restore)`, and `🎭 Täuschung (Forge)`.
+* **Modern Slint Desktop GUI (`rfs-gui`) & 8-Language i18n Engine:**
+  * Native, GPU-accelerated desktop interface with 3 tabs: `📦 Split`, `🔓 Restore`, and `🎭 Deniable Forge`.
+  * Built-in zero-allocation internationalization with live header language pills: **English (`en`, default)**, **German (`de`)**, **Spanish (`es`)**, **French (`fr`)**, **Japanese (`ja`)**, **Simplified Chinese (`zh`)**, **Toki Pona (`tok`, Latin script)**, and **Sitelen Pona (`sp`, Toki Pona hieroglyphic script)** rendered out-of-the-box via an embedded `nasin-nanpa` font.
   * Shipped with custom crystal app icon and `.desktop` Linux desktop integration.
 * **Post-Quantum Stealth Footer (RFS4):**
   * Employs **BLKS-384** (384-bit Post-Quantum Merkle-Tree Hashing) instead of legacy SHA-256, eliminating hashing bottlenecks (**3.3x faster than SHA-256**).
@@ -126,10 +127,18 @@ rfs restore backup.*.rfs -o - | tar -xzf -
 rfs verify share1.rfs share2.rfs share3.rfs
 ```
 
-### 6. Desktop GUI
+### 7. Desktop GUI & Multi-Language CLI (`-l / --lang`)
 ```bash
-# Launch the native Slint GUI
+# Launch the native Slint GUI (defaults to English; switchable live via EN | DE | ES | FR | JA | ZH | TOK | 󱥠 SP)
 rfs-gui
+
+# Launch GUI directly in Toki Pona hieroglyphic script (sitelen pona) or German
+rfs-gui -l sp
+rfs-gui -l de
+
+# Run CLI commands with localized output (en, de, es, fr, ja, zh, tok, sp)
+rfs -l es split data.iso
+rfs -l tok
 ```
 
 ---

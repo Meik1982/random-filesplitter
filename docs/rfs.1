@@ -6,7 +6,7 @@ rfs \- High-Performance Cryptographic File Splitter & Reconstructor (Post-Quantu
 [\fISUBCOMMAND\fR] [\fIOPTIONS\fR] [\fIFILES...\fR]
 .br
 .B rfs split
-[\fB\-n\fR \fIPARTS\fR] [\fB\-d\fR \fIDECOYS\fR] [\fB\-\-decoy\-reveal\fR \fIDECOY_FILE\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-o\fR \fIPREFIX\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR] \fISOURCE\fR [\fIPARTS...\fR]
+[\fB\-n\fR \fIPARTS\fR] [\fB\-T\fR \fITHRESHOLD\fR] [\fB\-d\fR \fIDECOYS\fR] [\fB\-\-decoy\-reveal\fR \fIDECOY_FILE\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-o\fR \fIPREFIX\fR] [\fB\-\-direct\fR] [\fB\-\-mlock\fR] [\fB\-\-json\fR] [\fB\-l\fR \fILANG\fR] \fISOURCE...\fR
 .br
 .B rfs restore
 [\fB\-o\fR \fIDEST\fR] [\fB\-B\fR \fISIZE\fR] [\fB\-\-direct\fR] [\fB\-\-json\fR] \fIPART1\fR \fIPART2\fR [\fIPART3...\fR]
@@ -77,7 +77,10 @@ Performs deep cryptographic entropy analysis and NIST SP 800-22 runs and block-f
 .SH OPTIONS
 .TP
 .BR \-n ", " \-\-parts " \fINUM\fR"
-Number of parts for N-way splitting (between 2 and 64; default: 2).
+Number of shares for N-way splitting (between 2 and 64; default: 2). For symmetric multi-payload splitting of \fIN\fR files, at least \fIN\fR + 1 shares are required.
+.TP
+.BR \-T ", " \-\-threshold " \fINUM\fR"
+Access threshold \fIT\fR (e.g., 3-of-5) when splitting multiple plaintext files simultaneously over GF(2).
 .TP
 .BR \-d ", " \-\-decoys " \fINUM\fR"
 Number of indistinguishable decoy files to generate concurrently during split.
@@ -118,24 +121,31 @@ Overwrites existing output files without prompting.
 .BR \-q ", " \-\-quiet ", " \-\-silent
 Suppresses interactive progress bars and notices; only critical errors are emitted.
 .TP
+.BR \-l ", " \-\-lang " \fICODE\fR"
+Selects output language for CLI and Desktop GUI. Supported codes: \fBen\fR (default), \fBde\fR, \fBes\fR, \fBfr\fR, \fBja\fR, \fBzh\fR, \fBtok\fR (Toki Pona Latin), and \fBsp\fR (Toki Pona sitelen pona hieroglyphs).
+.TP
 .BR \-h ", " \-\-help
 Displays command-line help.
 .TP
 .BR \-V ", " \-\-version
 Displays version information and format support.
 
-.SH POST-QUANTUM STEALTH FOOTER (RFS3-PQ)
+.SH POST-QUANTUM STEALTH FOOTER (RFS4)
 .B rfs
-v3.0.0 embeds an in-flight 60-byte metadata footer at the tail of each share:
+v3.1.0 embeds an in-flight 64-byte metadata trailer at the tail of each 4 KiB-aligned share, preceded by the OTP-encrypted original filename:
 .IP \[bu] 2
-4 Bytes: Magic identifier (\fIRFS3\fR)
+4 Bytes: Magic identifier (\fIRFS4\fR)
+.IP \[bu] 2
+2 Bytes: Format version (\fI0x0400\fR)
+.IP \[bu] 2
+8 Bytes: Little-endian original file length
 .IP \[bu] 2
 48 Bytes: 384-Bit Post-Quantum Merkle-Tree Hash (\fIBLKS-384\fR)
 .IP \[bu] 2
-8 Bytes: Little-endian original file length
+2 Bytes: Encrypted filename byte length
 .PP
-The footer is cascade-XORed across all \fIN\fR shares with ChaCha20 keystream. As a result, no single share contains any magic bytes, headers, or plain text metadata.
-Full backwards compatibility is maintained with historical 44-byte RFS2 SHA-256 footers.
+The trailer and filename are cascade-XORed across all \fIN\fR shares (or synthesized over GF(2) for multi-payload sets) with ChaCha20 keystream. As a result, no single share contains any magic bytes, headers, or plaintext metadata.
+Full backward compatibility is maintained with historical RFS3 (60-byte BLKS-384) and RFS2 (44-byte SHA-256) footers.
 
 .SH EXAMPLES
 .PP
