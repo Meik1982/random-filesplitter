@@ -531,101 +531,492 @@ impl Translations {
         }
     }
 
-    /// Prints a localized CLI summary banner when `rfs --help` or `rfs -l <code>` is called.
+    /// Prints the complete localized CLI help message for `lang`.
     pub fn print_cli_localized_help(&self, lang: Lang) {
-        if lang == Lang::En {
-            return;
+        if lang != Lang::En {
+            println!("\n------------------------------------------------------------");
+            println!(" [{}] {}", lang.code().to_ascii_uppercase(), self.subtitle);
+            println!("------------------------------------------------------------");
         }
-        println!("\n------------------------------------------------------------");
-        println!(" [{}] {}", lang.code().to_ascii_uppercase(), self.subtitle);
-        println!("------------------------------------------------------------");
         match lang {
-            Lang::De => {
-                println!(" Hauptbefehle:");
-                println!("   rfs split [Optionen] <Datei|->          (Datei in 2 oder N Shares aufteilen)");
-                println!("   rfs restore [Optionen] <Shares...>      (Originaldatei aus N Shares wiederherstellen)");
-                println!("   rfs verify [Optionen] <Shares...>       (BLKS-384 Integrität im RAM prüfen)");
-                println!("   rfs scan [Optionen] <Dateien...>        (Gültige Share-Sets automatisch finden)");
-                println!("   rfs forge <Shares...> --reveal-as <D> -o <Out> (Gegen-Share für Köder erzeugen)");
+            Lang::En => {
+                println!("\nUsage:");
+                println!("  rfs split [options] <source|-> [shares...]     (Split file or stdin into 2 or N shares)");
+                println!("  rfs restore [options] <shares...> [target|-]   (Reconstruct N shares to disk or stdout)");
+                println!("  rfs verify [options] <shares...>               (Verify integrity of N shares in RAM)");
+                println!("  rfs scan [options] <candidate_files...>        (Auto-discover & assemble valid OTP sets)");
+                println!("  rfs forge <shares...> --reveal-as <decoy> -o <out> (Synthesize plausible deniability decoy)");
+                println!("  rfs decoy [options] [-t <template>] [-s <size>] (Generate ChaCha20 random decoy files)");
+
+                println!("\nClassic Syntax:");
+                println!("  rfs [options] <file|->                         (Split file or stdin into 2 shares)");
+                println!("  rfs [options] <part1> <part2> [part3...]       (Reconstruct file from N shares)");
+                println!("  rfs --verify <shares...>                       (Verify integrity of N shares)");
+
+                println!("\nN-Way One-Time-Pad & Unix Streaming Pipes:");
+                println!("  rfs split -n 3 secret.iso                      (Split into 3 noise shares: .rfs1, .rfs2, .rfs3)");
+                println!("  rfs split -n 3 secret.iso --decoy-reveal doc.pdf (Embed authentic plaintext decoy into shares)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./shares   (Symmetric multi-payload split over GF(2))");
+                println!("  rfs restore secret.rfs1 secret.rfs2 secret.rfs3 (Bit-exact restore from all 3 shares)");
+                println!("  rfs scan /backup/*.rfs -r -o ./restored        (Scan folder and auto-reconstruct all valid sets)");
+                println!("  rfs forge share1.rfs --reveal-as harmless.pdf -o fake2.rfs (Rubber-hose defense counterpart)");
+                println!("  tar -czf - /data | rfs split -n 4 - -o backup  (Stream stdin directly into 4 shares)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Pipe restored stream directly to stdout)");
+
+                println!("\nCommands & Tools:");
+                println!("  -b, --benchmark                                Run hardware throughput benchmark");
+                println!("  -e, --entropy-test                            Run two-phase entropy and jitter diagnostics");
+                println!("  -a, --analyze <file>                          Cryptanalytic NIST SP 800-22 file analysis");
                 println!(
-                    "   rfs decoy [-t <Vorlage>] [-s <Größe>]   (ChaCha20-Rauschdateien erzeugen)"
+                    "  -h, --help                                    Display this help message"
+                );
+                println!(
+                    "  -V, --version                                 Display version information"
+                );
+
+                println!("\nOptions:");
+                println!("  -n, --parts <COUNT>                           Number of shares for N-way splitting (2 to 64; default: 2)");
+                println!("  -T, --threshold <COUNT>                       Subset threshold T for multi-payload splitting over GF(2)");
+                println!("  -B, --block-size <SIZE>                       I/O buffer block size (e.g., 64K, 1M, 4M, 16M; default: 4M)");
+                println!("  -d, --decoys <COUNT>                          Generate additional decoy chaff files during split");
+                println!("  --decoy-reveal <FILE>                         Embed authentic plaintext decoy into shares during split");
+                println!("  --pad-to <SIZE>                               Pad shares to an exact target byte size (e.g., 100M, 20G)");
+                println!("  --token, --rnd                                Anti-forensics: Uncorrelated hex tokens (.<rnd>.rfs)");
+                println!("  -r, --restore                                 Auto-reconstruct discovered sets ('rfs scan')");
+                println!("  --reveal-as <FILE>                            Plaintext file to reveal during decoy forge ('rfs forge')");
+                println!("  -c, --count <COUNT>                           Number of decoy files for 'rfs decoy' (default: 1)");
+                println!("  -s, --size <SIZE>                             Explicit byte size for 'rfs decoy' (e.g., 64K, 10M, 1G)");
+                println!("  -t, --template <FILE>                         Template file for 'rfs decoy' (raw file +64B or RFS 1:1)");
+                println!("  -o, --output <PATH>                           Share prefix or restore target destination (or '-' for stdout)");
+                println!("  --direct                                      Direct I/O: Bypass OS page cache for multi-gigabyte transfers");
+                println!("  --mlock                                       Lock buffer memory in physical RAM (prevents swap paging)");
+                println!("  --json                                        Machine-readable NDJSON telemetry on stderr");
+                println!("  -f, --force                                   Overwrite existing destination files");
+                println!("  -q, --quiet, --silent                         Suppress interactive progress (errors only)");
+                println!("  -l, --lang <CODE>                             Language code (en [default], de, es, fr, ja, zh, tok, sp)");
+                println!("\nTip: Run 'rfs <subcommand> --help' for detailed options on a specific command.\n");
+            }
+            Lang::De => {
+                println!("\nVerwendung:");
+                println!("  rfs split [Optionen] <Quelle|-> [Shares...]    (Datei oder Stdin in 2 oder N Shares aufteilen)");
+                println!("  rfs restore [Optionen] <Shares...> [Ziel|-]    (N Shares auf Festplatte oder Stdout rekonstruieren)");
+                println!("  rfs verify [Optionen] <Shares...>              (BLKS-384 Integrität von N Shares im RAM prüfen)");
+                println!("  rfs scan [Optionen] <Kandidaten...>            (Gültige OTP-Sets automatisch finden & entpacken)");
+                println!("  rfs forge <Shares...> --reveal-as <Köder> -o <Out> (Gegen-Share für glaubhafte Abstreitbarkeit)");
+                println!("  rfs decoy [Optionen] [-t <Vorlage>] [-s <Größe>] (ChaCha20-Rauschdateien als Köder erzeugen)");
+
+                println!("\nKlassische Syntax:");
+                println!("  rfs [Optionen] <Datei|->                       (Datei oder Stdin in 2 Shares aufteilen)");
+                println!("  rfs [Optionen] <Teil1> <Teil2> [Teil3...]      (Originaldatei aus N Shares wiederherstellen)");
+                println!("  rfs --verify <Shares...>                       (Integrität von N Shares prüfen)");
+
+                println!("\nN-Way One-Time-Pad & Unix-Streaming-Pipes:");
+                println!("  rfs split -n 3 geheim.iso                      (In 3 Rausch-Shares aufteilen)");
+                println!("  rfs split -n 3 geheim.iso --decoy-reveal dok.pdf (Echten Klartext-Köder simultan einweben)");
+                println!("  rfs split d1.db d2.pdf -n 4 -T 3 -o ./shares   (Symmetrisches Multi-Payload-Splitting über GF(2))");
+                println!("  rfs restore geheim.rfs1 geheim.rfs2 geheim.rfs3 (Bitgenaue Wiederherstellung aus allen 3 Shares)");
+                println!("  rfs scan /backup/*.rfs -r -o ./wiederhergestellt (Ordner scannen & alle gültigen Sets entpacken)");
+                println!("  rfs forge share1.rfs --reveal-as harmlos.pdf -o fake2.rfs (Gegen-Share zur Rubber-Hose-Abwehr)");
+                println!("  tar -czf - /daten | rfs split -n 4 - -o backup (Stdin direkt in 4 Shares streamen)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Rekonstruierten Stream direkt nach Stdout leiten)");
+
+                println!("\nBefehle & Diagnose:");
+                println!("  -b, --benchmark                                Hardware-Durchsatz-Benchmark (SIMD, ChaCha20, BLKS)");
+                println!("  -e, --entropy-test                            Zweiphasige Entropie- und Hardware-Jitter-Diagnose");
+                println!("  -a, --analyze <Datei>                         Kryptoanalytische NIST SP 800-22 Dateianalyse");
+                println!("  -h, --help                                    Diese Hilfe anzeigen");
+                println!("  -V, --version                                 Versionsinformationen anzeigen");
+
+                println!("\nOptionen:");
+                println!("  -n, --parts <ANZAHL>                          Anzahl der Shares beim N-Way-Splitting (2..64; Standard: 2)");
+                println!("  -T, --threshold <ANZAHL>                      Schwellenwert T für Multi-Payload-Splitting über GF(2)");
+                println!("  -B, --block-size <GRÖSSE>                     I/O-Puffergröße (z. B. 64K, 1M, 4M, 16M; Standard: 4M)");
+                println!("  -d, --decoys <ANZAHL>                         Zusätzliche Köderdateien (Decoys) beim Split erzeugen");
+                println!("  --decoy-reveal <DATEI>                        Harmlosen Klartext-Köder simultan in Shares einbetten");
+                println!("  --pad-to <GRÖSSE>                             Shares auf exakte Zielgröße aufblähen (z. B. 100M, 20G)");
+                println!("  --token, --rnd                                Anti-Forensik: Unkorrelierte Hex-Tokens (.<rnd>.rfs)");
+                println!("  -r, --restore                                 Entdeckte Sets direkt wiederherstellen ('rfs scan')");
+                println!("  --reveal-as <DATEI>                           Vorzulegende Köderdatei bei 'rfs forge'");
+                println!("  -c, --count <ANZAHL>                          Anzahl der Köderdateien bei 'rfs decoy' (Standard: 1)");
+                println!("  -s, --size <GRÖSSE>                           Explizite Bytegröße für 'rfs decoy' (z. B. 64K, 10M, 1G)");
+                println!("  -t, --template <DATEI>                        Vorlagendatei für 'rfs decoy' (Rohdatei +64B oder RFS 1:1)");
+                println!("  -o, --output <PFAD>                           Ausgabepräfix oder Zielpfad (oder '-' für Stdout)");
+                println!("  --direct                                      Direct I/O: OS Page-Cache bei großen Dateien umgehen");
+                println!("  --mlock                                       Puffer im physischen RAM sperren (verhindert Swap-Paging)");
+                println!("  --json                                        Maschinenlesbare NDJSON-Telemetrie auf stderr");
+                println!("  -f, --force                                   Bestehende Zieldateien überschreiben");
+                println!("  -q, --quiet, --silent                         Fortschrittsanzeige unterdrücken (nur Fehler)");
+                println!("  -l, --lang <CODE>                             Sprachcode (en [Standard], de, es, fr, ja, zh, tok, sp)");
+                println!(
+                    "\nTipp: 'rfs <Befehl> --help' zeigt detaillierte Optionen zu einem Befehl.\n"
                 );
             }
             Lang::Es => {
-                println!(" Comandos principales:");
+                println!("\nUso:");
+                println!("  rfs split [opciones] <fuente|-> [partes...]    (Dividir archivo o stdin en 2 o N partes)");
+                println!("  rfs restore [opciones] <partes...> [destino|-] (Reconstruir N partes en disco o stdout)");
+                println!("  rfs verify [opciones] <partes...>              (Verificar integridad BLKS-384 de N partes en RAM)");
+                println!("  rfs scan [opciones] <archivos...>              (Auto-descubrir y ensamblar conjuntos OTP válidos)");
+                println!("  rfs forge <partes...> --reveal-as <señuelo> -o <out> (Sintetizar parte falsa de negabilidad plausible)");
+                println!("  rfs decoy [opciones] [-t <plantilla>] [-s <tam>] (Generar archivos señuelo de ruido ChaCha20)");
+
+                println!("\nSintaxis Clásica:");
+                println!("  rfs [opciones] <archivo|->                     (Dividir archivo o stdin en 2 partes)");
+                println!("  rfs [opciones] <parte1> <parte2> [parte3...]   (Reconstruir archivo desde N partes)");
+                println!("  rfs --verify <partes...>                       (Verificar integridad de N partes)");
+
+                println!("\nOne-Time-Pad N-Way y Tuberías Unix (Streaming):");
+                println!("  rfs split -n 3 secreto.iso                     (Dividir en 3 partes de ruido)");
+                println!("  rfs split -n 3 secreto.iso --decoy-reveal doc.pdf (Incrustar señuelo auténtico simultáneamente)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./partes   (División múltiple simétrica sobre GF(2))");
+                println!("  rfs restore secreto.rfs1 secreto.rfs2 secreto.rfs3 (Restauración exacta bit a bit de las 3 partes)");
+                println!("  rfs scan /backup/*.rfs -r -o ./restaurado      (Escanear carpeta y auto-reconstruir conjuntos)");
+                println!("  rfs forge share1.rfs --reveal-as inofensivo.pdf -o fake2.rfs (Contraparte para defensa coercitiva)");
+                println!("  tar -czf - /datos | rfs split -n 4 - -o backup (Transmitir stdin directamente en 4 partes)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Enviar flujo restaurado directamente a stdout)");
+
+                println!("\nComandos y Herramientas:");
+                println!("  -b, --benchmark                                Ejecutar prueba de rendimiento de hardware");
+                println!("  -e, --entropy-test                            Diagnóstico de entropía y jitter en dos fases");
+                println!("  -a, --analyze <archivo>                       Análisis criptoanalítico NIST SP 800-22");
                 println!(
-                    "   rfs split [opciones] <archivo|->        (Dividir archivo en 2 o N partes)"
+                    "  -h, --help                                    Mostrar este mensaje de ayuda"
                 );
-                println!("   rfs restore [opciones] <partes...>      (Reconstruir archivo desde N partes)");
-                println!("   rfs verify [opciones] <partes...>       (Verificar integridad BLKS-384 en RAM)");
-                println!("   rfs scan [opciones] <archivos...>       (Auto-descubrir conjuntos OTP válidos)");
+                println!("  -V, --version                                 Mostrar información de versión");
+
+                println!("\nOpciones:");
+                println!("  -n, --parts <CANT>                            Número de partes para división N-way (2 a 64; defecto: 2)");
+                println!("  -T, --threshold <CANT>                        Umbral T para división múltiple sobre GF(2)");
+                println!("  -B, --block-size <TAM>                        Tamaño de bloque de E/S (ej. 64K, 1M, 4M, 16M; defecto: 4M)");
+                println!("  -d, --decoys <CANT>                           Generar archivos señuelo adicionales durante la división");
+                println!("  --decoy-reveal <ARCHIVO>                      Incrustar archivo señuelo inofensivo durante la división");
+                println!("  --pad-to <TAM>                                Rellenar partes hasta un tamaño exacto (ej. 100M, 20G)");
+                println!("  --token, --rnd                                Antiforense: Tokens hexadecimales no correlacionados");
+                println!("  -r, --restore                                 Auto-reconstruir conjuntos descubiertos ('rfs scan')");
+                println!("  --reveal-as <ARCHIVO>                         Archivo señuelo a revelar en 'rfs forge'");
+                println!("  -c, --count <CANT>                            Cantidad de archivos señuelo en 'rfs decoy' (defecto: 1)");
+                println!("  -s, --size <TAM>                              Tamaño explícito en bytes para 'rfs decoy' (ej. 64K, 10M)");
+                println!("  -t, --template <ARCHIVO>                      Archivo plantilla para 'rfs decoy' (original +64B o RFS 1:1)");
+                println!("  -o, --output <RUTA>                           Prefijo de salida o ruta destino (o '-' para stdout)");
+                println!("  --direct                                      Direct I/O: Omitir caché de página del sistema operativo");
+                println!("  --mlock                                       Bloquear memoria de búfer en RAM física (evita swap)");
+                println!("  --json                                        Telemetría NDJSON legible por máquina en stderr");
+                println!("  -f, --force                                   Sobrescribir archivos de destino existentes");
+                println!("  -q, --quiet, --silent                         Suprimir barra de progreso interactiva (solo errores)");
+                println!("  -l, --lang <CÓDIGO>                           Código de idioma (en [defecto], de, es, fr, ja, zh, tok, sp)");
                 println!(
-                    "   rfs forge <partes...> --reveal-as <D> -o <Out> (Sintetizar parte señuelo)"
+                    "\nConsejo: Ejecute 'rfs <subcomando> --help' para ver opciones detalladas.\n"
                 );
-                println!("   rfs decoy [-t <plantilla>] [-s <tam>]   (Generar archivos de ruido ChaCha20)");
             }
             Lang::Fr => {
-                println!(" Commandes principales :");
-                println!("   rfs split [options] <fichier|->         (Diviser un fichier en 2 ou N parts)");
-                println!("   rfs restore [options] <parts...>        (Reconstruire le fichier depuis N parts)");
-                println!("   rfs verify [options] <parts...>         (Vérifier l'intégrité BLKS-384 en RAM)");
-                println!("   rfs scan [options] <fichiers...>        (Découvrir automatiquement les ensembles OTP)");
-                println!("   rfs forge <parts...> --reveal-as <D> -o <Out> (Synthétiser une contre-part leurre)");
-                println!("   rfs decoy [-t <modèle>] [-s <taille>]   (Générer des fichiers de bruit ChaCha20)");
+                println!("\nUtilisation :");
+                println!("  rfs split [options] <source|-> [parts...]      (Diviser un fichier ou stdin en 2 ou N parts)");
+                println!("  rfs restore [options] <parts...> [cible|-]     (Reconstruire N parts sur disque ou stdout)");
+                println!("  rfs verify [options] <parts...>                (Vérifier l'intégrité BLKS-384 de N parts en RAM)");
+                println!("  rfs scan [options] <fichiers...>               (Découvrir et assembler les ensembles OTP valides)");
+                println!("  rfs forge <parts...> --reveal-as <leurre> -o <out> (Synthétiser une contre-part de déni plausible)");
+                println!("  rfs decoy [options] [-t <modèle>] [-s <taille>] (Générer des fichiers leurres ChaCha20)");
+
+                println!("\nSyntaxe Classique :");
+                println!("  rfs [options] <fichier|->                      (Diviser un fichier ou stdin en 2 parts)");
+                println!("  rfs [options] <part1> <part2> [part3...]       (Reconstruire le fichier depuis N parts)");
+                println!("  rfs --verify <parts...>                        (Vérifier l'intégrité de N parts)");
+
+                println!("\nMasque Jetable N-Way & Tubes Unix (Streaming) :");
+                println!("  rfs split -n 3 secret.iso                      (Diviser en 3 parts de bruit)");
+                println!("  rfs split -n 3 secret.iso --decoy-reveal doc.pdf (Intégrer un fichier leurre authentique)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./parts    (Partage multiple symétrique sur GF(2))");
+                println!("  rfs restore secret.rfs1 secret.rfs2 secret.rfs3 (Restauration exacte bit-à-bit des 3 parts)");
+                println!("  rfs scan /backup/*.rfs -r -o ./restaure        (Scanner un dossier et tout reconstruire)");
+                println!("  rfs forge share1.rfs --reveal-as inoffensif.pdf -o fake2.rfs (Contre-part de défense sous contrainte)");
+                println!("  tar -czf - /data | rfs split -n 4 - -o backup  (Flux stdin directement divisé en 4 parts)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (Envoyer le flux restauré vers stdout)");
+
+                println!("\nCommandes & Outils :");
+                println!("  -b, --benchmark                                Exécuter le benchmark matériel (SIMD, ChaCha20, BLKS)");
+                println!("  -e, --entropy-test                            Diagnostic d'entropie et de gigue en deux phases");
+                println!("  -a, --analyze <fichier>                       Analyse cryptanalytique NIST SP 800-22");
+                println!(
+                    "  -h, --help                                    Afficher ce message d'aide"
+                );
+                println!("  -V, --version                                 Afficher la version");
+
+                println!("\nOptions :");
+                println!("  -n, --parts <NB>                              Nombre de parts pour la division N-way (2 à 64 ; défaut : 2)");
+                println!("  -T, --threshold <NB>                          Seuil T pour le multi-partage sur GF(2)");
+                println!("  -B, --block-size <TAILLE>                     Taille de bloc d'E/S (ex. 64K, 1M, 4M, 16M ; défaut : 4M)");
+                println!("  -d, --decoys <NB>                             Générer des fichiers leurres supplémentaires");
+                println!("  --decoy-reveal <FICHIER>                      Intégrer un fichier leurre en texte clair");
+                println!("  --pad-to <TAILLE>                             Remplir les parts jusqu'à une taille exacte (ex. 100M, 20G)");
+                println!("  --token, --rnd                                Anti-forensique : Jetons hexadécimaux aléatoires");
+                println!("  -r, --restore                                 Reconstruire automatiquement les ensembles ('rfs scan')");
+                println!("  --reveal-as <FICHIER>                         Fichier leurre à révéler lors de 'rfs forge'");
+                println!("  -c, --count <NB>                              Nombre de fichiers leurres pour 'rfs decoy' (défaut : 1)");
+                println!("  -s, --size <TAILLE>                           Taille explicite pour 'rfs decoy' (ex. 64K, 10M, 1G)");
+                println!("  -t, --template <FICHIER>                      Fichier modèle pour 'rfs decoy' (brut +64o ou RFS 1:1)");
+                println!("  -o, --output <CHEMIN>                         Préfixe de sortie ou destination (ou '-' pour stdout)");
+                println!("  --direct                                      Direct I/O : Contourner le cache système");
+                println!("  --mlock                                       Verrouiller les tampons en RAM physique (sans swap)");
+                println!(
+                    "  --json                                        Télémétrie NDJSON sur stderr"
+                );
+                println!("  -f, --force                                   Écraser les fichiers existants");
+                println!("  -q, --quiet, --silent                         Masquer la barre de progression (erreurs seules)");
+                println!("  -l, --lang <CODE>                             Code de langue (en [défaut], de, es, fr, ja, zh, tok, sp)");
+                println!(
+                    "\nAstuce : 'rfs <sous-commande> --help' affiche les options détaillées.\n"
+                );
             }
             Lang::Ja => {
-                println!(" 主なコマンド:");
-                println!("   rfs split [options] <file|->            (ファイルを 2 または N 個のシェアに分割)");
+                println!("\n使用法:");
+                println!("  rfs split [options] <元ファイル|-> [シェア...] (ファイルまたは標準入力を 2〜N 個のシェアに分割)");
+                println!("  rfs restore [options] <シェア...> [出力先|-]   (N 個のシェアから元ファイルまたは標準出力へ復元)");
+                println!("  rfs verify [options] <シェア...>               (RAM 上で N 個のシェアの BLKS-384 完全性を検証)");
+                println!("  rfs scan [options] <候補ファイル...>           (有効な OTP シェアの組み合わせを自動検出・復元)");
+                println!("  rfs forge <シェア...> --reveal-as <おとり> -o <出力> (もっともらしい否認のためのおとり偽シェア合成)");
+                println!("  rfs decoy [options] [-t <雛形>] [-s <サイズ>]  (ChaCha20 乱数ノイズのおとりファイルを生成)");
+
+                println!("\nクラシック構文:");
+                println!("  rfs [options] <ファイル|->                     (ファイルを 2 個のシェアに分割)");
+                println!("  rfs [options] <part1> <part2> [part3...]       (N 個のシェアから元ファイルを復元)");
                 println!(
-                    "   rfs restore [options] <shares...>       (N 個のシェアから元ファイルを復元)"
+                    "  rfs --verify <シェア...>                       (N 個のシェアの完全性を検証)"
                 );
-                println!("   rfs verify [options] <shares...>        (RAM 上で BLKS-384 完全性を高速検証)");
-                println!("   rfs scan [options] <files...>           (有効な OTP シェアの組み合わせを自動検出)");
+
+                println!("\nN-Way ワンタイムパッド & Unix ストリーミングパイプ:");
+                println!("  rfs split -n 3 secret.iso                      (3 個の乱数ノイズシェアに分割)");
+                println!("  rfs split -n 3 secret.iso --decoy-reveal doc.pdf (分割時に無害なおとり平文を同時埋め込み)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./shares   (GF(2) 上の対称マルチペイロード分割)");
+                println!("  rfs restore secret.rfs1 secret.rfs2 secret.rfs3 (全 3 シェアからビット単位で完全復元)");
+                println!("  rfs scan /backup/*.rfs -r -o ./restored        (フォルダをスキャンし有効なセットを自動一括復元)");
+                println!("  rfs forge share1.rfs --reveal-as harmless.pdf -o fake2.rfs (強制開示対策の偽カウンターパート合成)");
+                println!("  tar -czf - /data | rfs split -n 4 - -o backup  (標準入力を直接 4 個のシェアへストリーム分割)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (復元ストリームを直接標準出力へパイプ)");
+
+                println!("\nコマンド & 診断ツール:");
+                println!("  -b, --benchmark                                ハードウェアスループット・ベンチマークを実行");
+                println!("  -e, --entropy-test                            2段階のエントロピー & CPU ジッター診断を実行");
+                println!("  -a, --analyze <file>                          NIST SP 800-22 暗号統計ファイル解析");
                 println!(
-                    "   rfs forge <shares...> --reveal-as <D> -o <Out> (おとり用の偽シェアを合成)"
+                    "  -h, --help                                    このヘルプメッセージを表示"
                 );
-                println!("   rfs decoy [-t <template>] [-s <size>]   (ChaCha20 乱数ノイズファイルを生成)");
+                println!("  -V, --version                                 バージョン情報を表示");
+
+                println!("\nオプション:");
+                println!("  -n, --parts <COUNT>                           分割するシェア数 (2〜64; デフォルト: 2)");
+                println!("  -T, --threshold <COUNT>                       GF(2) マルチペイロード分割のしきい値 T");
+                println!("  -B, --block-size <SIZE>                       I/O バッファブロックサイズ (64K, 1M, 4M, 16M; 標準: 4M)");
+                println!("  -d, --decoys <COUNT>                          分割時に追加のおとりノイズファイルを生成");
+                println!("  --decoy-reveal <FILE>                         分割時に本物のおとり平文ファイルを埋め込む");
+                println!("  --pad-to <SIZE>                               シェアを指定バイトサイズまでパディング (例: 100M, 20G)");
+                println!("  --token, --rnd                                アンチフォレンジック: ランダムな16進トークン名 (.<rnd>.rfs)");
+                println!("  -r, --restore                                 検出したセットを自動復元 ('rfs scan')");
+                println!("  --reveal-as <FILE>                            おとり合成時に開示する平文ファイル ('rfs forge')");
+                println!("  -c, --count <COUNT>                           'rfs decoy' で生成するおとりファイル数 (標準: 1)");
+                println!("  -s, --size <SIZE>                             'rfs decoy' の明示的なバイトサイズ (例: 64K, 10M, 1G)");
+                println!("  -t, --template <FILE>                         'rfs decoy' のテンプレートファイル (元ファイル+64B または RFS 1:1)");
+                println!("  -o, --output <PATH>                           出力プレフィックスまたは復元先パス ('-' で標準出力)");
+                println!("  --direct                                      Direct I/O: OS ページキャッシュをバイパス");
+                println!("  --mlock                                       バッファを物理 RAM にロック (スワップ流出防止)");
+                println!("  --json                                        stderr に機械可読な NDJSON テレメトリを出力");
+                println!(
+                    "  -f, --force                                   既存の出力ファイルを上書き"
+                );
+                println!("  -q, --quiet, --silent                         進捗バーを非表示 (エラーのみ出力)");
+                println!("  -l, --lang <CODE>                             言語コード (en [標準], de, es, fr, ja, zh, tok, sp)");
+                println!("\nヒント: 'rfs <サブコマンド> --help' で各コマンドの詳細オプションを表示します。\n");
             }
             Lang::Zh => {
-                println!(" 核心命令：");
+                println!("\n用法：");
+                println!("  rfs split [选项] <源文件|-> [分片...]          (将文件或标准输入分割为 2 或 N 个分片)");
+                println!("  rfs restore [选项] <分片...> [目标|-]          (将 N 个分片重构至磁盘或标准输出)");
+                println!("  rfs verify [选项] <分片...>                    (在内存中快速验证 N 个分片的 BLKS-384 完整性)");
+                println!("  rfs scan [选项] <候选文件...>                  (自动扫描发现并组装有效的 OTP 分片组合)");
+                println!("  rfs forge <分片...> --reveal-as <诱饵> -o <输出> (合成可否认的诱饵对应伪造分片)");
+                println!("  rfs decoy [选项] [-t <模板>] [-s <大小>]       (生成纯 ChaCha20 随机噪声诱饵文件)");
+
+                println!("\n经典语法：");
+                println!("  rfs [选项] <文件|->                            (将文件或标准输入分割为 2 个分片)");
                 println!(
-                    "   rfs split [选项] <文件|->               (将文件或流分割为 2 或 N 个分片)"
-                );
-                println!("   rfs restore [选项] <分片...>            (从 N 个分片重构原始文件)");
-                println!(
-                    "   rfs verify [选项] <分片...>             (在内存中快速验证 BLKS-384 完整性)"
-                );
-                println!("   rfs scan [选项] <候选文件...>           (自动扫描并发现有效的 OTP 分片组合)");
-                println!(
-                    "   rfs forge <分片...> --reveal-as <D> -o <Out> (合成可否认的诱饵对应分片)"
+                    "  rfs [选项] <分片1> <分片2> [分片3...]          (从 N 个分片还原原始文件)"
                 );
                 println!(
-                    "   rfs decoy [-t <模板>] [-s <大小>]       (生成纯 ChaCha20 随机噪声诱饵文件)"
+                    "  rfs --verify <分片...>                         (验证 N 个分片的完整性)"
                 );
+
+                println!("\nN-Way 一次性密码本与 Unix 流式管道：");
+                println!(
+                    "  rfs split -n 3 secret.iso                      (分割为 3 个随机噪声分片)"
+                );
+                println!("  rfs split -n 3 secret.iso --decoy-reveal doc.pdf (分割时同时嵌入真实明文诱饵)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./shares   (基于 GF(2) 的对称多载荷文件分割)");
+                println!("  rfs restore secret.rfs1 secret.rfs2 secret.rfs3 (从全部 3 个分片比特级精确还原)");
+                println!("  rfs scan /backup/*.rfs -r -o ./restored        (扫描文件夹并自动重构所有有效分片组合)");
+                println!("  rfs forge share1.rfs --reveal-as harmless.pdf -o fake2.rfs (抗胁迫橡胶软管防御伪造分片)");
+                println!("  tar -czf - /data | rfs split -n 4 - -o backup  (将标准输入直接流式分割为 4 个分片)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (将还原的数据流直接通过管道输出到 stdout)");
+
+                println!("\n命令与工具：");
+                println!("  -b, --benchmark                                运行硬件吞吐量基准测试 (SIMD, ChaCha20, BLKS)");
+                println!(
+                    "  -e, --entropy-test                            运行两阶段熵源与 CPU 抖动诊断"
+                );
+                println!("  -a, --analyze <文件>                          NIST SP 800-22 密码学文件熵统计分析");
+                println!("  -h, --help                                    显示此帮助信息");
+                println!("  -V, --version                                 显示版本信息");
+
+                println!("\n选项：");
+                println!("  -n, --parts <数量>                            N-Way 分割的分片数量 (2 到 64；默认：2)");
+                println!("  -T, --threshold <数量>                        GF(2) 对称多文件分割的组合阈值 T");
+                println!("  -B, --block-size <大小>                       I/O 缓冲区块大小 (如 64K, 1M, 4M, 16M；默认：4M)");
+                println!("  -d, --decoys <数量>                           分割期间额外生成的诱饵噪声文件数量");
+                println!(
+                    "  --decoy-reveal <文件>                         分割期间嵌入无害明文诱饵文件"
+                );
+                println!("  --pad-to <大小>                               将分片填充至指定精确字节大小 (如 100M, 20G)");
+                println!("  --token, --rnd                                反取证：生成无关联随机十六进制文件名 (.<rnd>.rfs)");
+                println!("  -r, --restore                                 自动还原扫描发现的有效分片组合 ('rfs scan')");
+                println!("  --reveal-as <文件>                            'rfs forge' 伪造时要展示的诱饵明文文件");
+                println!("  -c, --count <数量>                            'rfs decoy' 生成的诱饵文件数量 (默认：1)");
+                println!("  -s, --size <大小>                             'rfs decoy' 的显式字节大小 (如 64K, 10M, 1G)");
+                println!("  -t, --template <文件>                         'rfs decoy' 的模板文件 (原始文件 +64B 或 RFS 1:1)");
+                println!("  -o, --output <路径>                           分片前缀或还原目标路径 ('-' 表示标准输出)");
+                println!("  --direct                                      Direct I/O：绕过操作系统页缓存");
+                println!("  --mlock                                       将缓冲区锁定在物理内存 RAM 中（防止写入交换分区）");
+                println!("  --json                                        在 stderr 上输出机器可读的 NDJSON 遥测事件");
+                println!("  -f, --force                                   覆盖已存在的目标文件");
+                println!("  -q, --quiet, --silent                         静默模式（仅输出错误）");
+                println!("  -l, --lang <代码>                             语言代码 (en [默认], de, es, fr, ja, zh, tok, sp)");
+                println!("\n提示：运行 'rfs <子命令> --help' 查看特定命令的详细选项。\n");
             }
             Lang::Tok => {
-                println!(" nasin pali suli:");
-                println!("   rfs split [nasin] <lipu|->              (o kipisi e lipu tawa kipisi 2 anu N)");
-                println!("   rfs restore [nasin] <kipisi...>         (o wan sin e lipu open tan kipisi N)");
-                println!("   rfs verify [nasin] <kipisi...>          (o lukin e pona BLKS-384)");
+                println!("\nnasin kepeken:");
+                println!("  rfs split [nasin] <lipu|-> [kipisi...]         (o kipisi e lipu tawa kipisi 2 anu N)");
+                println!("  rfs restore [nasin] <kipisi...> [pini|-]       (o wan sin e lipu open tan kipisi N)");
+                println!("  rfs verify [nasin] <kipisi...>                 (o lukin e pona BLKS-384 pi kipisi N)");
+                println!("  rfs scan [nasin] <lipu...>                     (o alasa e kulupu kipisi pona)");
+                println!("  rfs forge <kipisi...> --reveal-as <powe> -o <out> (o pali e kipisi powe sin)");
+                println!("  rfs decoy [nasin] [-t <lipu>] [-s <suli>]      (o pali e lipu pi kalama nasa ChaCha20)");
+
+                println!("\nnasin majuna:");
+                println!("  rfs [nasin] <lipu|->                           (o kipisi e lipu tawa kipisi 2)");
+                println!("  rfs [nasin] <kipisi1> <kipisi2> [kipisi3...]   (o wan sin e lipu tan kipisi N)");
                 println!(
-                    "   rfs scan [nasin] <lipu...>              (o alasa e kulupu kipisi pona)"
+                    "  rfs --verify <kipisi...>                       (o lukin e pona pi kipisi N)"
                 );
+
+                println!("\nnasin kipisi N & nasin linja Unix:");
+                println!("  rfs split -n 3 len.iso                         (o kipisi tawa kipisi 3 pi kalama nasa)");
+                println!("  rfs split -n 3 len.iso --decoy-reveal musi.pdf (o pana e lipu powe lon insa kipisi)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./kipisi   (o kipisi e lipu mute lon nasin GF(2))");
+                println!("  rfs restore len.rfs1 len.rfs2 len.rfs3         (o wan sin e lipu tan kipisi 3 ale)");
+                println!("  rfs scan /poki/*.rfs -r -o ./sin               (o alasa lon poki li wan sin e kulupu ale)");
+                println!("  rfs forge share1.rfs --reveal-as musi.pdf -o fake2.rfs (o pali e kipisi powe tawa awen)");
+                println!("  tar -czf - /data | rfs split -n 4 - -o backup  (o kipisi e linja tawa kipisi 4)");
+                println!("  rfs restore backup.rfs* -o - | tar -xzf -      (o pana e lipu sin tawa linja pini)");
+
+                println!("\nilo lukin & sona:");
+                println!("  -b, --benchmark                                o lukin e wawa ilo (SIMD, ChaCha20, BLKS)");
                 println!(
-                    "   rfs forge <kipisi...> --reveal-as <D> -o <Out> (o pali e kipisi powe)"
+                    "  -e, --entropy-test                            o lukin e pona pi kalama nasa"
                 );
-                println!("   rfs decoy [-t <lipu>] [-s <suli>]       (o pali e lipu pi kalama nasa ChaCha20)");
+                println!("  -a, --analyze <lipu>                          o lukin e nanpa NIST SP 800-22 lon lipu");
+                println!("  -h, --help                                    o pana e lipu sona ni");
+                println!(
+                    "  -V, --version                                 o pana e nanpa pali pi ilo ni"
+                );
+
+                println!("\nnasin ante:");
+                println!("  -n, --parts <MUTE>                            mute kipisi (2..64; nasin open: 2)");
+                println!("  -T, --threshold <MUTE>                        mute kipisi wile T tawa lipu mute GF(2)");
+                println!("  -B, --block-size <SULI>                       suli poki pali (64K, 1M, 4M, 16M; open: 4M)");
+                println!("  -d, --decoys <MUTE>                           o pali e kipisi powe pi kalama nasa");
+                println!("  --decoy-reveal <LIPU>                         o pana e lipu powe lon insa kipisi");
+                println!("  --pad-to <SULI>                               o suli e kipisi ale tawa suli sama (100M, 20G)");
+                println!("  --token, --rnd                                nimi len: nanpa nasa (.<rnd>.rfs)");
+                println!("  -r, --restore                                 o wan sin e kulupu ale ('rfs scan')");
+                println!(
+                    "  --reveal-as <LIPU>                            lipu powe tawa 'rfs forge'"
+                );
+                println!("  -c, --count <MUTE>                            mute pi lipu powe lon 'rfs decoy' (open: 1)");
+                println!("  -s, --size <SULI>                             suli pi lipu powe lon 'rfs decoy' (64K, 10M)");
+                println!("  -t, --template <LIPU>                         lipu sama tawa 'rfs decoy' (+64B anu RFS 1:1)");
+                println!("  -o, --output <NIMI>                           nimi anu poki pini ('-' tawa stdout)");
+                println!("  --direct                                      Direct I/O: o kepeken ala e poki awen OS");
+                println!("  --mlock                                       o awen e sona lon insa RAM taso");
+                println!(
+                    "  --json                                        o pana e toki JSON lon stderr"
+                );
+                println!("  -f, --force                                   o ante e lipu pini lon");
+                println!(
+                    "  -q, --quiet, --silent                         o kalama ala (pakala taso)"
+                );
+                println!("  -l, --lang <TOKI>                             toki ilo (en [open], de, es, fr, ja, zh, tok, sp)");
+                println!("\nsona: o kepeken 'rfs <pali> --help' tawa sona mute.\n");
             }
             Lang::Sp => {
-                println!(" 󱤿 󱥉 󱥣:");
-                println!("   rfs split [󱤿] <󱤪|->                   (󱥄 󱥻 󱤉 󱤪 󱥩 󱥻 2 󱤇 N)");
-                println!("   rfs restore [󱤿] <󱥻...>                 (󱥄 󱥳 󱥝 󱤉 󱤪 󱥇 󱤬 󱥻 N)");
-                println!("   rfs verify [󱤿] <󱥻...>                  (󱥄 󱤮 󱤉 󱥔 BLKS-384)");
-                println!("   rfs scan [󱤿] <󱤪...>                   (󱥄 󱤃 󱤉 󱤟 󱥻 󱥔)");
-                println!("   rfs forge <󱥻...> --reveal-as <D> -o <Out> (󱥄 󱥉 󱤉 󱥻 󱦣)");
-                println!("   rfs decoy [-t <󱤪>] [-s <󱥣>]           (󱥄 󱥉 󱤉 󱤪 󱥍 󱤕 󱤾 ChaCha20)");
+                println!("\n󱤿 󱤙:");
+                println!("  rfs split [󱤿] <󱤪|-> [󱥻...]               (󱥄 󱥻 󱤉 󱤪 󱥩 󱥻 2 󱤇 N)");
+                println!("  rfs restore [󱤿] <󱥻...> [󱥐|-]               (󱥄 󱥳 󱥝 󱤉 󱤪 󱥇 󱤬 󱥻 N)");
+                println!("  rfs verify [󱤿] <󱥻...>                        (󱥄 󱤮 󱤉 󱥔 BLKS-384 󱥍 󱥻 N)");
+                println!("  rfs scan [󱤿] <󱤪...>                         (󱥄 󱤃 󱤉 󱤟 󱥻 󱥔)");
+                println!("  rfs forge <󱥻...> --reveal-as <󱦣> -o <out>    (󱥄 󱥉 󱤉 󱥻 󱦣 󱥝)");
+                println!("  rfs decoy [󱤿] [-t <󱤪>] [-s <󱥣>]            (󱥄 󱥉 󱤉 󱤪 󱥍 󱤕 󱤾 ChaCha20)");
+
+                println!("\n󱤿 󱥇:");
+                println!("  rfs [󱤿] <󱤪|->                               (󱥄 󱥻 󱤉 󱤪 󱥩 󱥻 2)");
+                println!("  rfs [󱤿] <󱥻1> <󱥻2> [󱥻3...]                 (󱥄 󱥳 󱥝 󱤉 󱤪 󱤬 󱥻 N)");
+                println!("  rfs --verify <󱥻...>                           (󱥄 󱤮 󱤉 󱥔 󱥍 󱥻 N)");
+
+                println!("\n󱤿 󱥻 N & Unix:");
+                println!("  rfs split -n 3 len.iso                         (󱥄 󱥻 󱥩 󱥻 3 󱥍 󱤕 󱤾)");
+                println!("  rfs split -n 3 len.iso --decoy-reveal musi.pdf (󱥄 󱥉 󱤉 󱤪 󱦣 󱤬 󱥻)");
+                println!("  rfs split f1.db f2.pdf -n 4 -T 3 -o ./kipisi   (󱥄 󱥻 󱤉 󱤪 󱤼 󱤬 󱤿 GF(2))");
+                println!("  rfs restore len.rfs1 len.rfs2 len.rfs3         (󱥄 󱥳 󱥝 󱤉 󱤪 󱤬 󱥻 3 󱤄)");
+                println!("  rfs scan /poki/*.rfs -r -o ./sin               (󱥄 󱤃 󱤬 󱥓 󱤧 󱥳 󱥝 󱤉 󱤟 󱤄)");
+                println!(
+                    "  rfs forge share1.rfs --reveal-as musi.pdf -o fake2.rfs (󱥄 󱥉 󱤉 󱥻 󱦣 󱥩 󱤈)"
+                );
+
+                println!("\n󱤎 󱤮 & 󱥡:");
+                println!("  -b, --benchmark                                󱥄 󱤮 󱤉 󱥵 󱤎 (SIMD, ChaCha20, BLKS)");
+                println!("  -e, --entropy-test                            󱥄 󱤮 󱤉 󱥔 󱥍 󱤕 󱤾");
+                println!(
+                    "  -a, --analyze <lipu>                          󱥄 󱤮 󱤉 󱤽 NIST SP 800-22 󱤬 󱤪"
+                );
+                println!("  -h, --help                                    󱥄 󱤮 󱤉 󱤪 󱥡");
+                println!("  -V, --version                                 󱥄 󱤮 󱤉 󱤽 󱤎");
+
+                println!("\n󱤿 󱤆:");
+                println!("  -n, --parts <MUTE>                            󱤼 󱥻 (2..64; 󱥇: 2)");
+                println!("  -T, --threshold <MUTE>                        󱤼 󱥻 󱥷 T 󱥩 󱤪 󱤼 GF(2)");
+                println!("  -B, --block-size <SULI>                       󱥣 󱥓 󱥉 (64K, 1M, 4M, 16M; 󱥇: 4M)");
+                println!("  -d, --decoys <MUTE>                           󱥄 󱥉 󱤉 󱥻 󱦣 󱥍 󱤕 󱤾");
+                println!("  --decoy-reveal <LIPU>                         󱥄 󱥉 󱤉 󱤪 󱦣 󱤬 󱥻");
+                println!(
+                    "  --pad-to <SULI>                               󱥄 󱥣 󱤉 󱥻 󱤄 󱥩 󱥣 󱥖 (100M, 20G)"
+                );
+                println!("  --token, --rnd                                󱥂 󱤥: 󱤽 󱤾 (.<rnd>.rfs)");
+                println!(
+                    "  -r, --restore                                 󱥄 󱥳 󱥝 󱤉 󱤟 󱤄 ('rfs scan')"
+                );
+                println!("  --reveal-as <LIPU>                            󱤪 󱦣 󱥩 'rfs forge'");
+                println!(
+                    "  -c, --count <MUTE>                            󱤼 󱥍 󱤪 󱦣 󱤬 'rfs decoy' (󱥇: 1)"
+                );
+                println!("  -s, --size <SULI>                             󱥣 󱥍 󱤪 󱦣 󱤬 'rfs decoy' (64K, 10M)");
+                println!("  -t, --template <LIPU>                         󱤪 󱥖 󱥩 'rfs decoy' (+64B 󱤇 RFS 1:1)");
+                println!("  -o, --output <NIMI>                           󱥂 󱤇 󱥓 󱥐 ('-' 󱥩 stdout)");
+                println!(
+                    "  --direct                                      Direct I/O: 󱥄 󱤙 󱤂 󱤉 󱥓 OS"
+                );
+                println!("  --mlock                                       󱥄 󱤈 󱤉 󱥡 󱤬 RAM 󱥨");
+                println!("  --json                                        󱥄 󱥉 󱤉 JSON 󱤬 stderr");
+                println!("  -f, --force                                   󱥄 󱤆 󱤉 󱤪 󱥐 󱤬");
+                println!("  -q, --quiet, --silent                         󱥄 󱤕 󱤂 (󱥈 󱥨)");
+                println!("  -l, --lang <TOKI>                             󱥬 󱤎 (en [󱥇], de, es, fr, ja, zh, tok, sp)");
+                println!("\n󱥡: 󱥄 󱤙 'rfs <󱥉> --help' 󱥩 󱥡 󱤼.\n");
             }
-            Lang::En => {}
         }
     }
 
