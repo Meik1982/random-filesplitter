@@ -118,9 +118,35 @@ impl MatrixPolicy {
                 let (rank, _) = test_matrix.gauss_jordan_rref();
 
                 if rank == chosen_vectors.len() + 1 {
-                    let score: usize = comb.iter().map(|&idx| share_usage[idx]).sum();
-                    if score < best_score {
-                        best_score = score;
+                    // Information-Theoretic Single-Share Security Check:
+                    // Verify that no non-empty XOR combination in rowspace(rows) has Hamming weight 1
+                    // (which would leave a single share without any random noise basis in G).
+                    let k_cur = rows.len();
+                    let mut min_span_weight = usize::MAX;
+                    for mask in 1usize..(1usize << k_cur) {
+                        let mut xor_comb = 0u64;
+                        for (bit, &r_val) in rows.iter().enumerate() {
+                            if (mask >> bit) & 1 == 1 {
+                                xor_comb ^= r_val;
+                            }
+                        }
+                        let w = xor_comb.count_ones() as usize;
+                        if w < min_span_weight {
+                            min_span_weight = w;
+                        }
+                    }
+
+                    // Reject any subset choice that creates a weight-1 vector in the rowspace
+                    if min_span_weight < 2 {
+                        continue;
+                    }
+
+                    let usage_score: usize = comb.iter().map(|&idx| share_usage[idx]).sum();
+                    // Prefer higher minimum span weight first, then balanced share usage
+                    let combined_score =
+                        (num_shares.saturating_sub(min_span_weight)) * 1000 + usage_score;
+                    if combined_score < best_score {
+                        best_score = combined_score;
                         best_cand = Some((comb.clone(), vec));
                     }
                 }

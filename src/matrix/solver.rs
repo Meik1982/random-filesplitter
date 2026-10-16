@@ -48,6 +48,18 @@ impl SolvedMatrixSystem {
                 }
             }
         }
+
+        // Condition 3: Every individual share i in 0..num_shares MUST be masked by at least
+        // one random noise basis vector in G (i.e. row i of G must be non-zero).
+        for share_idx in 0..self.num_shares {
+            if self.g_matrix.rows[share_idx] == 0 {
+                return Err(format!(
+                    "Information-theoretic security violation: Share {} has zero random noise basis in G (unmasked plaintext combinación)!",
+                    share_idx + 1
+                ));
+            }
+        }
+
         Ok(())
     }
 }

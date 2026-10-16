@@ -9,6 +9,7 @@ pub use harvester::UniversalEntropyHarvester;
 pub use report::{analyze_file_entropy, run_entropy_diagnostics};
 #[allow(unused_imports)]
 pub use stats::{chi_square_p_value, erfc};
+pub use stats::{EntropyAccumulator, EntropyMetrics};
 
 #[cfg(test)]
 #[allow(unused_imports)]

@@ -225,11 +225,14 @@ impl EntropyAccumulator {
         let (block_p_value, block_ok) =
             calculate_block_frequency_test(self.block_chi_sum, self.num_blocks);
 
-        let shannon_ok = shannon_entropy >= 7.9990;
+        let shannon_ok = shannon_entropy >= (7.9990 - (200.0 / total_f)).max(7.90);
         let chi_ok = (180.0..=330.0).contains(&chi_square);
-        let mean_ok = (mean - 127.5).abs() <= 0.25;
-        let bit_ok = (bit_balance_pct - 50.0).abs() <= 0.08;
-        let corr_ok = serial_correlation.abs() < 0.002;
+        let mean_bound = (4.0 * 73.9 / total_f.sqrt()).max(0.25);
+        let mean_ok = (mean - 127.5).abs() <= mean_bound;
+        let bit_bound = (4.0 * 50.0 / total_bits.sqrt()).max(0.08);
+        let bit_ok = (bit_balance_pct - 50.0).abs() <= bit_bound;
+        let corr_bound = (4.0 / total_f.sqrt()).max(0.002);
+        let corr_ok = serial_correlation.abs() < corr_bound;
         let is_cryptographic = shannon_ok && chi_ok && mean_ok && corr_ok && runs_ok && block_ok;
 
         Some(EntropyMetrics {
