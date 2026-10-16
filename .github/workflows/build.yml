@@ -46,19 +46,25 @@ jobs:
             runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             binary: target/x86_64-unknown-linux-gnu/release/rfs
+            gui_binary: target/x86_64-unknown-linux-gnu/release/rfs-gui
             artifact_name: rfs-linux-x86_64
+            gui_artifact_name: rfs-gui-linux-x86_64
             arch: x86_64
           - os: windows
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             binary: target/x86_64-pc-windows-msvc/release/rfs.exe
+            gui_binary: target/x86_64-pc-windows-msvc/release/rfs-gui.exe
             artifact_name: rfs-windows-x86_64.exe
+            gui_artifact_name: rfs-gui-windows-x86_64.exe
             arch: x86_64
           - os: macos
             runner: macos-latest
             target: aarch64-apple-darwin
             binary: target/aarch64-apple-darwin/release/rfs
+            gui_binary: target/aarch64-apple-darwin/release/rfs-gui
             artifact_name: rfs-macos-arm64
+            gui_artifact_name: rfs-gui-macos-arm64
             arch: arm64
 
     steps:
@@ -82,12 +88,15 @@ jobs:
         run: |
           mkdir -p bin_dist
           cp ${{ matrix.binary }} bin_dist/${{ matrix.artifact_name }}
+          cp ${{ matrix.gui_binary }} bin_dist/${{ matrix.gui_artifact_name }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: bin_dist/${{ matrix.artifact_name }}
+          path: |
+            bin_dist/${{ matrix.artifact_name }}
+            bin_dist/${{ matrix.gui_artifact_name }}
 
   release:
     name: Publish GitHub Release
@@ -111,6 +120,9 @@ jobs:
         with:
           files: |
             dist/rfs-linux-x86_64
+            dist/rfs-gui-linux-x86_64
             dist/rfs-windows-x86_64.exe
+            dist/rfs-gui-windows-x86_64.exe
             dist/rfs-macos-arm64
+            dist/rfs-gui-macos-arm64
           generate_release_notes: true

@@ -6,7 +6,7 @@ pkgdesc="High-performance cryptographic file splitter & reconstructor (Post-Quan
 arch=('x86_64' 'aarch64')
 url="https://github.com/Meik1982/random-filesplitter"
 license=('LGPL-3.0-or-later')
-depends=('gcc-libs')
+depends=('gcc-libs' 'fontconfig')
 makedepends=('cargo' 'git')
 provides=('rfs')
 conflicts=('rfs')
@@ -50,4 +50,7 @@ package() {
     install -Dm644 completions/rfs.fish "$pkgdir/usr/share/fish/vendor_completions.d/rfs.fish"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 README.de.md "$pkgdir/usr/share/doc/$pkgname/README.de.md"
+    install -Dm644 docs/lsss-matrix-konzept.md "$pkgdir/usr/share/doc/$pkgname/lsss-matrix-konzept.md"
+    install -Dm644 docs/lsss-matrix-konzept.de.md "$pkgdir/usr/share/doc/$pkgname/lsss-matrix-konzept.de.md"
 }
