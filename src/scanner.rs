@@ -200,40 +200,201 @@ pub fn run_cli_scan(
     restore: bool,
     output_dir: Option<&Path>,
 ) -> Result<i32, String> {
+    let lang = crate::i18n::current_lang();
+    let tr = lang.tr();
+    let n_cand = paths.len();
+
     println!("============================================================");
-    println!(" RFS Combinatorial Scanner (Auto-Discovery & Assembly)");
-    println!("============================================================\n");
-    println!(
-        "Scanning {} candidate files for valid N-Way OTP sets...",
-        paths.len()
-    );
+    match lang {
+        crate::i18n::Lang::En => {
+            println!(" RFS Combinatorial Scanner (Auto-Discovery & Assembly)");
+            println!("============================================================\n");
+            println!(
+                "Scanning {} candidate files for valid N-Way OTP sets...",
+                n_cand
+            );
+        }
+        crate::i18n::Lang::De => {
+            println!(" RFS Kombinatorischer Scanner (Auto-Erkennung & Rekonstruktion)");
+            println!("============================================================\n");
+            println!(
+                "Scanne {} Kandidatendateien nach gültigen N-Way OTP Sets...",
+                n_cand
+            );
+        }
+        crate::i18n::Lang::Es => {
+            println!(" Escáner Combinatorio RFS (Auto-Descubrimiento y Ensamblaje)");
+            println!("============================================================\n");
+            println!(
+                "Escaneando {} archivos candidatos en busca de conjuntos OTP válidos...",
+                n_cand
+            );
+        }
+        crate::i18n::Lang::Fr => {
+            println!(" Scanner Combinatoire RFS (Auto-Découverte & Assemblage)");
+            println!("============================================================\n");
+            println!(
+                "Analyse de {} fichiers candidats pour trouver des ensembles OTP valides...",
+                n_cand
+            );
+        }
+        crate::i18n::Lang::Ja => {
+            println!(" RFS 組み合わせスキャナ (自動検出 & アセンブリ)");
+            println!("============================================================\n");
+            println!(
+                "{} 個の候補ファイルから有効な N-Way OTP セットをスキャン中...",
+                n_cand
+            );
+        }
+        crate::i18n::Lang::Zh => {
+            println!(" RFS 组合扫描器（自动发现与重组）");
+            println!("============================================================\n");
+            println!(
+                "正在扫描 {} 个候选文件以寻找有效的 N-Way OTP 分片组合...",
+                n_cand
+            );
+        }
+        crate::i18n::Lang::Tok => {
+            println!(" ilo alasa RFS (alasa & wan sin)");
+            println!("============================================================\n");
+            println!("ilo li alasa e kulupu kipisi pona lon lipu {}...", n_cand);
+        }
+        crate::i18n::Lang::Sp => {
+            println!(" 󱤎 󱤃 RFS (󱤃 & 󱥳 󱥝)");
+            println!("============================================================\n");
+            println!("󱤎 󱤧 󱤃 󱤉 󱤟 󱥻 󱥔 󱤬 󱤪 {}...", n_cand);
+        }
+    }
 
     let matches = scan_candidate_files(paths)?;
 
     if matches.is_empty() {
-        println!("\n[Result] No matching RFS combinations found.");
-        println!("All inspected files behave as uncorrelated noise or incomplete sets.");
+        println!("\n{}", tr.restore_status_no_sets);
+        println!("{}", tr.restore_detected_all_noise);
         return Ok(0);
     }
 
-    println!(
-        "\n🎯 Discovered Payloads ({} valid sets detected):\n",
-        matches.len()
-    );
+    match lang {
+        crate::i18n::Lang::En => println!(
+            "\n🎯 Discovered Payloads ({} valid sets detected):\n",
+            matches.len()
+        ),
+        crate::i18n::Lang::De => println!(
+            "\n🎯 Entdeckte Payloads ({} gültige Sets erkannt):\n",
+            matches.len()
+        ),
+        crate::i18n::Lang::Es => println!(
+            "\n🎯 Archivos descubiertos ({} conjuntos válidos detectados):\n",
+            matches.len()
+        ),
+        crate::i18n::Lang::Fr => println!(
+            "\n🎯 Fichiers découverts ({} ensembles valides détectés) :\n",
+            matches.len()
+        ),
+        crate::i18n::Lang::Ja => println!(
+            "\n🎯 検出されたペイロード ({} 個の有効なセットを検出):\n",
+            matches.len()
+        ),
+        crate::i18n::Lang::Zh => println!(
+            "\n🎯 发现的载荷文件（检测到 {} 个有效组合）：\n",
+            matches.len()
+        ),
+        crate::i18n::Lang::Tok => {
+            println!("\n🎯 lipu len li lon (kulupu pona {}):\n", matches.len())
+        }
+        crate::i18n::Lang::Sp => println!("\n🎯 󱤪 󱤥 󱤧 󱤬 (󱤟 󱥔 {}):\n", matches.len()),
+    }
 
     for (idx, m) in matches.iter().enumerate() {
         println!("------------------------------------------------------------");
         let orig_name = m.metadata.filename().unwrap_or("unnamed");
-        println!(
-            " Set #{}: Original: \"{}\" ({})",
-            idx + 1,
-            orig_name,
-            format_bytes(m.metadata.original_size())
-        );
-        println!(
-            "       Share size:  {} (4 KiB cluster padding)",
-            format_bytes(m.share_size)
-        );
+        let orig_size_fmt = format_bytes(m.metadata.original_size());
+        let share_size_fmt = format_bytes(m.share_size);
+
+        match lang {
+            crate::i18n::Lang::En => {
+                println!(
+                    " Set #{}: Original: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!(
+                    "       Share size:  {} (4 KiB cluster padding)",
+                    share_size_fmt
+                );
+            }
+            crate::i18n::Lang::De => {
+                println!(
+                    " Set #{}: Original: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!(
+                    "       Share-Größe: {} (4 KiB Cluster-Padding)",
+                    share_size_fmt
+                );
+            }
+            crate::i18n::Lang::Es => {
+                println!(
+                    " Conjunto #{}: Original: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!(
+                    "       Tamaño parte: {} (relleno de bloque 4 KiB)",
+                    share_size_fmt
+                );
+            }
+            crate::i18n::Lang::Fr => {
+                println!(
+                    " Ensemble #{} : Original : \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!("       Taille part : {} (alignement 4 Kio)", share_size_fmt);
+            }
+            crate::i18n::Lang::Ja => {
+                println!(
+                    " セット #{}: 元ファイル: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!("       シェアサイズ: {} (4 KiB パディング)", share_size_fmt);
+            }
+            crate::i18n::Lang::Zh => {
+                println!(
+                    " 组合 #{}: 原始文件: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!("       分片大小:    {} (4 KiB 簇对齐)", share_size_fmt);
+            }
+            crate::i18n::Lang::Tok => {
+                println!(
+                    " kulupu #{}: lipu open: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!("       suli kipisi: {} (4 KiB)", share_size_fmt);
+            }
+            crate::i18n::Lang::Sp => {
+                println!(
+                    " 󱤟 #{}: 󱤪 󱥇: \"{}\" ({})",
+                    idx + 1,
+                    orig_name,
+                    orig_size_fmt
+                );
+                println!("       󱥣 󱥻:        {} (4 KiB)", share_size_fmt);
+            }
+        }
+
         match &m.metadata {
             RfsMetadata::Rfs4 { expected_blks, .. } | RfsMetadata::Rfs3 { expected_blks, .. } => {
                 println!(
@@ -251,13 +412,38 @@ pub fn run_cli_scan(
                 println!("       SHA-256:     {}", hex_str);
             }
         }
-        println!("       Valid shares ({} parts):", m.shares.len());
+
+        match lang {
+            crate::i18n::Lang::En => println!("       Valid shares ({} parts):", m.shares.len()),
+            crate::i18n::Lang::De => println!("       Gültige Shares ({} Teile):", m.shares.len()),
+            crate::i18n::Lang::Es => println!("       Partes válidas ({} partes):", m.shares.len()),
+            crate::i18n::Lang::Fr => println!("       Parts valides ({} parts) :", m.shares.len()),
+            crate::i18n::Lang::Ja => println!("       有効なシェア ({} 個):", m.shares.len()),
+            crate::i18n::Lang::Zh => println!("       有效分片（{} 个分片）：", m.shares.len()),
+            crate::i18n::Lang::Tok => println!("       kipisi pona (kipisi {}):", m.shares.len()),
+            crate::i18n::Lang::Sp => println!("       󱥻 󱥔 (󱥻 {}):", m.shares.len()),
+        }
         for (si, sp) in m.shares.iter().enumerate() {
             println!("         [{}] {}", si + 1, sp.display());
         }
 
         if restore {
-            println!("\n       Reconstructing Set #{}...", idx + 1);
+            match lang {
+                crate::i18n::Lang::En => println!("\n       Reconstructing Set #{}...", idx + 1),
+                crate::i18n::Lang::De => println!("\n       Rekonstruiere Set #{}...", idx + 1),
+                crate::i18n::Lang::Es => {
+                    println!("\n       Reconstruyendo Conjunto #{}...", idx + 1)
+                }
+                crate::i18n::Lang::Fr => {
+                    println!("\n       Reconstruction de l'ensemble #{}...", idx + 1)
+                }
+                crate::i18n::Lang::Ja => println!("\n       セット #{} を復元中...", idx + 1),
+                crate::i18n::Lang::Zh => println!("\n       正在重构组合 #{}...", idx + 1),
+                crate::i18n::Lang::Tok => {
+                    println!("\n       ilo li wan sin e kulupu #{}...", idx + 1)
+                }
+                crate::i18n::Lang::Sp => println!("\n       󱤎 󱤧 󱥳 󱥝 󱤉 󱤟 #{}...", idx + 1),
+            }
             let out_target = output_dir.map(|d| d.join(orig_name));
             let out_target_str = out_target.as_ref().map(|p| p.to_string_lossy().to_string());
 
@@ -272,13 +458,16 @@ pub fn run_cli_scan(
                 false,
             ) {
                 Ok(Some(restored)) => {
-                    println!("       ✅ Successfully restored: {}", restored.display());
+                    println!(
+                        "       ✅ {}",
+                        tr.format_cli_restored(lang, &restored.display().to_string())
+                    );
                 }
                 Ok(None) => {
-                    println!("       ✅ Verification successful.");
+                    println!("       ✅ {}", tr.restore_badge_valid);
                 }
                 Err(e) => {
-                    eprintln!("       ❌ Restoration error: {}", e);
+                    eprintln!("       ❌ {}: {}", tr.restore_badge_mismatch, e);
                 }
             }
         }

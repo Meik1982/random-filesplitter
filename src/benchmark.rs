@@ -9,8 +9,26 @@ use zeroize::Zeroize;
 
 /// Runs full hardware and cryptographic benchmark.
 pub fn run_benchmark() -> i32 {
+    let lang = crate::i18n::current_lang();
     println!("============================================================");
-    println!(" RFS v3.1.0 Hardware Benchmark (Rust & BLKS-384 Throughput)");
+    match lang {
+        crate::i18n::Lang::En => {
+            println!(" RFS v3.1.0 Hardware Benchmark (Rust & BLKS-384 Throughput)")
+        }
+        crate::i18n::Lang::De => {
+            println!(" RFS v3.1.0 Hardware-Benchmark (Rust & BLKS-384 Durchsatz)")
+        }
+        crate::i18n::Lang::Es => {
+            println!(" Benchmark de Hardware RFS v3.1.0 (Rendimiento Rust y BLKS-384)")
+        }
+        crate::i18n::Lang::Fr => println!(" Benchmark Matériel RFS v3.1.0 (Débit Rust & BLKS-384)"),
+        crate::i18n::Lang::Ja => {
+            println!(" RFS v3.1.0 ハードウェアベンチマーク (Rust & BLKS-384 スループット)")
+        }
+        crate::i18n::Lang::Zh => println!(" RFS v3.1.0 硬件吞吐量基准测试 (Rust & BLKS-384)"),
+        crate::i18n::Lang::Tok => println!(" lukin wawa ilo RFS v3.1.0 (Rust & BLKS-384)"),
+        crate::i18n::Lang::Sp => println!(" 󱤮 󱥵 󱤎 RFS v3.1.0 (Rust & BLKS-384)"),
+    }
     println!("============================================================\n");
 
     const BENCH_BUF_SIZE: usize = 4 * 1024 * 1024; // 4 MB block

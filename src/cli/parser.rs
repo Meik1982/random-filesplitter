@@ -29,6 +29,11 @@ pub fn display_help() {
 
 /// Displays context-sensitive help for a specific subcommand.
 pub fn display_subcommand_help(subcommand: &str) {
+    let lang = crate::i18n::current_lang();
+    if lang != crate::i18n::Lang::En {
+        display_help();
+        return;
+    }
     display_version();
     match subcommand {
         "split" => {

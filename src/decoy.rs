@@ -225,15 +225,53 @@ pub fn generate_decoy_files(
     )?;
 
     if telemetry_mode == TelemetryMode::Interactive {
-        let mode_desc = if token_mode {
-            "Token Mode"
-        } else {
-            "100% ChaCha20 random noise"
-        };
-        eprintln!(
-            "Successfully generated {} decoy file(s) ({}):",
-            count, mode_desc
-        );
+        let lang = crate::i18n::current_lang();
+        match lang {
+            crate::i18n::Lang::En => {
+                let mode_desc = if token_mode {
+                    "Token Mode"
+                } else {
+                    "100% ChaCha20 random noise"
+                };
+                eprintln!(
+                    "Successfully generated {} decoy file(s) ({}):",
+                    count, mode_desc
+                );
+            }
+            crate::i18n::Lang::De => {
+                eprintln!(
+                    "Erfolgreich {} Köderdatei(en) erzeugt (100% ChaCha20 Zufallsrauschen):",
+                    count
+                );
+            }
+            crate::i18n::Lang::Es => {
+                eprintln!(
+                    "Se generaron con éxito {} archivo(s) señuelo (100% ruido ChaCha20):",
+                    count
+                );
+            }
+            crate::i18n::Lang::Fr => {
+                eprintln!(
+                    "{} fichier(s) leurre(s) généré(s) avec succès (100% bruit ChaCha20) :",
+                    count
+                );
+            }
+            crate::i18n::Lang::Ja => {
+                eprintln!(
+                    "{} 個のおとりファイルを正常に生成しました (100% ChaCha20 乱数ノイズ):",
+                    count
+                );
+            }
+            crate::i18n::Lang::Zh => {
+                eprintln!("成功生成 {} 个诱饵文件（100% ChaCha20 随机噪声）：", count);
+            }
+            crate::i18n::Lang::Tok => {
+                eprintln!("lipu powe {} li pali pona (kalama nasa ChaCha20):", count);
+            }
+            crate::i18n::Lang::Sp => {
+                eprintln!("󱤪 󱦣 {} 󱤧 󱥉 󱥔 (󱤕 󱤾 ChaCha20):", count);
+            }
+        }
         for (i, p) in decoy_paths.iter().enumerate() {
             eprintln!("  Decoy {}: {} ({} bytes)", i + 1, p.display(), target_size);
         }

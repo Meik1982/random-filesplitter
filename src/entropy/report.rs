@@ -19,8 +19,18 @@ const PHASE2_STREAM_SIZE: usize = 1024 * 1024;
 
 /// Runs the two-phase system entropy diagnostics.
 pub fn run_entropy_diagnostics() -> i32 {
+    let lang = crate::i18n::current_lang();
     println!("============================================================");
-    println!(" RFS Two-Phase Entropy & Jitter Diagnostics");
+    match lang {
+        crate::i18n::Lang::En => println!(" RFS Two-Phase Entropy & Jitter Diagnostics"),
+        crate::i18n::Lang::De => println!(" RFS Zweiphasige Entropie- & Hardware-Jitter-Diagnose"),
+        crate::i18n::Lang::Es => println!(" Diagnóstico de Entropía y Jitter en Dos Fases RFS"),
+        crate::i18n::Lang::Fr => println!(" Diagnostic d'Entropie et de Gigue en Deux Phases RFS"),
+        crate::i18n::Lang::Ja => println!(" RFS 2段階エントロピー & ジッター診断"),
+        crate::i18n::Lang::Zh => println!(" RFS 两阶段熵源与硬件抖动诊断"),
+        crate::i18n::Lang::Tok => println!(" lukin pi kalama nasa RFS (kipisi 2)"),
+        crate::i18n::Lang::Sp => println!(" 󱤮 󱥍 󱤕 󱤾 RFS (󱥻 2)"),
+    }
     println!("============================================================");
 
     // Phase 1: CPU Jitter Analysis (2 MB Cache-Line Permutation Pool)
@@ -254,8 +264,26 @@ pub fn analyze_file_entropy(path: &Path, json_mode: bool) -> Result<(), String> 
         return Ok(());
     }
 
+    let lang = crate::i18n::current_lang();
     println!("============================================================");
-    println!(" RFS Extended Cryptanalytic Entropy & NIST SP 800-22 Suite");
+    match lang {
+        crate::i18n::Lang::En => {
+            println!(" RFS Extended Cryptanalytic Entropy & NIST SP 800-22 Suite")
+        }
+        crate::i18n::Lang::De => {
+            println!(" RFS Kryptoanalytische Entropie- & NIST SP 800-22 Suite")
+        }
+        crate::i18n::Lang::Es => {
+            println!(" Suite Criptoanalítica de Entropía y NIST SP 800-22 RFS")
+        }
+        crate::i18n::Lang::Fr => println!(" Suite Cryptanalytique d'Entropie & NIST SP 800-22 RFS"),
+        crate::i18n::Lang::Ja => {
+            println!(" RFS 拡張暗号統計エントロピー & NIST SP 800-22 スイート")
+        }
+        crate::i18n::Lang::Zh => println!(" RFS 扩展密码学文件熵与 NIST SP 800-22 测试套件"),
+        crate::i18n::Lang::Tok => println!(" lukin nanpa NIST SP 800-22 & kalama nasa RFS"),
+        crate::i18n::Lang::Sp => println!(" 󱤮 󱤽 NIST SP 800-22 & 󱤕 󱤾 RFS"),
+    }
     println!("============================================================");
     println!(" File:   {}", path.display());
     println!(
